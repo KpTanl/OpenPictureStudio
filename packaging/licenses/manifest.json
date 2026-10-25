@@ -1,0 +1,161 @@
+{
+  "supplements": {
+    "python:flatbuffers": {
+      "version": "25.12.19",
+      "files": [
+        {
+          "path": "flatbuffers/LICENSE",
+          "origin": "https://github.com/google/flatbuffers/blob/v25.12.19/LICENSE (git blob d645695673349e3947e8e5ae42332d0ac3164cd7)",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        }
+      ]
+    },
+    "msvc-runtime": {
+      "files": [
+        {
+          "path": "msvc-runtime/NOTICE.txt",
+          "origin": "written for this project",
+          "sha256": "a1c662417a700fba6e74af77687ebbfd19d6b114e4b535287f1e5801ae63c9ed"
+        }
+      ]
+    },
+    "python:sounddevice": {
+      "version": "0.5.5",
+      "package_files": [
+        "_sounddevice_data/portaudio-binaries/README.md"
+      ]
+    },
+    "python:PyQt6-Qt6": {
+      "version": "6.11.0",
+      "files": [
+        {
+          "path": "qt/QT_THIRD_PARTY_NOTICES.txt",
+          "origin": "assembled from the qt_attribution.json files and the license files they name in qtbase, qtsvg and qtimageformats at tag v6.11.0 (https://code.qt.io/cgit/qt/), each checked against the git blob id of the tag; see the file header for the selection",
+          "sha256": "967e33471fe3e11661e18ddd0f5684cbaebc371c4302bb6ef5b53a071f0e9489"
+        }
+      ]
+    },
+    "python:mediapipe": {
+      "version": "0.10.35",
+      "files": [
+        {
+          "path": "mediapipe/MEDIAPIPE_THIRD_PARTY_NOTICES.txt",
+          "origin": "assembled for this project: third-party libraries identified in libmediapipe.dll by source paths and identifiers, with license texts from the versions referenced by MediaPipe v0.10.35 and TensorFlow fad6b3cf5a7d51a437bd01ee929853bc8554b618; see the file header",
+          "sha256": "ce6e2b04c7c7894a29de2edea810432ba28cf71ac4c7b624e9d87314f18b862f"
+        }
+      ]
+    }
+  },
+  "sources": {
+    "PyQt6": {
+      "version": "6.11.0",
+      "license": "GPL-3.0-only",
+      "files": [
+        {
+          "url": "https://files.pythonhosted.org/packages/8b/47/b25c13eca5bebc6505394d0223e46d7ebf0c57dcac2ed908d7d19b18ab6b/pyqt6-6.11.0.tar.gz",
+          "sha256": "45dd60aa69976de1918b5ced6b4e7b6a25abd2a919ecef5fd5826ecc76718889"
+        }
+      ]
+    },
+    "PyQt6-Qt6": {
+      "version": "6.11.0",
+      "license": "LGPL-3.0-only (Qt)",
+      "note": "Qt 6.11.0 libraries shipped in the PyQt6-Qt6 wheel. Older releases move to https://download.qt.io/archive/qt/6.11/6.11.0/single/",
+      "files": [
+        {
+          "url": "https://download.qt.io/official_releases/qt/6.11/6.11.0/single/qt-everywhere-src-6.11.0.tar.xz",
+          "md5": "a93e9f424a9d11ee8d67bf8fb1af4772"
+        },
+        {
+          "url": "https://download.qt.io/official_releases/qt/6.11/6.11.0/single/md5sums.txt"
+        }
+      ]
+    },
+    "img2pdf": {
+      "version": "0.6.3",
+      "license": "LGPL-3.0-or-later",
+      "note": "Delivered as the source file _internal/img2pdf.py, which can be replaced.",
+      "files": [
+        {
+          "url": "https://files.pythonhosted.org/packages/8e/97/ca44c467131b93fda82d2a2f21b738c8bcf63b5259e3b8250e928b8dd52a/img2pdf-0.6.3.tar.gz",
+          "sha256": "219518020f5bd242bdc46493941ea3f756f664c2e86f2454721e74353f58cd95"
+        }
+      ]
+    },
+    "certifi": {
+      "version": "2026.4.22",
+      "license": "MPL-2.0",
+      "files": [
+        {
+          "url": "https://files.pythonhosted.org/packages/25/ee/6caf7a40c36a1220410afe15a1cc64993a1f864871f698c0f93acb72842a/certifi-2026.4.22.tar.gz",
+          "sha256": "8d455352a37b71bf76a79caa83a3d6c25afee4a385d632127b6afb3963f1c580"
+        }
+      ]
+    },
+    "tqdm": {
+      "version": "4.67.3",
+      "license": "MPL-2.0 AND MIT",
+      "files": [
+        {
+          "url": "https://files.pythonhosted.org/packages/09/a9/6ba95a270c6f1fbcd8dac228323f2777d886cb206987444e4bce66338dd4/tqdm-4.67.3.tar.gz",
+          "sha256": "7d825f03f89244ef73f1d4ce193cb1774a8179fd96f31d7e1dcde62092b960bb"
+        }
+      ]
+    },
+    "pikepdf": {
+      "version": "10.6.0",
+      "license": "MPL-2.0",
+      "files": [
+        {
+          "url": "https://files.pythonhosted.org/packages/cf/20/06636c3c7351d7292308e848700cd26a2092233093d4cabe770aaee73319/pikepdf-10.6.0.tar.gz",
+          "sha256": "172611c32ab0a6097cfbccb397847b8e84d3f7bc7d32d5fc2f50e7e61f164725"
+        }
+      ]
+    },
+    "rawpy": {
+      "version": "0.27.0",
+      "license": "MIT; bundled LibRaw 0.22.1 under LGPL-2.1-only OR CDDL-1.0",
+      "note": "LibRaw is the commit pinned by rawpy v0.27.0, built without the GPL demosaic packs.",
+      "files": [
+        {
+          "url": "https://files.pythonhosted.org/packages/86/15/92324724209650167c8c8b0c8c0006c99d07494b9b41f7d6435a37737323/rawpy-0.27.0.tar.gz",
+          "sha256": "45251e46c1d891a62919a4ac200a9828f825e3c59f89cea2f1daee0900ff15ec"
+        },
+        {
+          "url": "https://github.com/LibRaw/LibRaw/archive/b860248a89d9082b8e0a1e202e516f46af9adb29.zip",
+          "commit": "b860248a89d9082b8e0a1e202e516f46af9adb29"
+        },
+        {
+          "url": "https://github.com/LibRaw/LibRaw-cmake/archive/6e26c9e73677dc04f9eb236a97c6a4dc225ba7e8.zip",
+          "commit": "6e26c9e73677dc04f9eb236a97c6a4dc225ba7e8"
+        }
+      ]
+    },
+    "mediapipe": {
+      "version": "0.10.35",
+      "license": "Apache-2.0; libmediapipe.dll includes Eigen under MPL-2.0 and other third-party libraries",
+      "note": "Eigen is compiled into _internal/mediapipe/tasks/c/libmediapipe.dll, which Google builds from its internal repository; the closest published source is the v0.10.35 tag and the Eigen commit pinned by its TensorFlow version. The other libraries are listed in MEDIAPIPE_THIRD_PARTY_NOTICES.txt.",
+      "files": [
+        {
+          "url": "https://github.com/google-ai-edge/mediapipe/archive/refs/tags/v0.10.35.tar.gz",
+          "commit": "f8ef212d5c962c0e853db7e59d217056b187084b"
+        },
+        {
+          "url": "https://gitlab.com/libeigen/eigen/-/archive/4c38131a16803130b66266a912029504f2cf23cd/eigen-4c38131a16803130b66266a912029504f2cf23cd.tar.gz",
+          "sha256": "1a432ccbd597ea7b9faa1557b1752328d6adc1a3db8969f6fe793ff704be3bf0"
+        }
+      ]
+    },
+    "pyinstaller": {
+      "version": "6.20.0",
+      "license": "GPL-2.0-or-later with the PyInstaller bootloader exception",
+      "note": "Source of the bootloader in OpenPictureStudio.exe.",
+      "files": [
+        {
+          "url": "https://files.pythonhosted.org/packages/46/60/d03d52e6690d4e9caf333dcd14550cde634ce6c118b3bc8fa3112c3186fd/pyinstaller-6.20.0.tar.gz",
+          "sha256": "95c5c7e03d5d61e9dfb8ef259c699cf492bb1041beb6dbe83696608cec07347a"
+        }
+      ]
+    }
+  }
+}

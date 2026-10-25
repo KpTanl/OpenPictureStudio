@@ -1,0 +1,12 @@
+Microsoft Visual C++ and Universal C Runtime
+
+This program contains Microsoft runtime libraries (vcruntime*.dll, msvcp*.dll,
+vcomp*.dll, concrt*.dll, ucrtbase.dll and api-ms-win-*.dll) exactly as they are
+shipped inside the Python runtime and the Python packages listed in
+THIRD_PARTY_NOTICES.txt. They are redistributable files provided by Microsoft
+under the license terms of Microsoft Visual Studio and the Windows SDK, and are
+not covered by the licenses of this program.
+
+Redistribution of these files:
+https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files
+https://learn.microsoft.com/cpp/windows/universal-crt-deployment

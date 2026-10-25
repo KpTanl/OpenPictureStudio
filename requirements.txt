@@ -1,0 +1,10 @@
+# Core dependencies — required for the application to run
+PyQt6>=6.5.0
+Pillow>=10.0.0
+img2pdf>=0.4.0
+numpy>=1.26.0
+tifffile>=2024.8.30
+# One OpenCV distribution for every install: MediaPipe (beauty) requires the contrib build
+opencv-contrib-python>=4.10.0.84
+rawpy>=0.27.0
+httpx==0.28.1

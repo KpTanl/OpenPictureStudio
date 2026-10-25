@@ -1,0 +1,6 @@
+# AI / ML optional dependencies
+# Install with: pip install -r requirements-ai.txt
+-r requirements.txt
+
+rembg>=2.0.50
+onnxruntime>=1.17.0

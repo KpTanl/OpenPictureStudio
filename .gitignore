@@ -1,0 +1,138 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+*.exe
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.whl
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# 日志与临时文件
+*.log
+*.log.*
+*.tmp
+*.temp
+*.orig
+*.rej
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+.pytest_cache/
+.pytest-tmp/
+.pytest-tmp-full/
+cover/
+
+# Virtual environments
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.bak
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Qt / PyQt
+*.qm
+*.qmlc
+*.jsc
+.qmake.stash
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+
+# Project specific
+local_settings.py
+
+# 本地临时目录（模型权重、验收与测试产物，不入库）
+/scratch/
+
+# 用户自行安装的推理运行环境（源码环境位于仓库根目录，不入库）
+/runtimes/
+
+# Model binaries downloaded at runtime live under ./models, but keep one text placeholder
+# so the folder is present in the repository.
+/models/*
+!/models/placeholder.txt
+
+# Phase 2 DCP↔RawTherapee 对拍 dump（大体积渲染产物，不入库）
+/dcp_dump/
+
+# 本地助手配置
+.claude_models/
+/.claude/settings.local.json
+/.claude/scheduled_tasks.lock
+
+# Rust build artifacts
+target/
+*.dll
+*.lib
+*.obj
+*.o
+*.pdb
+*.exp
+
+# 原生加速模块（cargo 构建后复制到仓库根目录，不入库）
+/ops_accel.pyd
+
+# tools/ 调色引擎诊断与对拍产物（大体积二进制，不入库）
+tools/*.png
+tools/rt_compare/**/*.npy
+tools/rt_compare/**/*.tif

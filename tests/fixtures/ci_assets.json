@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "model_ids": ["nafnet-deblur", "u2net"],
+  "files": [
+    {
+      "id": "raw",
+      "path": ".pytest-tmp/fixtures/iss030e122639.NEF",
+      "url": "https://raw.githubusercontent.com/letmaik/rawpy/d050d8a1a061d84e8d4eb6bf3f68a22640aeade3/test/iss030e122639.NEF",
+      "size": 10656312,
+      "sha256": "5922721d13f11795557d97fdeb0a60b900086c402bc82a848ff280d15b99ffd4",
+      "source": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS030&roll=E&frame=122639",
+      "usage": "https://eol.jsc.nasa.gov/FAQ/",
+      "attribution": "Image courtesy of the Earth Science and Remote Sensing Unit, NASA Johnson Space Center. ISS030-E-122639."
+    },
+    {
+      "id": "dcp",
+      "path": ".pytest-tmp/fixtures/Nikon D3S.dcp",
+      "url": "https://raw.githubusercontent.com/RawTherapee/RawTherapee/b2ee504c47e5e6d5e054395aa12bf1fe43bd1c3c/rtdata/dcpprofiles/Nikon%20D3S.dcp",
+      "size": 1498,
+      "sha256": "c8341479b7225252a5e30b11f3fb1e9edbb08371ca19fbe49516f7a61a09489f",
+      "source": "https://github.com/RawTherapee/RawTherapee/blob/b2ee504c47e5e6d5e054395aa12bf1fe43bd1c3c/rtdata/dcpprofiles/Nikon%20D3S.dcp",
+      "license": "https://github.com/RawTherapee/RawTherapee/blob/b2ee504c47e5e6d5e054395aa12bf1fe43bd1c3c/LICENSE"
+    }
+  ]
+}

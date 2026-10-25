@@ -1,0 +1,5 @@
+# Full release build: application, AI, beauty and packaging dependencies
+# Install with: pip install -r requirements-build.txt
+-r requirements-dev.txt
+-r requirements-ai.txt
+-r requirements-beauty.txt

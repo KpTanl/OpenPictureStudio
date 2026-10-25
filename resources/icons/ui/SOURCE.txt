@@ -1,0 +1,2 @@
+Tabler Icons 3.49.0 (outline), https://github.com/tabler/tabler-icons
+Source: https://cdn.jsdelivr.net/npm/@tabler/icons@3.49.0/icons/outline/

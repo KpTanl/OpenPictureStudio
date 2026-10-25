@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    if: github.repository == 'KpTanl/OpenPictureStudio'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYO3_PYTHON: ${{ github.workspace }}/.venv/Scripts/python.exe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-build.lock.txt
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/ops_accel/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('native/ops_accel/Cargo.lock') }}
+
+      - name: Cache test assets
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            models/*.onnx
+            .pytest-tmp/fixtures
+          key: ci-assets-${{ hashFiles('resources/models/catalog.json', 'tests/fixtures/ci_assets.json') }}
+
+      - name: Create build environment
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install -r requirements-build.lock.txt
+
+      - name: Check dependencies
+        run: .venv\Scripts\python.exe -m pip check
+
+      - name: Prepare test assets
+        run: .venv\Scripts\python.exe tools/prepare_ci_assets.py
+
+      - name: Check Python code
+        run: .venv\Scripts\python.exe -m flake8 src resources tests tools main.py conftest.py --select=F821,F822,F823
+
+      - name: Compile Python modules
+        run: .venv\Scripts\python.exe -X pycache_prefix=.pytest-tmp/pycache -m compileall -q src resources tests tools main.py conftest.py
+
+      - name: Build native module
+        working-directory: native/ops_accel
+        run: |
+          cargo build --release --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item target/release/ops_accel.dll ../../ops_accel.pyd
+
+      - name: Check build environment
+        run: .venv\Scripts\python.exe -B tools/check_build_env.py
+
+      - name: Test
+        run: .venv\Scripts\python.exe -m pytest tests -q -p no:cacheprovider -rfE -o faulthandler_timeout=300 --junitxml=.pytest-tmp/junit.xml
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results
+          path: .pytest-tmp/junit.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Install Inno Setup
+        if: github.event_name != 'pull_request'
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup --no-progress -y }
+
+      - name: Build installer
+        if: github.event_name != 'pull_request'
+        run: ./build.ps1
+
+      - name: Verify installer checksum
+        if: github.event_name != 'pull_request'
+        run: |
+          $installers = @(Get-ChildItem dist/installer -Filter '*-setup.exe' -File)
+          if ($installers.Count -ne 1) { throw "Expected one installer" }
+          $installer = $installers[0]
+          $expected = ((Get-Content -LiteralPath "$($installer.FullName).sha256" -Raw) -split '\s+')[0]
+          $actual = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Installer checksum mismatch" }
+
+      - name: Upload installer
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-ci-${{ github.run_number }}
+          path: |
+            dist/installer/*.exe
+            dist/installer/*.sha256
+          if-no-files-found: error
+          retention-days: 7

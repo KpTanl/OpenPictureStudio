@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "id": "realesrgan-x4plus",
+      "revision": "skillsafe-107475e",
+      "name": "Real-ESRGAN x4plus",
+      "capability": "super_resolution",
+      "adapter": "rgb_restoration",
+      "runtime": "onnxruntime",
+      "source": "https://huggingface.co/skillsafe-ai/realesrgan-x4plus/tree/107475e49b7d46412cc966481efccc3500955801",
+      "license": "BSD-3-Clause",
+      "scale": 4,
+      "tile": 256,
+      "overlap": 32,
+      "files": [
+        {
+          "name": "Real-ESRGAN-x4plus.onnx",
+          "size": 67051650,
+          "sha256": "4851ec156207d271f5328605d0582eeb851e656227da8aca093ced9e60789291",
+          "url": "https://huggingface.co/skillsafe-ai/realesrgan-x4plus/resolve/107475e49b7d46412cc966481efccc3500955801/model.onnx"
+        }
+      ]
+    },
+    {
+      "id": "nafnet-sidd-width32",
+      "revision": "darktable-5.6.0",
+      "name": "NAFNet SIDD width32",
+      "capability": "denoise",
+      "adapter": "rgb_restoration",
+      "runtime": "onnxruntime",
+      "source": "https://github.com/darktable-org/darktable-ai/releases/tag/release-5.6.0",
+      "license": "MIT",
+      "tile": 768,
+      "overlap": 32,
+      "alignment": 16,
+      "files": [
+        {
+          "name": "nafnet_sidd_width32.onnx",
+          "size": 108413592,
+          "sha256": "4b5c0b9c2650956eaab9a3fc6ffe3e11d4dc4f55b246b7f3a0d2d72161b6980c",
+          "url": "https://github.com/darktable-org/darktable-ai/releases/download/release-5.6.0/denoise-nafnet.dtmodel",
+          "member": "denoise-nafnet/model.onnx",
+          "installed_size": 117341957,
+          "installed_sha256": "8b437280db2f9f0ef5c733fa0fec70fc10012a62d19dac24a25b80ec8c529230"
+        }
+      ]
+    },
+    {
+      "id": "nafnet-deblur",
+      "revision": "opencv-21f2e866",
+      "name": "NAFNet Deblur",
+      "capability": "deblur",
+      "adapter": "rgb_restoration",
+      "runtime": "onnxruntime",
+      "source": "https://github.com/opencv/opencv_zoo/tree/21f2e8663a84d1b01b62f07c590ae95cb414484a/models/deblurring_nafnet",
+      "license": "MIT",
+      "tile": 512,
+      "overlap": 96,
+      "alignment": 16,
+      "legacy_names": [
+        "deblurring_nafnet_2025may.onnx"
+      ],
+      "files": [
+        {
+          "name": "deblurring_nafnet_2025may.onnx",
+          "size": 91736251,
+          "sha256": "07263f416febecce10193dd648e950b22e397cf521eedab1a114ef77b2bc9587",
+          "url": "https://media.githubusercontent.com/media/opencv/opencv_zoo/21f2e8663a84d1b01b62f07c590ae95cb414484a/models/deblurring_nafnet/deblurring_nafnet_2025may.onnx"
+        }
+      ]
+    },
+    {
+      "id": "u2net",
+      "revision": "rembg-v0.0.0",
+      "name": "U2Net",
+      "capability": "segmentation",
+      "adapter": "u2net",
+      "runtime": "onnxruntime",
+      "source": "https://github.com/danielgatis/rembg/releases/tag/v0.0.0",
+      "license": "Apache-2.0",
+      "legacy_names": [
+        "u2net.onnx"
+      ],
+      "files": [
+        {
+          "name": "u2net.onnx",
+          "size": 175997641,
+          "sha256": "8d10d2f3bb75ae3b6d527c77944fc5e7dcd94b29809d47a739a7a728a912b491",
+          "url": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx"
+        }
+      ]
+    },
+    {
+      "id": "face-landmarker",
+      "revision": "google-float16-1",
+      "name": "MediaPipe Face Landmarker",
+      "capability": "face_detection",
+      "adapter": "face_landmarker",
+      "runtime": "mediapipe",
+      "source": "https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker",
+      "license": "Apache-2.0",
+      "legacy_names": [
+        "face_landmarker.task"
+      ],
+      "files": [
+        {
+          "name": "face_landmarker.task",
+          "size": 3758596,
+          "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
+          "url": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+        }
+      ]
+    },
+    {
+      "id": "face-detector-yunet",
+      "revision": "opencv-2023mar",
+      "name": "OpenCV YuNet",
+      "capability": "face_localization",
+      "adapter": "yunet",
+      "runtime": "cv2",
+      "source": "https://huggingface.co/opencv/face_detection_yunet/tree/b373a5f059a29efc0007211ca22892ce229ec241",
+      "license": "MIT",
+      "files": [
+        {
+          "name": "face_detection_yunet_2023mar.onnx",
+          "size": 232589,
+          "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+          "url": "https://huggingface.co/opencv/face_detection_yunet/resolve/b373a5f059a29efc0007211ca22892ce229ec241/face_detection_yunet_2023mar.onnx"
+        }
+      ]
+    }
+  ]
+}

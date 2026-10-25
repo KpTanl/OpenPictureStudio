@@ -1,0 +1,2 @@
+This folder stores downloaded AI model files at runtime.
+Keep this placeholder so the directory remains in the repository.

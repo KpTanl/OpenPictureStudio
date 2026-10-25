@@ -127,7 +127,7 @@ def wait_for_studio(window, path, tool_id="color_adjust"):
         if studio is None:
             return False
         if studio.session is None:
-            if not studio._image_loading:
+            if studio._load_failed:
                 raise AssertionError(f"Studio 源准备失败：{studio._notice_load.text()}")
             return False
         identity = studio.core.source_identity(studio.session.core_id)

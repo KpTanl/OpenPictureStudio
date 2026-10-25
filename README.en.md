@@ -75,6 +75,8 @@ By default, the installed application checks GitHub for the latest regular relea
 
 Exit all running instances normally before upgrading, then close the installer before launching the application. The installer checks program files against its file manifest and preserves settings, custom data directories, models, and projects. If unknown files, user-replaced components, or directory conflicts are found, follow the prompts to back up and move the conflicting content. After an interrupted installation, rerun the full installer for the same version. Back up and resolve any truncated or modified files before continuing the repair.
 
+Early test builds may not have an installation manifest. If their program files remain, back up your data and uninstall the old build first. If the original installation directory has been removed or is completely empty, rerun the installer directly. When replacement is blocked, the installer shows the original directory.
+
 ### Option B: Run from Source
 
 Requires Python 3.12 or later; development and release builds use 3.13. Dependencies are grouped by feature, so you can install only what you need.

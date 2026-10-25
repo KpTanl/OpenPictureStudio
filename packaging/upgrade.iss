@@ -18,7 +18,7 @@ var
   OldLines, NewLines: TArrayOfString;
   OldVersion, NewManifestHash, RegisteredVersion, PreflightVersion, Uninstaller, ConfirmedDowngrade: String;
   MaintenanceHandle: THandle;
-  Repairing, Prepared, Completed: Boolean;
+  Repairing, Prepared, Completed, LegacyRegistrationOnly: Boolean;
   VerificationPage: TOutputProgressWizardPage;
   Verifying, VerificationCancelled: Boolean;
 
@@ -42,6 +42,8 @@ function MoveFileEx(Existing, Destination: String; Flags: LongWord): BOOL;
   external 'MoveFileExW@kernel32.dll stdcall';
 function GetFileAttributes(Name: String): LongWord;
   external 'GetFileAttributesW@kernel32.dll stdcall';
+function PathIsDirectoryEmpty(Name: String): BOOL;
+  external 'PathIsDirectoryEmptyW@shlwapi.dll stdcall';
 
 procedure Fail(Message: String);
 begin
@@ -352,10 +354,26 @@ begin
   finally FindClose(Item); end;
 end;
 
+procedure CheckLegacyDirectory;
+var Name: String; Attributes, Error: LongWord;
+begin
+  Name := ExpandConstant('{app}');
+  CheckPlain(Name);
+  Attributes := GetFileAttributes(Name);
+  if Attributes = $FFFFFFFF then begin
+    Error := DLLGetLastError;
+    if (Error = 2) or (Error = 3) then Exit;
+    Fail('Cannot inspect the old installation directory: ' + Name);
+  end;
+  if not PathIsDirectoryEmpty(Name) then
+    Fail('This older beta has no installation manifest. Back up your data, close the application, and uninstall it manually before installing. Old installation directory: ' + Name);
+end;
+
 procedure ReadBaseline;
 var Lines: TArrayOfString; I: Integer; Mode: String;
 begin
   SetArrayLength(OldLines, 0); SetArrayLength(OldFiles, 0); OldVersion := '';
+  LegacyRegistrationOnly := False;
   Repairing := FileExists(ExpandConstant('{app}\') + PendingName);
   Mode := 'user'; if IsAdminInstallMode then Mode := 'machine64';
   if Repairing then begin
@@ -374,8 +392,10 @@ begin
     if not LoadStringsFromFile(ExpandConstant('{app}\') + ManifestName, OldLines) then Fail('Cannot read the old installation manifest.');
     ReadManifest(OldLines, OldFiles, OldVersion);
     if (RegisteredVersion = '') or (RegisteredVersion <> OldVersion) then Fail('The installed version and manifest do not match.');
-  end else if RegisteredVersion <> '' then
-    Fail('This older beta has no installation manifest. Back up your data, close the application, and uninstall it manually before installing.');
+  end else if RegisteredVersion <> '' then begin
+    CheckLegacyDirectory;
+    LegacyRegistrationOnly := True;
+  end;
 end;
 
 procedure SkipSpace(Text: String; var Position: Integer);
@@ -540,6 +560,7 @@ begin
     if not Prepared then Fail('Installation preflight has not completed.');
     CheckApplication; ReadIdentity;
     if RegisteredVersion <> PreflightVersion then Fail('The installed version has changed. Restart this installer.');
+    if LegacyRegistrationOnly then CheckLegacyDirectory;
     CheckStorage; CheckTree('');
     if not ForceDirectories(ExpandConstant('{app}')) then Fail('Cannot create the program directory.');
     if not Repairing then begin

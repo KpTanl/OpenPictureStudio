@@ -115,10 +115,14 @@ local_settings.py
 # Phase 2 DCP↔RawTherapee 对拍 dump（大体积渲染产物，不入库）
 /dcp_dump/
 
-# 本地助手配置
+# 本地助手配置和内部方案
 .claude_models/
-/.claude/settings.local.json
-/.claude/scheduled_tasks.lock
+/.claude/
+/.codex/
+/.agents/
+/AGENTS.md
+/CLAUDE.md
+/docs/plans/
 
 # Rust build artifacts
 target/

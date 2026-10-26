@@ -534,7 +534,7 @@ QFrame#previewWell QScrollArea::viewport {{
 QPushButton#shortcutEdit {{
     background-color: {t["page"]};
     color: {t["text_primary"]};
-    border: 1px solid {t["track"]};
+    border: 1px solid {t["control_border"]};
     border-radius: {RADIUS_CONTROL};
     padding: 0 {SPACING_MD};
     font-family: {FONT_FAMILY_MONO};
@@ -557,6 +557,10 @@ QPushButton#shortcutEdit[state="recording"] {{
     background-color: {t["accent_soft"]};
     border-color: {t["accent"]};
     color: {t["accent"]};
+}}
+
+QPushButton#shortcutEdit:disabled {{
+    border-color: {t["track"]};
 }}
 
 QLabel#mutedText {{
@@ -585,7 +589,7 @@ QPushButton,
 QPushButton#appleButton {{
     background-color: transparent;
     color: {t["text_primary"]};
-    border: 1px solid {t["track"]};
+    border: 1px solid {t["control_border"]};
     border-radius: {RADIUS_CONTROL};
     padding: 0 {SPACING_MD};
     min-height: {CONTROL_INNER};
@@ -920,9 +924,21 @@ QListWidget,
 QTableWidget {{
     background-color: {t["page"]};
     color: {t["text_primary"]};
-    border: 1px solid {t["hairline"]};
     border-radius: {RADIUS_CONTROL};
     padding: {SPACING_XS} {SPACING_MD};
+}}
+
+QLineEdit,
+QSpinBox,
+QDoubleSpinBox,
+QComboBox {{
+    border: 1px solid {t["control_border"]};
+}}
+
+QTextEdit,
+QListWidget,
+QTableWidget {{
+    border: 1px solid {t["hairline"]};
 }}
 
 QLineEdit:focus,
@@ -931,6 +947,23 @@ QDoubleSpinBox:focus,
 QComboBox:focus,
 QTextEdit:focus {{
     border: 1px solid {t["accent"]};
+}}
+
+QLineEdit:disabled,
+QSpinBox:disabled,
+QDoubleSpinBox:disabled,
+QComboBox:disabled {{
+    border-color: {t["hairline"]};
+}}
+
+QTreeWidget#batchFieldList::indicator:unchecked {{
+    border: 1px solid {t["control_border"]};
+    border-radius: 4px;
+    background: transparent;
+}}
+
+QTreeWidget#batchFieldList::indicator:unchecked:hover {{
+    border-color: {t["text_caption"]};
 }}
 
 QLabel#parameterLabel {{
@@ -1118,7 +1151,7 @@ QMenu#appleMenu::separator {{
 QPushButton#appleDropDown {{
     background-color: {t["page"]};
     color: {t["text_primary"]};
-    border: 1px solid {t["hairline_solid"]};
+    border: 1px solid {t["control_border"]};
     border-radius: {RADIUS_CONTROL};
     padding: 0 28px 0 {SPACING_MD};
     text-align: left;
@@ -1180,7 +1213,7 @@ QPushButton#appleDropDown[flat="true"][open="true"] {{
 QSpinBox#appleStepper {{
     background-color: {t["page"]};
     color: {t["text_primary"]};
-    border: 1px solid {t["hairline_solid"]};
+    border: 1px solid {t["control_border"]};
     border-radius: {RADIUS_CONTROL};
     padding: 0 30px;
     font-weight: 600;
@@ -1198,6 +1231,7 @@ QSpinBox#appleStepper:focus {{
 QSpinBox#appleStepper:disabled {{
     background-color: {t["surface"]};
     color: {t["text_disabled"]};
+    border-color: {t["hairline_solid"]};
 }}
 
 QPushButton#stepperButton {{
@@ -1737,6 +1771,13 @@ QScrollBar::sub-line:horizontal {{
     height: 0px;
 }}
 
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical,
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {{
+    background: none;
+}}
+
 /* 进度条：显示文字时文字在条内；不显示文字时为细条，进度与占用共用 */
 QProgressBar {{
     border: none;
@@ -2028,12 +2069,16 @@ QLabel#aiContextText {{
 
 QFrame#aiComposer {{
     background: {t["page"]};
-    border: 1px solid {t["track"]};
+    border: 1px solid {t["control_border"]};
     border-radius: {RADIUS_PANEL};
 }}
 
 QFrame#aiComposer[focused="true"] {{
     border-color: {t["accent"]};
+}}
+
+QFrame#aiComposer:disabled {{
+    border-color: {t["track"]};
 }}
 
 QPlainTextEdit#aiInput {{

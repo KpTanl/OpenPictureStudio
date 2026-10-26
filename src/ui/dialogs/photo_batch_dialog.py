@@ -56,6 +56,7 @@ class PhotoBatchDialog(BaseDialog):
         presets.addWidget(self._save_range)
         layout.addLayout(presets)
         self._fields = QTreeWidget(self)
+        self._fields.setObjectName("batchFieldList")
         self._fields.setHeaderHidden(True)
         self._field_items = {}
         for field in COLOR_SYNC_FIELDS:

@@ -90,6 +90,7 @@ def _semantic(*, canvas, surface, page, control, well, segment_selected, hairlin
         "surface": surface,
         "page": page,
         "control": control,
+        "control_border": mix(track, text_caption, 0.5),
         "control_disabled": mix(surface, control, 0.25),
         "well": well,
         "segment_selected": segment_selected,

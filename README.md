@@ -26,6 +26,32 @@ OpenPictureStudio（OPS）是一款开源影像工作台，将照片浏览与筛
 
 ---
 
+## 文档导航
+
+| 文档 | 入口 |
+| --- | --- |
+| 使用说明 | [简体中文](README.md) · [English](README.en.md) |
+| 安装与源码运行 | [简体中文](#安装与运行) · [English](README.en.md#installation-and-running) |
+| 安装包构建 | [简体中文](#构建) · [English](README.en.md#building) |
+| 测试说明 | [简体中文](tests/README.md) · [English](tests/README.en.md) |
+| CI 与发布工作流 | [CI](.github/workflows/ci.yml) · [Release](.github/workflows/release.yml) · [共用构建环境](.github/actions/setup-build/action.yml) |
+| 项目许可证 | [MIT License](LICENSE) |
+
+<details>
+<summary>资源目录、依赖与第三方许可材料</summary>
+
+- 模型目录：[catalog.json](resources/models/catalog.json)。
+- 运行环境目录：[catalog.json](resources/runtimes/catalog.json)。
+- 补充许可与对应源码登记：[manifest.json](packaging/licenses/manifest.json)。
+- 随附声明：[FlatBuffers](packaging/licenses/flatbuffers/LICENSE) · [MediaPipe](packaging/licenses/mediapipe/MEDIAPIPE_THIRD_PARTY_NOTICES.txt) · [Qt](packaging/licenses/qt/QT_THIRD_PARTY_NOTICES.txt) · [MSVC 运行库](packaging/licenses/msvc-runtime/NOTICE.txt)。
+- 模型许可：[MediaPipe](resources/models/licenses/MEDIAPIPE.txt) · [NAFNet](resources/models/licenses/NAFNET.txt) · [Real-ESRGAN](resources/models/licenses/REAL_ESRGAN.txt) · [U2Net](resources/models/licenses/U2NET.txt) · [YuNet](resources/models/licenses/YUNET.txt)。
+- 界面图标：[来源](resources/icons/ui/SOURCE.txt) · [许可](resources/icons/ui/LICENSE.txt)。
+- 依赖清单：[requirements.txt](requirements.txt) · [requirements-ai.txt](requirements-ai.txt) · [requirements-beauty.txt](requirements-beauty.txt) · [requirements-dev.txt](requirements-dev.txt) · [requirements-build.txt](requirements-build.txt) · [requirements-build.lock.txt](requirements-build.lock.txt)。
+
+</details>
+
+---
+
 ## 主要能力
 
 ### 看图与选片
@@ -152,6 +178,14 @@ AI 修图助手使用你自己配置的服务：在“设置 → AI 服务”添
 pip install -r requirements-build.lock.txt
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
+
+### CI 与发布
+
+CI 以独立 job 依次执行代码检查与 Python 预编译、原生模块构建、测试、安装包构建。PR 执行到测试；`dev`／`main` 推送和手动运行继续打包。
+
+版本标签执行相同阶段，核对提交已进入 `main`、标签与 `APP_VERSION` 一致，再创建 Release 草稿。维护者手动完成最终发布。
+
+原生构建上传 `ops_accel.pyd`，测试和打包下载同一份产物；打包通过 `build.ps1 -SkipNativeBuild` 复用该模块，并准备 Cargo 依赖源码供许可收集。下游 job 按 producer 的 artifact ID 选择产物。
 
 ### 运行测试
 

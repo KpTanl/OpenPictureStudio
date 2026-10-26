@@ -2,7 +2,9 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-Tests track the current product contracts and run offscreen. Real windows, high DPI, actual resource installation, and installers also require manual checks.
+[Documentation](../README.en.md#documentation)
+
+The suite covers the interface, editing workflows, imaging, storage, models, and runtimes. Qt tests use offscreen mode by default.
 
 ## Running
 

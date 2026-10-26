@@ -26,6 +26,32 @@ OpenPictureStudio (OPS) is an open-source photo workspace that brings browsing a
 
 ---
 
+## Documentation
+
+| Document | Links |
+| --- | --- |
+| User guide | [简体中文](README.md) · [English](README.en.md) |
+| Installation and source setup | [简体中文](README.md#安装与运行) · [English](#installation-and-running) |
+| Installer builds | [简体中文](README.md#构建) · [English](#building) |
+| Tests | [简体中文](tests/README.md) · [English](tests/README.en.md) |
+| CI and release workflows | [CI](.github/workflows/ci.yml) · [Release](.github/workflows/release.yml) · [Shared environment](.github/actions/setup-build/action.yml) |
+| Project license | [MIT License](LICENSE) |
+
+<details>
+<summary>Resources, dependencies, and third-party licenses</summary>
+
+- Model catalog: [catalog.json](resources/models/catalog.json).
+- Runtime catalog: [catalog.json](resources/runtimes/catalog.json).
+- License supplements and corresponding source: [manifest.json](packaging/licenses/manifest.json).
+- Bundled notices: [FlatBuffers](packaging/licenses/flatbuffers/LICENSE) · [MediaPipe](packaging/licenses/mediapipe/MEDIAPIPE_THIRD_PARTY_NOTICES.txt) · [Qt](packaging/licenses/qt/QT_THIRD_PARTY_NOTICES.txt) · [MSVC runtime](packaging/licenses/msvc-runtime/NOTICE.txt).
+- Model licenses: [MediaPipe](resources/models/licenses/MEDIAPIPE.txt) · [NAFNet](resources/models/licenses/NAFNET.txt) · [Real-ESRGAN](resources/models/licenses/REAL_ESRGAN.txt) · [U2Net](resources/models/licenses/U2NET.txt) · [YuNet](resources/models/licenses/YUNET.txt).
+- Interface icons: [Source](resources/icons/ui/SOURCE.txt) · [License](resources/icons/ui/LICENSE.txt).
+- Dependency lists: [requirements.txt](requirements.txt) · [requirements-ai.txt](requirements-ai.txt) · [requirements-beauty.txt](requirements-beauty.txt) · [requirements-dev.txt](requirements-dev.txt) · [requirements-build.txt](requirements-build.txt) · [requirements-build.lock.txt](requirements-build.lock.txt).
+
+</details>
+
+---
+
 ## Features
 
 ### Browsing and Culling
@@ -152,6 +178,14 @@ Requires Inno Setup, the Rust toolchain, and the full application, AI, portrait 
 pip install -r requirements-build.lock.txt
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
+
+### CI and Releases
+
+CI runs code checks and Python compilation, builds the native module, runs the test suite, and packages the installer as separate jobs. Pull requests run through testing; pushes to `dev`/`main` and manual runs also package the installer.
+
+Release tags run the same stages, verify that the commit belongs to `main` and that the tag matches `APP_VERSION`, then create a draft Release. A maintainer publishes the Release manually.
+
+The native build uploads `ops_accel.pyd`. Testing and packaging download the same artifact; packaging uses `build.ps1 -SkipNativeBuild` and prepares Cargo dependency sources for license collection. Each downstream job selects the producer's artifact ID.
 
 ### Run Tests
 

@@ -167,9 +167,9 @@ def test_shadow_black_lift_is_hue_safe_no_worm_artifact():
 
 # --------------------------------------------------------- 不发灰：detail 加回保微对比
 def test_shadow_lift_preserves_microcontrast_not_flattened():
-    """阴影提亮后微对比不塌（detail 原样加回）。注意：本图最暗 ≈0.015 并非
-    绝对黑（L=0），区间 shadows 提其暗部细节是**正确**行为；绝对黑锚定由
-    test_shadows_lift_anchors_absolute_black / *_on_ramp 专测，此处只验不发灰。
+    """阴影提亮保留原有微对比（detail 原样加回）。本图最暗约为 0.015，
+    区间 shadows 提亮暗部细节；绝对黑锚定由
+    test_shadows_lift_anchors_absolute_black / *_on_ramp 覆盖。
     """
     rng = np.random.default_rng(5)
     h, w = 96, 96

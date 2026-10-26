@@ -10,8 +10,8 @@
        user_wb 全 1（WB 留 DCP 矩阵链一次性施加）。
      共有：gamma=(1,1)、no_auto_bright=True、16-bit（预览仅 8-bit/half）。
   2. **默认路 RT 对拍 dumper**（需本机环境）：导出默认 E1 解码 +
-     元数据，供与 RawTherapee「同条件」对拍——这是**默认路自己的比色
-     sign-off**，DCP 路的对拍结果不能代替它。
+     元数据，供与 RawTherapee「同条件」对拍。默认 E1 与 DCP 两条路径
+     分别生成比色验收资料。
      无 fixture 时 skip 并打印手动步骤。
 
 设置 fixture：环境变量 OPS_RAW_FIXTURE 指向一个 RAW 文件，或放

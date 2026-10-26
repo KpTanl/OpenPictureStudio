@@ -365,7 +365,7 @@ class EnhancementExecutor:
 
     @staticmethod
     def _upscale_whole(source, rgb, model, final_plan, cancelled, sampling):
-        """先得到完整的放大结果再缩放到输出尺寸；用于分带无法保证与它逐位相同的情形。"""
+        """先得到完整的放大结果，再按完整域结果计算目标尺寸输出。"""
         rgb = model.run(rgb, cancelled)
         size = (rgb.shape[1], rgb.shape[0])
         alpha = None

@@ -8,10 +8,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil
 from typing import Callable, Optional, Sequence
 
 from PyQt6.QtCore import QPoint, QRect, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QFont, QFontMetrics, QIcon, QPainter, QPaintEvent
+from PyQt6.QtGui import QAction, QFont, QFontMetricsF, QIcon, QPainter, QPaintEvent
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QSizePolicy, QWidget
 
 from resources.styles.theme_variables import (CONTROL_HEIGHT_COMPACT, FONT_SIZE_BODY, SPACING_MD, SPACING_SM,
@@ -90,10 +91,11 @@ class _Title(QWidget):
     def _detail_width(self) -> int:
         if not self._detail:
             return 0
-        return QFontMetrics(self._fonts()[1]).horizontalAdvance(self._detail) + px(SPACING_MD)
+        return ceil(QFontMetricsF(self._fonts()[1], self).horizontalAdvance(self._detail)) + px(SPACING_MD)
 
     def sizeHint(self) -> QSize:
-        return QSize(QFontMetrics(self._fonts()[0]).horizontalAdvance(self._name) + self._detail_width(),
+        self.ensurePolished()
+        return QSize(ceil(QFontMetricsF(self._fonts()[0], self).horizontalAdvance(self._name)) + self._detail_width(),
                      px(FONT_SIZE_BODY) * 2)
 
     def paintEvent(self, event: QPaintEvent) -> None:
@@ -104,12 +106,14 @@ class _Title(QWidget):
         name_width = max(0, self.width() - self._detail_width())
         painter.setFont(bold)
         painter.setPen(to_qcolor(tokens["text_primary"]))
-        metrics = painter.fontMetrics()
-        name = metrics.elidedText(self._name, Qt.TextElideMode.ElideMiddle, name_width)
+        metrics = QFontMetricsF(bold, self)
+        name = self._name
+        if metrics.horizontalAdvance(name) > name_width:
+            name = metrics.elidedText(name, Qt.TextElideMode.ElideMiddle, name_width)
         painter.drawText(QRect(0, 0, name_width, self.height()),
                          Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, name)
         if self._detail:
-            left = min(name_width, metrics.horizontalAdvance(name)) + px(SPACING_MD)
+            left = min(name_width, ceil(metrics.horizontalAdvance(name))) + px(SPACING_MD)
             painter.setFont(regular)
             painter.setPen(to_qcolor(tokens["text_secondary"]))
             painter.drawText(QRect(left, 0, max(0, self.width() - left), self.height()),

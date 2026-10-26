@@ -7,10 +7,10 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image  # noqa: E402
-from PyQt6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl  # noqa: E402
+from PyQt6.QtCore import QMimeData, QPoint, Qt, QUrl  # noqa: E402
 from PyQt6.QtGui import QDragEnterEvent, QDragLeaveEvent, QPalette  # noqa: E402
 from PyQt6.QtTest import QTest  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QWidget  # noqa: E402
+from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 from src.i18n import TranslationService, get_translation_service, set_translation_service  # noqa: E402
 from src.ui.theme import ThemeManager, get_theme_tokens, to_qcolor  # noqa: E402
@@ -123,16 +123,16 @@ def test_drop_target_takes_its_colors_from_the_theme(theme, name):
     card = empty._card.geometry()
     assert image.pixelColor(4, 4) == to_qcolor(tokens["canvas"])
     inside = QPoint(card.left() + 12, card.top() + 12)
-    assert image.pixelColor(inside) == to_qcolor(tokens["surface"])
+    assert image.pixelColor(inside) == to_qcolor(tokens["canvas"])
 
     assert not empty.is_drag_active()
     empty.set_drag_active(True)
     QApplication.processEvents()
     assert empty.is_drag_active()
-    assert empty.grab().toImage().pixelColor(inside) != to_qcolor(tokens["surface"])
+    assert empty.grab().toImage().pixelColor(inside) == to_qcolor(tokens["canvas"])
     empty.set_drag_active(False)
     QApplication.processEvents()
-    assert empty.grab().toImage().pixelColor(inside) == to_qcolor(tokens["surface"])
+    assert empty.grab().toImage().pixelColor(inside) == to_qcolor(tokens["canvas"])
     empty.close()
 
 
@@ -174,7 +174,7 @@ def test_viewer_without_an_image_shows_the_guide_instead_of_canvas_and_filmstrip
         assert empty.action_button("open_file").text() == "Open Images"
         language.set_language("zh-CN")
 
-        # 拖到窗口上方时引导框加重，离开后恢复
+        # 拖入与离开时更新拖放状态
         path = str(tmp_path / "photo.png")
         Image.new("RGB", (400, 300), (60, 120, 180)).save(path)
         mime = QMimeData()

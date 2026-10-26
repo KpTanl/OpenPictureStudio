@@ -890,25 +890,9 @@ QLabel#noticeBarText {{
     color: {t["text_primary"]};
 }}
 
-/* 空状态：居中的图标、一句话与操作；接受拖放的那一种带虚线框 */
+/* 空状态：居中的图标、一句话与操作 */
 QWidget#emptyState[onCanvas="true"] {{
     background-color: {t["canvas"]};
-}}
-
-QFrame#emptyStateCard {{
-    background-color: transparent;
-    border: none;
-}}
-
-QFrame#emptyStateCard[dropTarget="true"] {{
-    background-color: {t["surface"]};
-    border: 1px dashed {t["text_caption"]};
-    border-radius: {RADIUS_PANEL};
-}}
-
-QFrame#emptyStateCard[dropTarget="true"][dragActive="true"] {{
-    background-color: {t["accent_soft"]};
-    border-color: {t["accent"]};
 }}
 
 QLabel#emptyStateTitle {{

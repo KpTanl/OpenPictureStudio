@@ -1,8 +1,8 @@
 """空状态：一块区域里还没有内容时，居中显示图标、一句话、可选的说明和一到两个操作。
 
-操作以键声明，点按钮只发出 ``action_triggered``；文字由使用方给出。``drop_target`` 表示这块区域接受拖放，
-外观是虚线框，使用方在有东西拖到上方时调用 ``set_drag_active()``；``on_canvas`` 表示它占的是画布的位置，
-铺画布底色。外观在全局样式表里，图标在绘制时读取当前主题。
+操作以键声明，点按钮只发出 ``action_triggered``；文字由使用方给出。``drop_target`` 为拖放区域预留留白，
+使用方通过 ``set_drag_active()`` 记录拖放状态；``on_canvas`` 表示它占的是画布的位置，铺画布底色。
+文字外观在全局样式表里，图标在绘制时读取当前主题。
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from typing import Optional, Sequence
 
 from PyQt6.QtCore import QRect, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QPainter, QPaintEvent
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_LG, SPACING_MD, SPACING_SM, SPACING_XL, SPACING_XS, px
 from ..icons import themed_icon
@@ -55,9 +55,7 @@ class EmptyState(QWidget):
         self.setProperty("onCanvas", on_canvas)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
-        self._card = QFrame(self)
-        self._card.setObjectName("emptyStateCard")
-        self._card.setProperty("dropTarget", drop_target)
+        self._card = QWidget(self)
         self._card.setProperty("dragActive", False)
         horizontal, vertical = (3 * px(SPACING_XL), 2 * px(SPACING_XL)) if drop_target else (0, 0)
         self._card.setMaximumWidth(_TEXT_WIDTH + 2 * horizontal)
@@ -127,9 +125,7 @@ class EmptyState(QWidget):
         return bool(self._card.property("dragActive"))
 
     def set_drag_active(self, active: bool) -> None:
-        """有东西拖到这块区域上方时加重边框；只对接受拖放的空状态有外观变化。"""
+        """记录这块区域是否处于拖入状态。"""
         if bool(active) == self.is_drag_active():
             return
         self._card.setProperty("dragActive", bool(active))
-        self._card.style().unpolish(self._card)
-        self._card.style().polish(self._card)

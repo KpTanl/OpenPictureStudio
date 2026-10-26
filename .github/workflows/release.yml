@@ -7,46 +7,93 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONUTF8: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYO3_PYTHON: ${{ github.workspace }}/.venv/Scripts/python.exe
+
 jobs:
-  installer:
+  check:
+    name: Checks and Python compilation
     if: github.repository == 'KpTanl/OpenPictureStudio'
     runs-on: windows-latest
-    timeout-minutes: 120
-    permissions:
-      contents: write
-    env:
-      PYTHONUTF8: "1"
-      PYTHONDONTWRITEBYTECODE: "1"
-      PYO3_PYTHON: ${{ github.workspace }}/.venv/Scripts/python.exe
+    timeout-minutes: 20
+    outputs:
+      app-version: ${{ steps.version.outputs.app-version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
       - name: Check release commit on main
         run: |
           git merge-base --is-ancestor HEAD origin/main
           if ($LASTEXITCODE -ne 0) { throw "Release tag must point to a commit on main" }
-
       - name: Check tag against APP_VERSION
+        id: version
         run: |
           $match = Select-String -Path src/utils/app_info.py -Pattern 'APP_VERSION\s*=\s*"([^"]+)"'
           $version = $match.Matches[0].Groups[1].Value
           if ("v$version" -ne $env:GITHUB_REF_NAME) { throw "Tag $env:GITHUB_REF_NAME does not match APP_VERSION $version" }
-          Add-Content -Path $env:GITHUB_ENV -Value "APP_VERSION=$version"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "app-version=$version"
+      - uses: ./.github/actions/setup-build
+      - name: Check build environment
+        run: .venv\Scripts\python.exe -B tools/check_build_env.py
+      - name: Check Python code
+        run: .venv\Scripts\python.exe -m flake8 src resources tests tools main.py conftest.py --select=F821,F822,F823
+      - name: Compile Python modules
+        run: .venv\Scripts\python.exe -X pycache_prefix=.pytest-tmp/pycache -m compileall -q src resources tests tools main.py conftest.py
 
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.13"
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+  native:
+    name: Native build
+    needs: check
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-build
+      - name: Cache Rust dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             native/ops_accel/target
           key: cargo-${{ runner.os }}-${{ hashFiles('native/ops_accel/Cargo.lock') }}
+      - name: Build native module
+        working-directory: native/ops_accel
+        run: |
+          cargo build --release --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item target/release/ops_accel.dll ../../ops_accel.pyd
+      - name: Upload native module
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-module-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ops_accel.pyd
+          if-no-files-found: error
+          retention-days: 7
 
+  test:
+    name: Tests
+    needs: native
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-build
+      - name: Download native module
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          artifact-ids: ${{ needs.native.outputs.artifact-id }}
+          merge-multiple: true
+          path: .
       - name: Cache test assets
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -54,53 +101,51 @@ jobs:
             models/*.onnx
             .pytest-tmp/fixtures
           key: ci-assets-${{ hashFiles('resources/models/catalog.json', 'tests/fixtures/ci_assets.json') }}
-
-      - name: Create build environment
-        run: |
-          python -m venv .venv
-          .venv\Scripts\python.exe -m pip install -r requirements-build.lock.txt
-
-      - name: Check dependencies
-        run: .venv\Scripts\python.exe -m pip check
-
       - name: Prepare test assets
         run: .venv\Scripts\python.exe tools/prepare_ci_assets.py
-
-      - name: Check Python code
-        run: .venv\Scripts\python.exe -m flake8 src resources tests tools main.py conftest.py --select=F821,F822,F823
-
-      - name: Compile Python modules
-        run: .venv\Scripts\python.exe -X pycache_prefix=.pytest-tmp/pycache -m compileall -q src resources tests tools main.py conftest.py
-
-      - name: Build native module
-        working-directory: native/ops_accel
-        run: |
-          cargo build --release --locked
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Copy-Item target/release/ops_accel.dll ../../ops_accel.pyd
-
-      - name: Check build environment
-        run: .venv\Scripts\python.exe -B tools/check_build_env.py
-
       - name: Test
         run: .venv\Scripts\python.exe -m pytest tests -q -p no:cacheprovider -rfE -o faulthandler_timeout=300 --junitxml=.pytest-tmp/junit.xml
-
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: test-results-${{ github.ref_name }}
+          name: test-results-${{ github.run_attempt }}
           path: .pytest-tmp/junit.xml
           if-no-files-found: ignore
           retention-days: 7
 
+  package:
+    name: Package and checksums
+    needs: [native, test]
+    runs-on: windows-latest
+    timeout-minutes: 45
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-build
+      - name: Download native module
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          artifact-ids: ${{ needs.native.outputs.artifact-id }}
+          merge-multiple: true
+          path: .
+      - name: Cache Rust dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/ops_accel/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('native/ops_accel/Cargo.lock') }}
+      - name: Prepare Rust license sources
+        working-directory: native/ops_accel
+        run: cargo fetch --locked --target x86_64-pc-windows-msvc
       - name: Install Inno Setup
         run: |
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup --no-progress -y }
-
       - name: Build installer
-        run: ./build.ps1
-
+        run: ./build.ps1 -SkipNativeBuild
       - name: Verify installer checksum
         run: |
           $installers = @(Get-ChildItem dist/installer -Filter '*-setup.exe' -File)
@@ -109,19 +154,55 @@ jobs:
           $expected = ((Get-Content -LiteralPath "$($installer.FullName).sha256" -Raw) -split '\s+')[0]
           $actual = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $expected) { throw "Installer checksum mismatch" }
-
       - name: Upload installer
+        id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: installer-${{ github.ref_name }}
+          name: installer-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             dist/installer/*.exe
             dist/installer/*.sha256
           if-no-files-found: error
+          retention-days: 7
 
+  draft:
+    name: Draft release
+    needs: [check, package]
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download installer
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact-id }}
+          merge-multiple: true
+          path: dist/installer
+      - name: Verify installer checksum
+        run: |
+          $installers = @(Get-ChildItem dist/installer -Filter '*-setup.exe' -File)
+          if ($installers.Count -ne 1) { throw "Expected one installer" }
+          $installer = $installers[0]
+          $expected = ((Get-Content -LiteralPath "$($installer.FullName).sha256" -Raw) -split '\s+')[0]
+          $actual = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Installer checksum mismatch" }
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ needs.check.outputs.app-version }}
         run: |
           $files = (Get-ChildItem dist/installer -File).FullName
-          gh release create $env:GITHUB_REF_NAME $files --draft --verify-tag --title "OpenPictureStudio $env:APP_VERSION Beta" --notes "Draft created by the release workflow. Replace these notes and complete the installer acceptance before publishing; publish as a regular release, not a pre-release."
+          $repositoryUrl = "https://github.com/$env:GITHUB_REPOSITORY"
+          $notes = @"
+          ## 简体中文
+          OpenPictureStudio $env:APP_VERSION Beta。
+          [使用说明]($repositoryUrl/blob/$env:GITHUB_REF_NAME/README.md)
+
+          ## English
+          OpenPictureStudio $env:APP_VERSION Beta.
+          [User guide]($repositoryUrl/blob/$env:GITHUB_REF_NAME/README.en.md)
+          "@
+          $notesPath = Join-Path $env:RUNNER_TEMP 'ops-release-notes.md'
+          [IO.File]::WriteAllText($notesPath, $notes, [Text.UTF8Encoding]::new($false))
+          gh release create $env:GITHUB_REF_NAME $files --repo $env:GITHUB_REPOSITORY --draft --verify-tag --title "OpenPictureStudio $env:APP_VERSION Beta" --notes-file $notesPath

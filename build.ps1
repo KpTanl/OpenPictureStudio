@@ -20,6 +20,8 @@
     scripts with the system ANSI codepage, so non-ASCII text here breaks parsing.
 #>
 
+param([switch]$SkipNativeBuild)
+
 $ErrorActionPreference = "Stop"
 $RepoRoot = $PSScriptRoot
 Set-Location $RepoRoot
@@ -87,7 +89,10 @@ foreach ($dir in @("build", "dist")) {
 
 # --- 5.1 Build native Rust acceleration extension (ops_accel) --------------
 $CargoToml = Join-Path $RepoRoot "native\ops_accel\Cargo.toml"
-if (Test-Path $CargoToml) {
+if ($SkipNativeBuild) {
+    $PydPath = Join-Path $RepoRoot "ops_accel.pyd"
+    if (-not (Test-Path -LiteralPath $PydPath)) { throw "Native extension not found: $PydPath" }
+} elseif (Test-Path $CargoToml) {
     Write-Step "Building native Rust acceleration module (ops_accel)..."
     Push-Location (Join-Path $RepoRoot "native\ops_accel")
     try {

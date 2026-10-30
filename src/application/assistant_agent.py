@@ -565,6 +565,14 @@ class AssistantAgentRuntime:
             progress(result)
         return result
 
+    async def _query_provider(self, name, values):
+        run, service = self.run, self.service
+        version = run.goal_version
+        if service.batch_provider is None:
+            raise ValueError("AI_TOOL_UNAVAILABLE")
+        return await service.batch_provider(name, values, run.batch_context,
+            is_cancelled=lambda: run.cancelled.is_set() or run.goal_version != version, progress=lambda _result: None)
+
     async def _execute(self, name, values, *, call_id=None):
         run, job, service = self.run, self.job, self.service
         tool = AGENT_TOOLS[name]
@@ -574,28 +582,11 @@ class AssistantAgentRuntime:
         from .photo_calibration import CALIBRATION_TOOLS
         from .photo_library import LIBRARY_TOOLS
         if name in LIBRARY_TOOLS:
-            version = run.goal_version
-            if service.batch_provider is None:
-                raise ValueError("AI_TOOL_UNAVAILABLE")
-            result = await service.batch_provider(name, {**values, "request": run.id + ":" + (call_id or name)}, run.batch_context,
-                is_cancelled=lambda: run.cancelled.is_set() or run.goal_version != version, progress=lambda _result: None)
-            return result, []
-        if name in CALIBRATION_TOOLS:
-            if name == "apply_photo_calibration":
-                return await self._batch_command(name, values), []
-            version = run.goal_version
-            if service.batch_provider is None:
-                raise ValueError("AI_TOOL_UNAVAILABLE")
-            result = await service.batch_provider(name, values, run.batch_context,
-                is_cancelled=lambda: run.cancelled.is_set() or run.goal_version != version, progress=lambda _result: None)
-            return result, []
-        if name in BROWSER_TOOLS:
-            version = run.goal_version
-            if service.batch_provider is None:
-                raise ValueError("AI_TOOL_UNAVAILABLE")
-            result = await service.batch_provider(name, values, run.batch_context,
-                is_cancelled=lambda: run.cancelled.is_set() or run.goal_version != version, progress=lambda _result: None)
-            return result, []
+            return await self._query_provider(name, {**values, "request": run.id + ":" + (call_id or name)}), []
+        if name == "apply_photo_calibration":
+            return await self._batch_command(name, values), []
+        if name in CALIBRATION_TOOLS or name in BROWSER_TOOLS:
+            return await self._query_provider(name, values), []
         if name in ("get_export_context", "enqueue_exports", "get_export_status", "control_exports", "get_export_history", "verify_export", "repair_export_record"):
             return await self._export_command(name, values), []
         if name == "view_batch_photo":
@@ -654,7 +645,7 @@ class AssistantAgentRuntime:
             return await self._view_photo(values)
         if name in ("analyze_photo", "compare_reference"):
             selection = job["preferences"]["context"]
-            if name in ("analyze_photo", "compare_reference") and not selection.get("analysis", True):
+            if not selection.get("analysis", True):
                 raise ValueError("AI_ANALYSIS_DISABLED")
             if name == "compare_reference" and not run.reference:
                 raise ValueError("AI_REFERENCE_REQUIRED")
@@ -662,7 +653,7 @@ class AssistantAgentRuntime:
             if service.material_provider is None:
                 raise ValueError("AI_IMAGE_UNAVAILABLE")
             materials = await service.material_provider(run.photo, {
-                "image_source": source, "analysis": name != "view_photo",
+                "image_source": source, "analysis": True,
                 "faces": not run.photo.tools.get("beauty", "disabled"), "baseline": False}, job["cancel_event"])
             if not run.active:
                 raise ValueError("AI_CANCELLED")
@@ -670,13 +661,12 @@ class AssistantAgentRuntime:
                 raise ValueError("AI_AGENT_REDIRECT")
             run.faces = materials.get("faces")
             run.regions = tuple(materials.get("regions", ()))
-            images = []
             self._message()["analysis"] = materials.get("analysis") or self._message().get("analysis")
             if name == "compare_reference":
                 return {"comparison": reference_difference(materials["analysis"], run.reference["analysis"]),
                         "goal_version": run.goal_version}, []
             return {"revision": run.photo.revision_id, "source": source,
-                    "analysis": analysis_summary(materials.get("analysis")), "faces": run.faces, "image_count": len(images)}, images
+                    "analysis": analysis_summary(materials.get("analysis")), "faces": run.faces, "image_count": 0}, []
         group = "color" if name == "adjust_color" else "beauty"
         # 只拦本任务自己在等用户选择的那一组；更早任务留下的组在编辑器一变时自然失效，不挡新的直接调整
         if any(pair["status"] in ("pending", "restored") and pair["run_id"] == run.id

@@ -378,7 +378,10 @@ class ToolRuntime:
 
     def descriptors(self):
         with self._lock:
-            return self._catalog.descriptors()
+            descriptors = self._catalog.descriptors()
+            registered = {item.tool_id for item in descriptors}
+            return (*descriptors, *(item.descriptor for item in self._resource_definitions
+                                   if item.descriptor.tool_id not in registered))
 
     def resource_status(self, workflow=None, requests: tuple[ToolParameterRequest, ...] = ()):
         with self._lock:
@@ -914,7 +917,7 @@ class ToolRuntime:
         with self._lock:
             if self._closed:
                 return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
-            if tool_id not in {item.tool_id for item in self._catalog.descriptors()}:
+            if tool_id not in {item.tool_id for item in self.descriptors()}:
                 return CoreResult.fail(ErrorCode.TOOL_MISSING, "error.tool.missing", details={"tool_id": tool_id})
             if tool_id in self._disabled:
                 return CoreResult.fail(ErrorCode.TOOL_DISABLED, "error.tool.disabled", details={"tool_id": tool_id})
@@ -1023,7 +1026,7 @@ class ToolRuntime:
         if type(enabled) is not bool:
             return CoreResult.fail(ErrorCode.INVALID_INPUT, "error.param.type")
         with self._lock:
-            if tool_id not in {item.tool_id for item in self._catalog.descriptors()}:
+            if tool_id not in {item.tool_id for item in self.descriptors()}:
                 return CoreResult.fail(ErrorCode.TOOL_MISSING, "error.tool.missing", details={"tool_id": tool_id})
             if not enabled and not self._catalog.can_disable(tool_id):
                 return CoreResult.fail(ErrorCode.TOOL_INCOMPATIBLE, "error.tool.required", details={"tool_id": tool_id})
@@ -1041,7 +1044,7 @@ class ToolRuntime:
         """Return the current tool availability without exposing runtime internals."""
         with self._lock:
             disabled = frozenset(self._disabled)
-            descriptors = tuple(self._catalog.descriptors())
+            descriptors = self.descriptors()
             switchable = {item.tool_id: self._catalog.can_disable(item.tool_id) for item in descriptors}
         return tuple({
             "tool_id": descriptor.tool_id,

@@ -113,7 +113,7 @@ def test_panel_shows_headline_quad_and_three_groups(sidebar, tmp_path):
                 "metering_mode": "多区域测光", "white_balance": "自动", "flash": "未触发",
                 "camera_make": "NIKON CORPORATION", "camera_model": "NIKON Z 50", "lens_make": "未记录",
                 "lens_model": "NIKKOR Z DX 16-50mm f/3.5-6.3 VR", "dimensions": "5568 × 3712",
-                "size_bytes": "24.60 MB", "file_format": "JPEG", "color_info": "sRGB", "path": path}
+                "size_bytes": "24.6 MB", "file_format": "JPEG", "color_info": "sRGB", "path": path}
     assert {name: panel._values[name].text() for name in expected} == expected
     assert set(panel._values) == set(expected) | {"shutter", "aperture", "iso", "focal_length"}
     assert panel._values["size_bytes"].toolTip() == "25,800,000 字节"

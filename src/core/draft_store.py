@@ -49,9 +49,6 @@ class DraftStore:
     def has_pending(self, image_path: str) -> bool:
         return bool(self._drafts.get(image_path))
 
-    def tools_for(self, image_path: str) -> list[str]:
-        return list(self._drafts.get(image_path, {}).keys())
-
     def for_image(self, image_path: str) -> Dict[str, Dict[str, Any]]:
         return copy.deepcopy(self._drafts.get(image_path, {}))
 

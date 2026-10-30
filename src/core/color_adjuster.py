@@ -7,16 +7,14 @@
 
 from __future__ import annotations
 
-import json
 import math
 import logging
-from pathlib import Path
 from typing import Dict, Tuple
 
 import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageChops
 
-from ..utils.user_paths import environment_value, home_root
+from ..utils.user_paths import environment_value
 from .photo_engine import apply_chain_v2
 
 # 直方图统计的取样规模：图像像素数超过它时按等间隔取样
@@ -1113,89 +1111,3 @@ class FilterPreset:
     def preset_names(cls) -> list[str]:
         """返回所有预设名称列表。"""
         return list(cls.PRESETS.keys())
-
-
-class UserPresetManager:
-    """管理用户自定义滤镜预设。"""
-
-    _PRESETS_DIR: Path = home_root() / "presets"
-
-    @classmethod
-    def _ensure_dir(cls) -> Path:
-        """确保预设目录存在。"""
-        cls._PRESETS_DIR.mkdir(parents=True, exist_ok=True)
-        return cls._PRESETS_DIR
-
-    @classmethod
-    def save(cls, name: str, params: dict) -> None:
-        """保存用户预设到 JSON 文件。"""
-        preset_dir = cls._ensure_dir()
-        safe_name = cls._sanitize_name(name)
-        path = preset_dir / f"{safe_name}.json"
-        data = {"name": name, "params": params.copy()}
-        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-        logger.info("User preset saved: %s", path)
-
-    @classmethod
-    def load(cls, name: str) -> dict | None:
-        """加载用户预设，返回参数字典。"""
-        preset_dir = cls._ensure_dir()
-        safe_name = cls._sanitize_name(name)
-        path = preset_dir / f"{safe_name}.json"
-        if not path.exists():
-            return None
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            return data.get("params", {})
-        except Exception:
-            logger.exception("Failed to load user preset: %s", path)
-            return None
-
-    @classmethod
-    def list_all(cls) -> list[str]:
-        """返回所有用户预设名称列表。"""
-        preset_dir = cls._ensure_dir()
-        names = []
-        for f in sorted(preset_dir.glob("*.json")):
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-                names.append(data.get("name", f.stem))
-            except Exception:
-                names.append(f.stem)
-        return names
-
-    @classmethod
-    def delete(cls, name: str) -> bool:
-        """删除用户预设。"""
-        preset_dir = cls._ensure_dir()
-        safe_name = cls._sanitize_name(name)
-        path = preset_dir / f"{safe_name}.json"
-        if path.exists():
-            path.unlink()
-            logger.info("User preset deleted: %s", path)
-            return True
-        return False
-
-    @classmethod
-    def rename(cls, old_name: str, new_name: str) -> bool:
-        """重命名用户预设。"""
-        params = cls.load(old_name)
-        if params is None:
-            return False
-        cls.delete(old_name)
-        cls.save(new_name, params)
-        return True
-
-    @classmethod
-    def exists(cls, name: str) -> bool:
-        """检查预设是否存在。"""
-        preset_dir = cls._ensure_dir()
-        safe_name = cls._sanitize_name(name)
-        return (preset_dir / f"{safe_name}.json").exists()
-
-    @staticmethod
-    def _sanitize_name(name: str) -> str:
-        """将预设名称转为安全的文件名。"""
-        import re
-        safe = re.sub(r'[<>:"/\\|?*]', '_', name.strip())
-        return safe if safe else "unnamed"

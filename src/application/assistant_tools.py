@@ -544,10 +544,6 @@ def grouped(adjustments: Mapping) -> dict:
     return {"color": dict(adjustments)} if adjustments else {}
 
 
-def change_count(adjustments: Mapping) -> int:
-    return sum(len(values) for values in grouped(adjustments).values())
-
-
 def instructions(available: tuple[str, ...], unavailable: Mapping[str, str], *, review: bool) -> str:
     shape = ", ".join(f'"{tool}":{{...}}' for tool in available)
     text = ('Return only a JSON object {"summary":"brief description",' + ('"done":false,' if review else "")

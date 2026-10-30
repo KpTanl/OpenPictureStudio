@@ -145,9 +145,6 @@ class CoreAPI:
     def sampling_capability(self, workflow, request):
         return self.tools.sampling_capability(workflow, request)
 
-    def set_tool_enabled(self, tool_id, enabled):
-        return self.tools.set_enabled(tool_id, enabled)
-
     def list_tools(self):
         return self.tools.list_status()
 
@@ -1686,20 +1683,6 @@ class CoreAPI:
             if captured.paths != current.paths or captured.directories != current.directories:
                 raise CancelledError()
             yield protection.allows(target)
-
-    def capture_export_snapshot(self, session_id, *, expected_state=None, protected_paths=(), protection=None):
-        with self._lock:
-            session = self._sessions.get(session_id)
-            if session is None:
-                raise ValueError("error.session.not_found")
-            if expected_state is not None and session.state_version != expected_state:
-                raise ValueError("error.agent.stale_candidate")
-            path, source_hash = session.active_source.path, session.active_source.file_hash
-            workflow = copy.deepcopy(session.draft_workflow)
-            generation = self.tools.generation
-            protection = protection or self.capture_export_protection(protected_paths)
-        return self.capture_export_workflow(path, workflow, source_hash=source_hash,
-            expected_tools=generation, protection=protection)
 
     @synchronized
     def capture_export_protection(self, protected_paths=()):

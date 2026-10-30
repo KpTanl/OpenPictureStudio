@@ -11,7 +11,7 @@ from PIL import Image
 
 from .output_writer import OperationCancellation, OutputWriter
 from .services import ExportRequest, ExportService
-from ..core.photo_engine import _src_from_pil, load_render_source, render_source, save_render_source, encode_render_source
+from ..core.photo_engine import _src_from_pil, load_render_source, save_render_source, encode_render_source
 from ..core.render_codec import validate_output, validate_source
 from ..core.image_resize import RESIZE_MODES, ResizeOptions, plan_resize, apply_resize, resize_memory
 from ..core.constants import RAW_EXTENSIONS, IMAGE_QUALITY_RANGE
@@ -241,35 +241,6 @@ class ImageOutputService:
             if source_stamp(source_path) != stamp:
                 raise SourceChangedError()
             return best
-
-    def render_color(self, source_path, params, target_path, *, source_service=None, cancellation=None, **options):
-        from ..core.tools.color import color_engine_contract, migrate_legacy_color
-        migrated = migrate_legacy_color(params)
-        contract = color_engine_contract(migrated)
-        checked = contract.normalize(migrated, contract.version)
-        if not checked.success:
-            raise ValueError(checked.error.message_key)
-        params = checked.data
-        cancellation = cancellation or OperationCancellation()
-        with self.writer.reserve(target_path) as reservation:
-            cancelled = lambda: cancellation.is_cancelled() or not self.writer.is_current(reservation)
-            if source_service is None:
-                with self._compute(cancellation, cancelled) as compute:
-                    source = load_render_source(str(source_path), for_preview=False,
-                                                threads=compute.threads if compute is not None else 1)
-                    if cancelled():
-                        raise InterruptedError("error.cancelled")
-                    return self._save(render_source(source, params,
-                                      threads=compute.threads if compute is not None else None), target_path,
-                                      cancellation=cancellation, reservation=reservation, **options)
-            try:
-                with source_service.borrow_linear(source_path, is_cancelled=cancelled, priority=1) as lease:
-                    with source_service.resources.working_memory(lease.value.pixels.nbytes * 4, cancelled):
-                        with source_service.compute.borrow(cancelled, priority=1) as compute:
-                            return self._save(render_source(lease.value, params, threads=compute.threads), target_path,
-                                              cancellation=cancellation, reservation=reservation, **options)
-            except CancelledError as error:
-                raise InterruptedError("error.cancelled") from error
 
     @staticmethod
     def batch(jobs, cancellation):

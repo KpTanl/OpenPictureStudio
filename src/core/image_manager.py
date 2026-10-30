@@ -194,13 +194,3 @@ class ImageManager:
         if self.current_path not in filtered:
             return False
         return filtered.index(self.current_path) > 0
-
-    def get_image_info(self) -> dict:
-        if not self.current_path or not os.path.isfile(self.current_path):
-            return {}
-        stat = os.stat(self.current_path)
-        return {
-            "path": self.current_path,
-            "name": os.path.basename(self.current_path),
-            "size_kb": round(stat.st_size / 1024, 1),
-        }

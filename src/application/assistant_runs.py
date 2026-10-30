@@ -96,9 +96,6 @@ class AssistantRun:
             return "time_limit"
         return ""
 
-    def repeated(self, adjustments):
-        return _state(self.photo, adjustments) in self.states[1:]
-
     def add_usage(self, usage, estimated_input, estimated_output):
         incoming = usage.get("input_tokens", usage.get("prompt_tokens"))
         outgoing = usage.get("output_tokens", usage.get("completion_tokens"))

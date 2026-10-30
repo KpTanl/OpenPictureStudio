@@ -6,9 +6,9 @@ LabeledToggle 把开关与标题、说明组合成一行，点击整行即可切
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QKeyEvent, QMouseEvent, QPainter, QPaintEvent, QPen
-from PyQt6.QtWidgets import QAbstractButton, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, Property, Signal
+from PySide6.QtGui import QColor, QKeyEvent, QMouseEvent, QPainter, QPaintEvent, QPen
+from PySide6.QtWidgets import QAbstractButton, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_SM, SPACING_XS, px
 from ..theme import get_theme_tokens, to_qcolor
@@ -17,7 +17,7 @@ _FOCUS_MARGIN = 2.0
 
 
 class ToggleSwitch(QAbstractButton):
-    stateChanged = pyqtSignal(bool)
+    stateChanged = Signal(bool)
 
     def __init__(self, parent: QWidget | None = None, width: int = 36, height: int = 20):
         super().__init__(parent)
@@ -42,7 +42,7 @@ class ToggleSwitch(QAbstractButton):
         self._animation.setEasingCurve(QEasingCurve.Type.OutQuad)
         self.toggled.connect(self._on_toggled)
 
-    @pyqtProperty(float)
+    @Property(float)
     def handle_position(self) -> float:
         return self._handle_position
 
@@ -122,6 +122,7 @@ class ToggleSwitch(QAbstractButton):
             else:
                 self.toggle()
             self.update()
+            self.clicked[bool].emit(self.isChecked())
             event.accept()
         else:
             self._is_pressed = False
@@ -131,6 +132,7 @@ class ToggleSwitch(QAbstractButton):
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.isEnabled():
             self.toggle()
+            self.clicked[bool].emit(self.isChecked())
             event.accept()
         else:
             super().keyPressEvent(event)
@@ -166,8 +168,8 @@ class ToggleSwitch(QAbstractButton):
 class LabeledToggle(QWidget):
     """开关加标题与说明；点击整行切换。"""
 
-    toggled = pyqtSignal(bool)
-    stateChanged = pyqtSignal(bool)
+    toggled = Signal(bool)
+    stateChanged = Signal(bool)
 
     def __init__(self, title: str = "", description: str = "", checked: bool = False,
                  switch_on_left: bool = False, parent: QWidget | None = None):

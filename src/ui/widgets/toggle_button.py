@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtWidgets import QPushButton, QSizePolicy, QWidget
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtWidgets import QPushButton, QSizePolicy, QWidget
 
 from resources.styles.theme_variables import CONTROL_HEIGHT
 from ..icons import themed_icon

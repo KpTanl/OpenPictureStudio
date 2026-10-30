@@ -7,7 +7,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, CancelledError
 from threading import Event
 
-from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 
 from ...application.photo_relocation import PhotoRelocationService
 from ...application.photo_library_store import canonical, backup_hash
@@ -18,14 +18,14 @@ logger = logging.getLogger(__name__)
 
 
 class PhotoLibraryRunner(QObject):
-    changed = pyqtSignal()
-    evaluated = pyqtSignal()
-    failed = pyqtSignal(str)
-    idle = pyqtSignal()
-    relocated = pyqtSignal(str, str)
-    session_released = pyqtSignal(str)
-    browse_requested = pyqtSignal(object)
-    _completed = pyqtSignal(object, object, object)
+    changed = Signal()
+    evaluated = Signal()
+    failed = Signal(str)
+    idle = Signal()
+    relocated = Signal(str, str)
+    session_released = Signal(str)
+    browse_requested = Signal(object)
+    _completed = Signal(object, object, object)
 
     def __init__(self, service, metadata, drafts, parent=None, *, before_relocation, lock_ui):
         super().__init__(parent)
@@ -108,6 +108,7 @@ class PhotoLibraryRunner(QObject):
             self._completed.emit(callback, result, refresh)
         self._pool.submit(run)
 
+    @Slot(object, object, object)
     def _deliver(self, callback, result, refresh):
         self._count -= 1
         if self._closed:
@@ -283,7 +284,7 @@ class PhotoLibraryRunner(QObject):
             for field, write in (("rating", self.metadata.set_ratings), ("mark", self.metadata.set_marks)):
                 if field in values:
                     write(paths, values[field])
-            QTimer.singleShot(0, lambda: done({"photos": [], "queued": True}, ""))
+            QTimer.singleShot(0, self, lambda: done({"photos": [], "queued": True}, ""))
             return
         if reason:
             raise ValueError(reason)
@@ -307,7 +308,7 @@ class PhotoLibraryRunner(QObject):
                     error = str(failure)
             done({"photos": registered, "saved": not bool(error)}, error)
         if not registered:
-            QTimer.singleShot(0, lambda: saved(None, ""))
+            QTimer.singleShot(0, self, lambda: saved(None, ""))
             return
         self.submit(lambda: self.service.store.metadata(versions, cancelled=cancelled, **values), saved, refresh=True)
 
@@ -471,7 +472,7 @@ class PhotoLibraryRunner(QObject):
                 if str(error) != "library.waiting_ai":
                     raise
                 self._waiting = True
-                QTimer.singleShot(100, lambda: self._restore_library(path, digest, done, cancelled, origin))
+                QTimer.singleShot(100, self, lambda: self._restore_library(path, digest, done, cancelled, origin))
                 return
             self._waiting = False
             self._relocating = True
@@ -515,7 +516,7 @@ class PhotoLibraryRunner(QObject):
         except ValueError as error:
             if str(error) == "library.waiting_ai":
                 self._waiting = True
-                QTimer.singleShot(100, lambda: self._resume_relocation(proposal, done, cancelled, origin))
+                QTimer.singleShot(100, self, lambda: self._resume_relocation(proposal, done, cancelled, origin))
                 return
             raise
         self._waiting = False

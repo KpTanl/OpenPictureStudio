@@ -6,7 +6,7 @@ import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from PyQt6.QtCore import QStandardPaths, QtMsgType, qInstallMessageHandler
+from PySide6.QtCore import QStandardPaths, QtMsgType, qInstallMessageHandler
 
 from .app_info import APP_NAME
 

@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QHBoxLayout, QLineEdit, QVBoxLayout
+from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QVBoxLayout
 
 from resources.styles.theme_variables import SPACING_LG, SPACING_XL, px
 from ..base_window import BaseDialog

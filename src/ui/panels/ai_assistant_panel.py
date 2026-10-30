@@ -4,8 +4,9 @@ import logging
 from copy import deepcopy
 from threading import Event
 
-from PyQt6.QtCore import QObject, QPoint, QRunnable, Qt, QTimer, pyqtSignal
-from PyQt6.QtWidgets import (QWIDGETSIZE_MAX, QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel,
+from PySide6.QtCore import QObject, QPoint, QRunnable, Qt, QTimer, Signal, Slot
+from shiboken6 import Shiboken
+from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel,
                             QStackedWidget, QVBoxLayout, QWidget)
 
 from resources.styles.theme_variables import (ASSISTANT_CONTEXT_WIDTH, ASSISTANT_NAVIGATION_WIDTH,
@@ -19,6 +20,7 @@ from ...core.constants import SUPPORTED_FORMATS
 from ...application.assistant_variants import variant_groups, variant_summary
 from ..dialogs.assistant_dialogs import AssistantExportDialog, AssistantNameDialog
 from ..icons import themed_icon
+from ..services.ui_thread_relay import UiThreadRelay
 from ..edit_descriptions import parameter_name, value_text
 from ..themed_mixin import ThemedI18nMixin
 from ..widgets.apple_button import AppleButton, AppleGhostButton, AppleIconButton
@@ -41,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 
 class _Signals(QObject):
-    finished = pyqtSignal(int, object)
+    finished = Signal(int, object)
 
 
 class AssistantWorker(QRunnable):
@@ -62,12 +64,12 @@ class AssistantWorker(QRunnable):
 
 class AIAssistantPanel(QWidget, ThemedI18nMixin):
     """AI 助手。调整模式下 AI 给出的调整立即写成历史里的一步，与手动编辑落在同一组工具参数上。"""
-    render_requested = pyqtSignal()
-    committed = pyqtSignal(object)   # AI 写入了一步（带它渲染好的画面）或撤销、重做了 AI 的调整（None）
-    commit_busy = pyqtSignal(bool)
-    settings_requested = pyqtSignal()
-    expanded_requested = pyqtSignal(bool)
-    comparison_requested = pyqtSignal(object)
+    render_requested = Signal()
+    committed = Signal(object)   # AI 写入了一步（带它渲染好的画面）或撤销、重做了 AI 的调整（None）
+    commit_busy = Signal(bool)
+    settings_requested = Signal()
+    expanded_requested = Signal(bool)
+    comparison_requested = Signal(object)
 
     def __init__(self, host: AssistantHost, core, agent, thread_pool, parent=None, *, runner):
         super().__init__(parent)
@@ -507,7 +509,7 @@ class AIAssistantPanel(QWidget, ThemedI18nMixin):
         # 展开视图里在对比候选时，对话只留几行高度，其余给对比画面；侧栏里对比区只是一行摘要
         comparing = self._expanded and not self.variants.isHidden()
         self._chat_layout.setStretchFactor(self.variants, 1 if comparing else 0)
-        self.transcript.setMaximumHeight(ASSISTANT_VARIANT_HEIGHT // 2 if comparing else QWIDGETSIZE_MAX)
+        self.transcript.setMaximumHeight(ASSISTANT_VARIANT_HEIGHT // 2 if comparing else 16777215)
         for widget in (self.navigation, self.conversations, self.new_chat, self.title):
             widget.setEnabled(not self._committing)
         self.new_chat.setEnabled(not self._committing and self._requested_identity is None and self._state.get("ready", False))
@@ -724,15 +726,27 @@ class AIAssistantPanel(QWidget, ThemedI18nMixin):
         self._runner.command("apply_proposal", identity=job["conversation_id"], message_id=job["message_id"], workflow=workflow)
         self.refresh()
 
+    def _run_worker(self, worker, callback):
+        relay = UiThreadRelay.shared()
+        def deliver(generation, result):
+            if Shiboken.isValid(self):
+                callback(generation, result)
+            elif isinstance(result, dict) and result.get("image") is not None:
+                result["image"].close()
+
+        worker.signals.finished.connect(lambda generation, result: relay.post(lambda: deliver(generation, result)),
+                                        Qt.ConnectionType.DirectConnection)
+        self._thread_pool.start(worker)
+
     def _start(self, operation):
         self._committing = True
         self.commit_busy.emit(True)
         self._cancelled = Event()
         worker = AssistantWorker(self._generation, operation, self._cancelled)
-        worker.signals.finished.connect(self._finished)
-        self._thread_pool.start(worker)
+        self._run_worker(worker, self._finished)
         self.refresh()
 
+    @Slot(int, object)
     def _finished(self, generation, result):
         if generation != self._generation:
             return
@@ -817,8 +831,7 @@ class AIAssistantPanel(QWidget, ThemedI18nMixin):
         generation = self._comparison_generation
         worker = AssistantWorker(generation, lambda cancelled: self._actions.before_image(
             context, message["action"], is_cancelled=cancelled), self._comparison_cancelled)
-        worker.signals.finished.connect(lambda ticket, result: self._comparison_ready(ticket, context, result))
-        self._thread_pool.start(worker)
+        self._run_worker(worker, lambda ticket, result: self._comparison_ready(ticket, context, result))
         self.refresh()
 
     def _comparison_ready(self, generation, context, result):

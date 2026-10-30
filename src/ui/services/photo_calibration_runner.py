@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from concurrent.futures import CancelledError, ThreadPoolExecutor
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal
+from PySide6.QtCore import QObject, Qt, Signal, Slot
 
 from ...application.output_writer import OperationCancellation
 from ...application.result_types import CoreResult
@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 class PhotoCalibrationRunner(QObject):
-    changed = pyqtSignal()
-    idle = pyqtSignal()
-    _completed = pyqtSignal(object, object)
+    changed = Signal()
+    idle = Signal()
+    _completed = Signal(object, object)
 
     def __init__(self, service, parent=None, *, before_capture=lambda: True):
         super().__init__(parent)
@@ -65,6 +65,7 @@ class PhotoCalibrationRunner(QObject):
             result = CoreResult.from_exception(error, message_key=str(error) if isinstance(error, ValueError) else "batch.failed")
         self._completed.emit(request, result)
 
+    @Slot(object, object)
     def _deliver(self, request, result):
         if self._active is not request:
             return

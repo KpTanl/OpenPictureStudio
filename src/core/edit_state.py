@@ -10,7 +10,7 @@ working. New code should talk to ``DraftStore`` (drafts) and the Core API.
 
 from typing import Any, Dict, Optional
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 
 from .draft_store import DraftStore
 
@@ -18,8 +18,8 @@ from .draft_store import DraftStore
 class EditStateStore(QObject):
     """兼容外观：暂存（Draft）委托给 DraftStore，last-used 仍由本类持有。"""
 
-    stash_changed = pyqtSignal(str)        # image_path
-    last_used_changed = pyqtSignal(str)    # tool_name
+    stash_changed = Signal(str)        # image_path
+    last_used_changed = Signal(str)    # tool_name
 
     def __init__(self, parent: Optional[QObject] = None):
         super().__init__(parent)

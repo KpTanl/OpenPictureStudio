@@ -2,9 +2,9 @@ import os
 import logging
 from dataclasses import dataclass
 from PIL import Image
-from PyQt6.QtCore import Qt, QSize, QEvent, QTimer, pyqtSignal, pyqtSlot, QRect, QRectF, QPointF
-from PyQt6.QtGui import QBrush, QPixmap, QImage, QTransform, QWheelEvent, QMouseEvent, QPainter
-from PyQt6.QtWidgets import QLabel, QSizePolicy, QScrollArea
+from PySide6.QtCore import Qt, QSize, QEvent, QTimer, Signal, Slot, QRect, QRectF, QPointF
+from PySide6.QtGui import QBrush, QPixmap, QImage, QTransform, QWheelEvent, QMouseEvent, QPainter
+from PySide6.QtWidgets import QLabel, QSizePolicy, QScrollArea
 
 from .services.image_load_runner import ImageLoadRunner
 from ..application.image_load_queue import ImageLoadKey
@@ -54,10 +54,10 @@ class ImageViewer(QLabel):
     自定义图片查看组件，支持缩放、平移拖拽、适应窗口以及异步加载。
     图像与覆盖层使用同一显示矩形，绘制范围限制在当前视口。
     """
-    loading_changed = pyqtSignal(bool)
-    load_status_changed = pyqtSignal(str, bool)
-    presentation_changed = pyqtSignal(object)
-    view_changed = pyqtSignal()
+    loading_changed = Signal(bool)
+    load_status_changed = Signal(str, bool)
+    presentation_changed = Signal(object)
+    view_changed = Signal()
 
     def __init__(self, parent=None, *, image_source_service=None, raw_display_mode=DEFAULT_RAW_DISPLAY_MODE,
                  non_raw_display_mode=DEFAULT_NON_RAW_DISPLAY_MODE, canvas_scale_runner=None):
@@ -656,7 +656,7 @@ class ImageViewer(QLabel):
         return result
 
     def _on_screen_changed(self, screen):
-        QTimer.singleShot(0, self.view_changed.emit)
+        QTimer.singleShot(0, self, self.view_changed.emit)
 
     def _refit_viewport(self):
         if self.isVisible() and self._fit_mode and self._pixmap:
@@ -765,7 +765,7 @@ class ImageViewer(QLabel):
         if zoom is not None:
             self._set_zoom(zoom, anchor)
 
-    @pyqtSlot()
+    @Slot()
     def zoom_in(self, factor=1.25):
         """放大"""
         if not self._pixmap:
@@ -773,7 +773,7 @@ class ImageViewer(QLabel):
         self._cancel_wheel_zoom()
         self._set_zoom(min(self._zoom * factor, self._max_zoom))
 
-    @pyqtSlot()
+    @Slot()
     def zoom_out(self, factor=0.8):
         """缩小"""
         if not self._pixmap:
@@ -781,14 +781,14 @@ class ImageViewer(QLabel):
         self._cancel_wheel_zoom()
         self._set_zoom(max(self._zoom * factor, self._min_zoom))
 
-    @pyqtSlot()
+    @Slot()
     def zoom_fit(self):
         """自适应窗口模式"""
         self._cancel_wheel_zoom()
         self._fit_mode = True
         self._fit_to_window()
 
-    @pyqtSlot(int)
+    @Slot(int)
     def set_zoom_percent(self, percent: int):
         """设置特定的缩放百分比 (5% - 500%)"""
         if not self._pixmap:

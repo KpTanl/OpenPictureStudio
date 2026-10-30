@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_SM, px
 from ...i18n import tr
@@ -23,8 +23,8 @@ PREVIEW_STATES = ("not_previewed", "processing", "cancelling", "updated", "faile
 
 
 class ActionFooter(QWidget):
-    primary_clicked = pyqtSignal()
-    cancel_clicked = pyqtSignal()
+    primary_clicked = Signal()
+    cancel_clicked = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)

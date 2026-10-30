@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image
-from PyQt6.QtCore import QObject, QRunnable, pyqtSignal
+from PySide6.QtCore import QObject, QRunnable, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class TransformSaveRequest:
 
 
 class _TransformSaveSignals(QObject):
-    finished = pyqtSignal(object, str)
+    finished = Signal(object, str)
 
 
 class TransformSaveWorker(QRunnable):

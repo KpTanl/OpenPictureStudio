@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QTimer, QSize
-from PyQt6.QtGui import QImage
-from PyQt6.QtWidgets import (QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QInputDialog,
+from PySide6.QtCore import Qt, QTimer, QSize
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import (QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QInputDialog,
                              QLabel, QLineEdit, QScrollArea, QSpinBox, QTabWidget,
                              QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 

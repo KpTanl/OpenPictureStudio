@@ -2,9 +2,9 @@
 
 import pytest
 from PIL import Image
-from PyQt6.QtCore import Qt, QPoint, QPointF, QMimeData
-from PyQt6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QPoint, QPointF, QMimeData
+from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
+from PySide6.QtWidgets import QApplication
 
 from src.ui.widgets.thumbnail_panel import ThumbnailPanel, _ReorderListWidget
 from tests.support import wait_for_thumbnails, wait_until

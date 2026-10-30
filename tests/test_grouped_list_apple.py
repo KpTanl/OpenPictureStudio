@@ -4,9 +4,9 @@ import os
 import tempfile
 import pytest
 from PIL import Image
-from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QKeyEvent, QMouseEvent, QPainter, QPixmap
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QPoint, QPointF
+from PySide6.QtGui import QKeyEvent, QMouseEvent, QPainter, QPixmap
+from PySide6.QtWidgets import QApplication
 
 from resources.styles.theme_variables import (
     get_theme_qss,
@@ -111,17 +111,28 @@ def test_grouped_option_row_mouse_events(qapp):
     row.double_clicked.connect(double_clicked_records.append)
 
     # 模拟鼠标按下与抬起
-    press_ev = QMouseEvent(QMouseEvent.Type.MouseButtonPress, QPointF(10, 10), Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    position = QPointF(10, 10)
+    global_position = row.mapToGlobal(position)
+    press_ev = QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress, position, global_position,
+        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+    )
     row.mousePressEvent(press_ev)
     assert row._pressed is True
 
-    release_ev = QMouseEvent(QMouseEvent.Type.MouseButtonRelease, QPointF(10, 10), Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    release_ev = QMouseEvent(
+        QMouseEvent.Type.MouseButtonRelease, position, global_position,
+        Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+    )
     row.mouseReleaseEvent(release_ev)
     assert row._pressed is False
     assert clicked_records == [0]
 
     # 模拟双击
-    dbl_ev = QMouseEvent(QMouseEvent.Type.MouseButtonDblClick, QPointF(10, 10), Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    dbl_ev = QMouseEvent(
+        QMouseEvent.Type.MouseButtonDblClick, position, global_position,
+        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+    )
     row.mouseDoubleClickEvent(dbl_ev)
     assert double_clicked_records == [0]
 
@@ -176,21 +187,27 @@ def test_grouped_option_card_painting_under_all_themes(qapp):
 
         # 1. 常规态绘制
         painter = QPainter(pixmap)
-        card.render(painter)
-        painter.end()
+        try:
+            card.render(painter, QPoint())
+        finally:
+            painter.end()
 
         # 2. 悬浮态绘制
         card._rows[1]._hovered = True
         painter = QPainter(pixmap)
-        card.render(painter)
-        painter.end()
+        try:
+            card.render(painter, QPoint())
+        finally:
+            painter.end()
         card._rows[1]._hovered = False
 
         # 3. 按下态绘制
         card._rows[1]._pressed = True
         painter = QPainter(pixmap)
-        card.render(painter)
-        painter.end()
+        try:
+            card.render(painter, QPoint())
+        finally:
+            painter.end()
         card._rows[1]._pressed = False
 
 

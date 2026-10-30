@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import QTimer, Qt, pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_LG, SPACING_MD, SPACING_SM, SPACING_XL, px
 from ...utils.app_info import APP_NAME
@@ -23,7 +23,7 @@ _WIDTH = 380
 
 
 class ProgressDialog(BaseDialog):
-    cancelled = pyqtSignal()
+    cancelled = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None, *, title: str, text: str = "",
                  cancel_text: str = "", modal: bool = True):

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QByteArray, Qt, pyqtSignal
-from PyQt6.QtGui import QImage, QPixmap
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtCore import QByteArray, Qt, Signal
+from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import ASSISTANT_REFERENCE_EDGE, CONTROL_HEIGHT_COMPACT, SPACING_SM, px
 from ..icons import themed_icon
@@ -28,7 +28,7 @@ def measurement_text(analysis, tr):
 
 
 class AssistantReference(QWidget):
-    removed = pyqtSignal()
+    removed = Signal()
 
     def __init__(self, parent=None, *, removable=False):
         super().__init__(parent)

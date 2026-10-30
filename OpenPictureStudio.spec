@@ -21,7 +21,7 @@ hiddenimports = collect_submodules("rawpy")
 hiddenimports += collect_submodules("tifffile")
 hiddenimports += collect_submodules("src.ui.panels")
 hiddenimports += collect_submodules("httpx")
-hiddenimports += ["anyio._backends._asyncio", "httpcore._backends.asyncio"]
+hiddenimports += ["anyio._backends._asyncio", "httpcore._backends.anyio", "PySide6.support.deprecated"]
 datas += copy_metadata("httpx", recursive=True)
 _d, _b, _h = collect_all("certifi")
 datas += _d
@@ -51,11 +51,9 @@ excludes = [
     "black",
     "flake8",
     "mypy",
-    "PyQt6.QtWebEngineCore",
-    "PyQt6.QtWebEngineWidgets",
-    "PyQt6.QtBluetooth",
-    "PyQt6.QtNfc",
-    "PyQt6.QtPositioning",
+    "PyQt5",
+    "PyQt6",
+    "PySide2",
 ]
 
 a = Analysis(
@@ -70,7 +68,7 @@ a = Analysis(
     excludes=excludes,
     noarchive=False,
     # img2pdf 是 LGPL：以 .py 文件交付，用户可以替换
-    module_collection_mode={"img2pdf": "py"},
+    module_collection_mode={"img2pdf": "py", "PySide6": "py", "shiboken6": "py"},
 )
 
 

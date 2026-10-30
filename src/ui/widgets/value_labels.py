@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QMouseEvent
-from PyQt6.QtWidgets import QLabel, QLineEdit
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QMouseEvent
+from PySide6.QtWidgets import QLabel, QLineEdit
 
 
 class ClickableLabel(QLabel):
     """支持双击信号的标签，用于「双击重置参数」交互。"""
 
-    double_clicked = pyqtSignal()
+    double_clicked = Signal()
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -27,4 +27,4 @@ class EditableValueLabel(QLineEdit):
 
     def focusInEvent(self, event) -> None:
         super().focusInEvent(event)
-        QTimer.singleShot(0, self.selectAll)
+        QTimer.singleShot(0, self, self.selectAll)

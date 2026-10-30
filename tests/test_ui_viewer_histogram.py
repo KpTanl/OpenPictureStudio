@@ -10,8 +10,8 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image  # noqa: E402
-from PyQt6.QtGui import QColor, QImage, QPalette  # noqa: E402
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtGui import QColor, QImage, QPalette  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from src.application.display_histogram import (HISTOGRAM_SAMPLE_PIXELS, DisplayHistogramRequest,  # noqa: E402
                                                DisplayHistogramService, display_histogram)

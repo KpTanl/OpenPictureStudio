@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QObject, QSettings, QTimer, pyqtSignal
+from PySide6.QtCore import QObject, QSettings, QTimer, Signal
 
 from ...utils.app_info import APP_NAME
 from ...application.photo_browser import PhotoBrowserService
@@ -9,9 +9,9 @@ from ..widgets.photo_browser import PhotoBrowserWorkspace
 
 
 class PhotoBrowserController(QObject):
-    image_requested = pyqtSignal(str)
-    single_requested = pyqtSignal()
-    empty = pyqtSignal()
+    image_requested = Signal(str)
+    single_requested = Signal()
+    empty = Signal()
 
     def __init__(self, manager, metadata, sources, translate, *, drafts_ready, foreground_busy, parent=None):
         super().__init__(parent)

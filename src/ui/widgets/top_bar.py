@@ -11,9 +11,9 @@ from dataclasses import dataclass
 from math import ceil
 from typing import Callable, Optional, Sequence
 
-from PyQt6.QtCore import QPoint, QRect, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QFont, QFontMetricsF, QIcon, QPainter, QPaintEvent
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QSizePolicy, QWidget
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtGui import QAction, QFont, QFontMetricsF, QIcon, QPainter, QPaintEvent
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QSizePolicy, QWidget
 
 from resources.styles.theme_variables import (CONTROL_HEIGHT_COMPACT, FONT_SIZE_BODY, SPACING_MD, SPACING_SM,
                                               SPACING_XS, TOP_BAR_HEIGHT, px)
@@ -139,11 +139,11 @@ def _separator(parent: QWidget) -> QFrame:
 
 
 class TopBar(QWidget):
-    workspace_requested = pyqtSignal(int)
-    photo_info_toggled = pyqtSignal(bool)
-    minimize_requested = pyqtSignal()
-    maximize_requested = pyqtSignal()
-    close_requested = pyqtSignal()
+    workspace_requested = Signal(int)
+    photo_info_toggled = Signal(bool)
+    minimize_requested = Signal()
+    maximize_requested = Signal()
+    close_requested = Signal()
 
     def __init__(self, actions: TopBarActions, translate: Callable[[str, str], str],
                  parent: Optional[QWidget] = None):
@@ -193,7 +193,7 @@ class TopBar(QWidget):
         right.setContentsMargins(0, 0, 0, 0)
         right.setSpacing(px(SPACING_SM))
         self._info_toggle = ToggleButton("", "layout-sidebar-right", self._right)
-        self._info_toggle.clicked.connect(self.photo_info_toggled.emit)
+        self._info_toggle.clicked[bool].connect(self.photo_info_toggled.emit)
         right.addWidget(self._info_toggle)
 
         export = QHBoxLayout()

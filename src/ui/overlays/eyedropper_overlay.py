@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QObject, QRect, Qt, pyqtSignal
-from PyQt6.QtGui import QMouseEvent
+from PySide6.QtCore import QObject, QRect, Qt, Signal
+from PySide6.QtGui import QMouseEvent
 
 from .base_overlay import ViewerOverlay
 
@@ -9,7 +9,7 @@ from .base_overlay import ViewerOverlay
 class EyedropperOverlay(ViewerOverlay):
     """取色覆盖层：报告图像显示矩形内的归一化点击位置。"""
 
-    picked = pyqtSignal(float, float)
+    picked = Signal(float, float)
 
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)

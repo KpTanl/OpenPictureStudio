@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from threading import Lock
 from time import monotonic
 
-from PyQt6.QtCore import QObject, QRunnable, Qt, pyqtSignal
-from PyQt6.QtGui import QImage
+from PySide6.QtCore import QObject, QRunnable, Qt, Signal, Slot
+from PySide6.QtGui import QImage
 
 from ...application.image_load_queue import ImageLoadQueue
 from ...application.result_types import CoreError, CoreOperationError, CoreResult, ErrorCode
@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 class _RenderSignals(QObject):
-    finished = pyqtSignal(object, object, object, object)
-    sampled_finished = pyqtSignal(object)
+    finished = Signal(object, object, object, object)
+    sampled_finished = Signal(object)
 
 
 @dataclass
@@ -169,8 +169,8 @@ class StudioPreviewWorker(QRunnable):
 
 
 class StudioHistogramRunner(QObject):
-    ready = pyqtSignal(object, object)
-    _completed = pyqtSignal(object, object, object, object)
+    ready = Signal(object, object)
+    _completed = Signal(object, object, object, object)
 
     def __init__(self, service, parent=None):
         super().__init__(parent)
@@ -213,6 +213,7 @@ class StudioHistogramRunner(QObject):
         except RuntimeError:
             logger.debug("OPS 直方图接收方已关闭")
 
+    @Slot(object, object, object, object)
     def _deliver(self, job, request, histogram, error):
         try:
             if (not self._closed and not job.cancellation.is_set()

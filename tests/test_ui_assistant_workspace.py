@@ -9,9 +9,9 @@ import threading
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image  # noqa: E402
-from PyQt6.QtCore import Qt  # noqa: E402
-from PyQt6.QtTest import QTest  # noqa: E402
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from src.application import assistant_conversations  # noqa: E402
 from src.i18n import TranslationService, get_translation_service, set_translation_service  # noqa: E402

@@ -18,9 +18,9 @@ if "--shots" in sys.argv:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     os.environ.setdefault("QT_QPA_FONTDIR", r"C:\Windows\Fonts")
 
-from PyQt6.QtCore import QSize, Qt  # noqa: E402
-from PyQt6.QtGui import QAction, QFont, QFontDatabase  # noqa: E402
-from PyQt6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar,  # noqa: E402
+from PySide6.QtCore import QSize, Qt  # noqa: E402
+from PySide6.QtGui import QAction, QFont, QFontDatabase  # noqa: E402
+from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar,  # noqa: E402
                              QScrollArea, QVBoxLayout, QWidget)
 
 from resources.styles.semantic_colors import SEMANTIC_KEYS, TRACK_GRADIENTS, mixer_track_colors  # noqa: E402
@@ -1175,13 +1175,13 @@ def colors_section(text) -> list[QWidget]:
 
 def assistant_settings_section(text) -> list[QWidget]:
     from dataclasses import asdict
-    from PyQt6.QtCore import QObject, pyqtSignal
+    from PySide6.QtCore import QObject, Signal
     from src.application.assistant_models import AssistantConnection
     from src.ui.dialogs.assistant_settings_page import AssistantSettingsPage
 
     class PreviewRunner(QObject):
-        changed = pyqtSignal(object)
-        event_received = pyqtSignal(str, object)
+        changed = Signal(object)
+        event_received = Signal(str, object)
         last_error = None
 
         def __init__(self):
@@ -1381,7 +1381,7 @@ def assistant_section(text) -> list[QWidget]:
 
 def photo_batch_section(text) -> list[QWidget]:
     from types import SimpleNamespace
-    from PyQt6.QtCore import QObject, pyqtSignal
+    from PySide6.QtCore import QObject, Signal
     from src.ui.dialogs.photo_batch_dialog import PhotoBatchDialog
 
     class PreviewSettings:
@@ -1417,7 +1417,7 @@ def photo_batch_section(text) -> list[QWidget]:
             return self.summary(batch_id)
 
     class PreviewRunner(QObject):
-        changed = pyqtSignal(str)
+        changed = Signal(str)
 
         def __init__(self):
             super().__init__()
@@ -1441,7 +1441,7 @@ def photo_batch_section(text) -> list[QWidget]:
 
 def photo_export_section(text) -> list[QWidget]:
     from types import SimpleNamespace
-    from PyQt6.QtCore import QObject, pyqtSignal
+    from PySide6.QtCore import QObject, Signal
     from src.application.result_types import CoreResult
     from src.ui.dialogs.photo_export_dialog import PhotoExportDialog
 
@@ -1467,9 +1467,9 @@ def photo_export_section(text) -> list[QWidget]:
             return self.batches[identity]
 
     class PreviewRunner(QObject):
-        changed = pyqtSignal(str)
-        preview_ready = pyqtSignal(object)
-        preview_cleared = pyqtSignal()
+        changed = Signal(str)
+        preview_ready = Signal(object)
+        preview_cleared = Signal()
 
         def __init__(self):
             super().__init__()
@@ -1500,8 +1500,8 @@ def photo_export_section(text) -> list[QWidget]:
 
 def photo_browser_section(text) -> list[QWidget]:
     from types import SimpleNamespace
-    from PyQt6.QtCore import QObject, pyqtSignal
-    from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPixmap
+    from PySide6.QtCore import QObject, Signal
+    from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPixmap
     from src.application.photo_browser import PhotoBrowserService
     from src.core.image_manager import ImageManager
     from src.ui.widgets.photo_browser import PhotoBrowserWorkspace
@@ -1523,8 +1523,8 @@ def photo_browser_section(text) -> list[QWidget]:
             self.ratings.update({path: rating for path in paths})
 
     class PreviewRunner(QObject):
-        ready = pyqtSignal(str)
-        clearing = pyqtSignal(str)
+        ready = Signal(str)
+        clearing = Signal(str)
 
         def __init__(self):
             super().__init__()
@@ -1581,16 +1581,16 @@ def photo_browser_section(text) -> list[QWidget]:
 
 def photo_calibration_section(text) -> list[QWidget]:
     from types import SimpleNamespace
-    from PyQt6.QtCore import QObject, pyqtSignal
-    from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPixmap
-    from PyQt6.QtWidgets import QCheckBox, QLineEdit, QTreeWidget, QTreeWidgetItem
+    from PySide6.QtCore import QObject, Signal
+    from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPixmap
+    from PySide6.QtWidgets import QCheckBox, QLineEdit, QTreeWidget, QTreeWidgetItem
     from src.ui.dialogs.photo_calibration_dialog import CalibrationPreview
 
     tr = lambda key, **values: get_translation_service().translate(key, **values)
 
     class PreviewRunner(QObject):
-        ready = pyqtSignal(str)
-        clearing = pyqtSignal(str)
+        ready = Signal(str)
+        clearing = Signal(str)
 
         def __init__(self):
             super().__init__()
@@ -1660,16 +1660,16 @@ def photo_calibration_section(text) -> list[QWidget]:
 
 def photo_library_section(text) -> list[QWidget]:
     from types import SimpleNamespace
-    from PyQt6.QtCore import QObject, Qt, pyqtSignal
+    from PySide6.QtCore import QObject, Qt, Signal
     from src.application.photo_library import PhotoLibraryService
     from src.application.photo_library_store import path_key
     from src.ui.dialogs.photo_library_dialog import PhotoLibraryDialog, LibraryRuleDialog
 
     class LibraryRunner(QObject):
-        changed = pyqtSignal()
-        evaluated = pyqtSignal()
-        failed = pyqtSignal(str)
-        idle = pyqtSignal()
+        changed = Signal()
+        evaluated = Signal()
+        failed = Signal(str)
+        idle = Signal()
 
         def __init__(self):
             super().__init__()

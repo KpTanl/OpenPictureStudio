@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen
-from PyQt6.QtWidgets import QAbstractButton, QSizePolicy, QWidget
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen
+from PySide6.QtWidgets import QAbstractButton, QSizePolicy, QWidget
 
 from resources.styles.theme_variables import SPACING_SM, px
 from ..theme import get_theme_tokens, to_qcolor
@@ -91,7 +91,7 @@ class _ChoiceButton(QAbstractButton):
 class AppleCheckBox(_ChoiceButton):
     """复选框，支持三态。"""
 
-    stateChanged = pyqtSignal(int)
+    stateChanged = Signal(int)
 
     def __init__(self, text: str = "", parent: Optional[QWidget] = None):
         super().__init__(text, parent)
@@ -131,7 +131,7 @@ class AppleCheckBox(_ChoiceButton):
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.isEnabled():
             self.nextCheckState()
-            self.clicked.emit(self.isChecked())
+            self.clicked[bool].emit(self.isChecked())
             event.accept()
         else:
             super().keyPressEvent(event)
@@ -174,7 +174,7 @@ class AppleRadioButton(_ChoiceButton):
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.isEnabled():
             self.setChecked(True)
-            self.clicked.emit(True)
+            self.clicked[bool].emit(True)
             event.accept()
         else:
             super().keyPressEvent(event)

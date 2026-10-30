@@ -15,8 +15,8 @@ import logging
 import sys
 from typing import Callable, Optional
 
-from PyQt6.QtCore import QPoint
-from PyQt6.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import QPoint
+from PySide6.QtWidgets import QApplication, QWidget
 
 logger = logging.getLogger(__name__)
 

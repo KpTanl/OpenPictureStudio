@@ -2,8 +2,8 @@ from concurrent.futures import CancelledError, ThreadPoolExecutor
 import logging
 import math
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal
-from PyQt6.QtGui import QImage
+from PySide6.QtCore import QObject, Qt, Signal, Slot
+from PySide6.QtGui import QImage
 
 from ...application.display_histogram import HISTOGRAM_SAMPLE_PIXELS, DisplayHistogramRequest
 from ...application.image_load_queue import ImageLoadQueue
@@ -21,15 +21,15 @@ def _sample_frame(image: QImage) -> tuple[tuple[int, int], bytes]:
                              Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation)
     # RGBA8888 每像素四字节，行与行之间没有填充
     image = image.convertToFormat(QImage.Format.Format_RGBA8888)
-    return (image.width(), image.height()), image.constBits().asstring(image.sizeInBytes())
+    return (image.width(), image.height()), bytes(image.constBits())
 
 
 class DisplayHistogramRunner(QObject):
     """后台计算看图画面的直方图，只交付最新一次请求的结果。"""
 
-    started = pyqtSignal(object)
-    ready = pyqtSignal(object, object)
-    _completed = pyqtSignal(object, object, object)
+    started = Signal(object)
+    ready = Signal(object, object)
+    _completed = Signal(object, object, object)
 
     def __init__(self, service, parent=None):
         super().__init__(parent)
@@ -84,6 +84,7 @@ class DisplayHistogramRunner(QObject):
         except RuntimeError:
             logger.debug("看图直方图接收方已关闭")
 
+    @Slot(object, object, object)
     def _deliver(self, job, request, histogram) -> None:
         try:
             if (not self._closed and not job.cancellation.is_set() and request == self._latest

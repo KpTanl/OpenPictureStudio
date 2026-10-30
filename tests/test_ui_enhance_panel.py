@@ -7,10 +7,10 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image  # noqa: E402
-from PyQt6.QtCore import Qt  # noqa: E402
-from PyQt6.QtGui import QPalette  # noqa: E402
-from PyQt6.QtTest import QTest  # noqa: E402
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtGui import QPalette  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from src.core.tools.enhancement import (ENHANCE_PARAMETERS, ENHANCE_START_STRENGTHS, TargetOutcome,  # noqa: E402
                                         target_outcomes)

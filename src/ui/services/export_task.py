@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QObject, QRunnable, pyqtSignal
+from PySide6.QtCore import QObject, QRunnable, Signal
 
 from ...application.output_writer import OperationCancellation
 from ...application.result_types import CoreResult
 
 
 class _ExportSignals(QObject):
-    finished = pyqtSignal(int, object)
+    finished = Signal(int, object)
 
 
 class ExportTask(QRunnable):

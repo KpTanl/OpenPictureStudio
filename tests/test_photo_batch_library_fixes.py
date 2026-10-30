@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 from PIL import Image
-from PyQt6.QtCore import QCoreApplication, QObject, pyqtSignal
+from PySide6.QtCore import QCoreApplication, QObject, Signal
 
 from src.application.core_api import CoreAPI
 from src.application.edit_sessions import EditSessionService
@@ -66,8 +66,8 @@ def _workspace(tmp_path):
 
 
 class _Metadata(QObject):
-    rating_changed = pyqtSignal(str, int)
-    marks_changed = pyqtSignal()
+    rating_changed = Signal(str, int)
+    marks_changed = Signal()
 
     def __init__(self):
         super().__init__()
@@ -84,7 +84,7 @@ class _Metadata(QObject):
 
 
 class _Drafts(QObject):
-    ready = pyqtSignal()
+    ready = Signal()
     loaded = True
 
 

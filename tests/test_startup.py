@@ -11,8 +11,8 @@ from pathlib import Path
 from PIL import Image
 import pytest
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication
 
 from src.ui.main_window import MainWindow
 from src.ui.theme import ThemeManager, set_theme_manager
@@ -99,7 +99,7 @@ class TestApplicationStartup:
             + "from tests.support import close_main_window\n"
             + "import os, sys\n"
             "os.environ['QT_QPA_PLATFORM'] = 'offscreen'\n"
-            "from PyQt6.QtCore import QTimer\n"
+            "from PySide6.QtCore import QTimer\n"
             "from src.ui.main_window import MainWindow\n"
             "orig_show = MainWindow.show\n"
             "def safe_show(self):\n"

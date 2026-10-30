@@ -1,5 +1,5 @@
 # Locked dependency closure for the full release build (requirements-build.txt).
-# Resolved on Windows x64 with Python 3.13, pinned to the versions the test suite passed with.
+# Resolved on Windows x64 with Python 3.13.
 # Regenerate after dependency changes; do not edit by hand.
 absl-py==2.4.0
 altgraph==0.17.5
@@ -59,9 +59,8 @@ pyinstaller==6.20.0
 pyinstaller-hooks-contrib==2026.5
 PyMatting==1.1.15
 pyparsing==3.3.2
-PyQt6==6.11.0
-PyQt6-Qt6==6.11.0
-PyQt6_sip==13.11.1
+PySide6_Essentials==6.11.3
+shiboken6==6.11.3
 pytest==9.0.3
 pytest-qt==4.5.0
 python-dateutil==2.9.0.post0
@@ -74,6 +73,7 @@ requests==2.34.2
 rpds-py==0.30.0
 scikit-image==0.26.0
 scipy==1.17.1
+setuptools==84.2.1
 six==1.17.0
 sounddevice==0.5.5
 tifffile==2026.5.2

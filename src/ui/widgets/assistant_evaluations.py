@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from .apple_menu import AppleDropDown
 from .setting_row import SettingRow, SettingSection
 
 
 class EvaluationSettings(QWidget):
-    settings_edited = pyqtSignal(object)
+    settings_edited = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)

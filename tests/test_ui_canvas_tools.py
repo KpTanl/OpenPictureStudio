@@ -7,9 +7,9 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image, ImageDraw  # noqa: E402
-from PyQt6.QtCore import QPoint, Qt  # noqa: E402
-from PyQt6.QtGui import QImage, QPalette, QPixmap  # noqa: E402
-from PyQt6.QtTest import QTest  # noqa: E402
+from PySide6.QtCore import QPoint, Qt  # noqa: E402
+from PySide6.QtGui import QImage, QPalette, QPixmap  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 
 from src.i18n import TranslationService, get_translation_service, set_translation_service  # noqa: E402
 from src.ui.image_viewer import ImageViewer  # noqa: E402
@@ -139,7 +139,7 @@ def test_crop_adjusts_then_views_the_result_in_place(editor):
     result = _shown(studio)
 
     # 在结果里改面板上的参数，直接重新渲染
-    from PyQt6.QtWidgets import QPushButton
+    from PySide6.QtWidgets import QPushButton
     square = next(chip for chip in panel.findChildren(QPushButton) if chip.text() == "1:1")
     QTest.mouseClick(square, Qt.MouseButton.LeftButton)
     wait_until(lambda: _size(studio)[0] == _size(studio)[1] != cropped[0], "换比例后重新渲染", timeout=30)

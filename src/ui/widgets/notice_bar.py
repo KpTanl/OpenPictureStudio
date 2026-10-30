@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import QRect, Qt, pyqtSignal
-from PyQt6.QtGui import QPainter, QPaintEvent
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QWidget
+from PySide6.QtCore import QRect, Qt, Signal
+from PySide6.QtGui import QPainter, QPaintEvent
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QWidget
 
 from resources.styles.theme_variables import SPACING_MD, SPACING_SM, SPACING_XS, px
 from ..icons import themed_icon
@@ -24,8 +24,8 @@ _ICON_SIZE = 18
 
 
 class NoticeBar(QFrame):
-    action_triggered = pyqtSignal()
-    dismissed = pyqtSignal()
+    action_triggered = Signal()
+    dismissed = Signal()
 
     def __init__(self, kind: str = "info", text: str = "", action_text: str = "",
                  parent: Optional[QWidget] = None, *, closable: bool = False):

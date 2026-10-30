@@ -10,9 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
-from PyQt6.QtCore import QKeyCombination, Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QDesktopServices, QKeyEvent, QKeySequence
-from PyQt6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QScrollArea,
+from PySide6.QtCore import QKeyCombination, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QKeyEvent, QKeySequence
+from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QScrollArea,
                              QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
 from resources.styles.theme_variables import (CONTROL_HEIGHT, DIALOG_SIZES, SPACING_LG, SPACING_MD, SPACING_XL,
@@ -71,7 +71,7 @@ class ShortcutEdit(QPushButton):
     只有用户录入才发出 sequence_edited，显示的内容由 set_sequence 投影。
     """
 
-    sequence_edited = pyqtSignal(str)
+    sequence_edited = Signal(str)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -273,22 +273,22 @@ class _ResourceHolder(QWidget):
 
 
 class SettingsDialog(BaseDialog):
-    language_edited = pyqtSignal(str)
-    theme_edited = pyqtSignal(str)
-    startup_window_edited = pyqtSignal(str)
-    image_display_edited = pyqtSignal(object)
-    preload_edited = pyqtSignal(object)
+    language_edited = Signal(str)
+    theme_edited = Signal(str)
+    startup_window_edited = Signal(str)
+    image_display_edited = Signal(object)
+    preload_edited = Signal(object)
     # 用户改了内存占用上限或保留的内存：新的 MemorySettings；生效后的结果经 set_memory() 投影回来
-    memory_edited = pyqtSignal(object)
-    shortcut_edited = pyqtSignal(str, str)
-    shortcuts_reset_requested = pyqtSignal()
+    memory_edited = Signal(object)
+    shortcut_edited = Signal(str, str)
+    shortcuts_reset_requested = Signal()
     # 用户第一次进入工具、模型或运行环境页：请打开它的一方经 set_resource_services() 给出服务
-    resource_pages_requested = pyqtSignal()
-    assistant_services_requested = pyqtSignal()
+    resource_pages_requested = Signal()
+    assistant_services_requested = Signal()
     # 工具页里启停了工具：停用的工具
-    tools_changed = pyqtSignal(tuple)
-    storage_manage_requested = pyqtSignal(str)
-    update_enabled_edited = pyqtSignal(bool)
+    tools_changed = Signal(object)
+    storage_manage_requested = Signal(str)
+    update_enabled_edited = Signal(bool)
 
     PAGES = (
         ("general", "settings.tab.general", "General"),
@@ -512,7 +512,7 @@ class SettingsDialog(BaseDialog):
         self.startup_window_row.add_control(self.startup_window_combo)
         self.update_row = section.add_row(SettingRow(section))
         self.update_switch = ToggleSwitch(self.update_row)
-        self.update_switch.clicked.connect(self.update_enabled_edited.emit)
+        self.update_switch.clicked[bool].connect(self.update_enabled_edited.emit)
         self.update_row.add_control(self.update_switch)
 
     def _build_images(self, page: _Page) -> None:

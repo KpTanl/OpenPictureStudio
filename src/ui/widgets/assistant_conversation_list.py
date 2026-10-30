@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import time
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLineEdit, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLineEdit, QScrollArea, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import CONTROL_HEIGHT_COMPACT, SPACING_MD, SPACING_SM, px
 from ..icons import themed_icon
@@ -21,10 +21,10 @@ def _when(timestamp: float) -> str:
 
 
 class ConversationList(QWidget):
-    selected = pyqtSignal(str)
-    new_requested = pyqtSignal(bool)
-    manage_requested = pyqtSignal()
-    back_requested = pyqtSignal()
+    selected = Signal(str)
+    new_requested = Signal(bool)
+    manage_requested = Signal()
+    back_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

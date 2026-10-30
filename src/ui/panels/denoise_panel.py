@@ -4,8 +4,8 @@ import logging
 from typing import Optional
 from PIL import Image
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import QWidget, QLabel, QFormLayout
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QWidget, QLabel, QFormLayout
 
 from .base_tool_panel import BaseToolPanel
 from ...application.result_types import CoreOperationError
@@ -87,7 +87,7 @@ class DenoisePanel(BaseToolPanel):
         self._params = checked.data if checked.success else defaults
         if not checked.success:
             request_path = self._image_path
-            QTimer.singleShot(0, lambda: self.request_status.emit(
+            QTimer.singleShot(0, self, lambda: self.request_status.emit(
                 self._tr("denoise.invalid_params", "Invalid denoise settings"))
                 if self._image_path == request_path else None)
         self._sync_ui_from_params()

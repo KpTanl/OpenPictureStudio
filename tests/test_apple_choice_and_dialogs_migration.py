@@ -6,9 +6,9 @@ import os
 import pytest
 from PIL import Image
 
-from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QKeyEvent, QMouseEvent
-from PyQt6.QtWidgets import QApplication, QGroupBox, QWidget, QHBoxLayout
+from PySide6.QtCore import Qt, QPointF
+from PySide6.QtGui import QKeyEvent, QMouseEvent
+from PySide6.QtWidgets import QApplication, QGroupBox, QWidget, QHBoxLayout
 
 from src.ui.widgets.apple_choice import AppleCheckBox, AppleRadioButton
 from src.ui.widgets.apple_button import (

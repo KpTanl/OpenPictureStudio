@@ -4,9 +4,9 @@ import logging
 from typing import Optional
 from PIL import Image
 
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QColorDialog
+from PySide6.QtCore import Signal
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QColorDialog
 
 from resources.styles.theme_variables import SPACING_SM, px
 from .base_tool_panel import BaseToolPanel
@@ -40,8 +40,8 @@ class LegacyBGRemovePanel(BaseToolPanel):
     TOOL_TITLE_KEY = "menu.edit.remove_bg"
     TOOL_TITLE_DEFAULT = "Remove Background"
     MANUAL_PREVIEW = True
-    preview_requested = pyqtSignal()
-    cancel_requested = pyqtSignal()
+    preview_requested = Signal()
+    cancel_requested = Signal()
 
     def __init__(
         self,

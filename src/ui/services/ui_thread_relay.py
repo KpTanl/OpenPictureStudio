@@ -1,7 +1,7 @@
 import logging
 
-from PyQt6 import sip
-from PyQt6.QtCore import QCoreApplication, QObject, Qt, pyqtSignal
+from shiboken6 import Shiboken
+from PySide6.QtCore import QCoreApplication, QObject, Qt, Signal, Slot
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ class UiThreadRelay(QObject):
     随 QApplication 存续：后台线程只接触这一个对象，不直接向会被销毁的界面对象发信号。
     """
 
-    _posted = pyqtSignal(object)
+    _posted = Signal(object)
     _NAME = "ops.uiThreadRelay"
 
     def __init__(self, application):
@@ -31,9 +31,10 @@ class UiThreadRelay(QObject):
 
     def post(self, callback) -> None:
         """安排 callback 在界面线程执行；可在任意线程调用。"""
-        if not sip.isdeleted(self):
+        if Shiboken.isValid(self):
             self._posted.emit(callback)
 
+    @Slot(object)
     def _run(self, callback) -> None:
         try:
             callback()

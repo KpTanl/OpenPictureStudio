@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_MD, SPACING_SM, px
 from .empty_state import EmptyState
@@ -18,7 +18,7 @@ _HEADER_HEIGHT = 44
 
 
 class HistoryPanel(QWidget):
-    step_requested = pyqtSignal(str)
+    step_requested = Signal(str)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -79,7 +79,7 @@ class HistoryPanel(QWidget):
         self._pages.setCurrentWidget(self._scroll if steps else self._empty)
         self._hint.setVisible(bool(steps))
         if steps:
-            QTimer.singleShot(0, self._reveal_current)
+            QTimer.singleShot(0, self, self._reveal_current)
 
     def _reveal_current(self) -> None:
         current = self.list.current_rect()

@@ -4,7 +4,7 @@ import copy
 import logging
 from concurrent.futures import CancelledError, ThreadPoolExecutor
 
-from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 
 from ...application.output_writer import OperationCancellation
 from ...application.photo_exports import ExportItemCancellation
@@ -14,13 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class PhotoExportRunner(QObject):
-    changed = pyqtSignal(str)
-    idle = pyqtSignal()
-    loaded = pyqtSignal()
-    preview_ready = pyqtSignal(object)
-    preview_cleared = pyqtSignal()
-    _delivered = pyqtSignal(object, object)
-    _auxiliary = pyqtSignal(object, object)
+    changed = Signal(str)
+    idle = Signal()
+    loaded = Signal()
+    preview_ready = Signal(object)
+    preview_cleared = Signal()
+    _delivered = Signal(object, object)
+    _auxiliary = Signal(object, object)
 
     def __init__(self, service, parent=None):
         super().__init__(parent)
@@ -77,6 +77,7 @@ class PhotoExportRunner(QObject):
                 result.data["memory"].close()
         self._pool.submit(execute)
 
+    @Slot(object, object)
     def _deliver_auxiliary(self, callback, result):
         self._auxiliary_count -= 1
         if not self._closed:
@@ -107,13 +108,13 @@ class PhotoExportRunner(QObject):
         finally:
             self._preparing = None
         self.changed.emit(identity)
-        QTimer.singleShot(0, self._next)
+        QTimer.singleShot(0, self, self._next)
         return self.service.summary(identity)
 
     def control(self, identity, action):
         self.service.control(identity, action)
         self.changed.emit(identity)
-        QTimer.singleShot(0, self._next)
+        QTimer.singleShot(0, self, self._next)
         return self.service.summary(identity)
 
     def _next(self):
@@ -158,13 +159,14 @@ class PhotoExportRunner(QObject):
         if not self._closed:
             self._delivered.emit(identity, (prepared, record, error, record_state))
 
+    @Slot(object, object)
     def _deliver(self, identity, result):
         if self._closed or self._active != identity:
             return
         batch = self.service.complete(identity, result)
         self._active = None
         self.changed.emit(batch.id)
-        QTimer.singleShot(0, self._next)
+        QTimer.singleShot(0, self, self._next)
 
     def save_preset(self, name, preset, callback):
         def saved(result):
@@ -251,7 +253,7 @@ class PhotoExportRunner(QObject):
                 continue
             self.service.control(identity, "cancel")
         self.changed.emit("")
-        QTimer.singleShot(0, self._next)
+        QTimer.singleShot(0, self, self._next)
 
     def shutdown(self):
         if self._closed:

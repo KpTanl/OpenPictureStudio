@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtWidgets import QHBoxLayout, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_LG, SPACING_SM, SPACING_XL, SPACING_XS, px
 from ..base_window import BaseDialog

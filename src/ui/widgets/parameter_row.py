@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import QGridLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QGridLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_XS, px
 from .apple_slider import AppleSlider
@@ -34,8 +34,8 @@ class ParameterSpec:
 
 
 class ParameterRow(QWidget):
-    value_edited = pyqtSignal(int)
-    typing_finished = pyqtSignal()
+    value_edited = Signal(int)
+    typing_finished = Signal()
 
     def __init__(self, spec: ParameterSpec, label: str, parent: Optional[QWidget] = None):
         super().__init__(parent)

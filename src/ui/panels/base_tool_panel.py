@@ -5,9 +5,9 @@ import logging
 import uuid
 from typing import Any, Callable, Dict, Mapping, Optional
 from PIL import Image
-from PyQt6.QtCore import QEvent, QTimer, pyqtSignal, Qt
-from PyQt6.QtGui import QImage
-from PyQt6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtCore import QEvent, QTimer, Signal, Qt
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QWidget, QVBoxLayout
 from resources.styles.theme_variables import SPACING_MD, SPACING_SM, px
 from ..themed_mixin import ThemedI18nMixin
 from ...core.edit_state import EditStateStore
@@ -44,14 +44,14 @@ class BaseToolPanel(QWidget, ThemedI18nMixin):
       - 防抖预览机制与图片切换钩子
     """
 
-    preview_ready = pyqtSignal(QImage)
-    request_status = pyqtSignal(str)
-    params_changed = pyqtSignal(dict)
-    preparation_changed = pyqtSignal(bool)
-    edit_group_started = pyqtSignal()
-    edit_group_finished = pyqtSignal()
+    preview_ready = Signal(QImage)
+    request_status = Signal(str)
+    params_changed = Signal(object)
+    preparation_changed = Signal(bool)
+    edit_group_started = Signal()
+    edit_group_finished = Signal()
     # 面板里的模型选择请求打开模型管理页：能力、当前所选模型的标识
-    model_manager_requested = pyqtSignal(str, str)
+    model_manager_requested = Signal(str, str)
 
     TOOL_ID = "base_tool"
     TOOL_TITLE_KEY = "tool.base"

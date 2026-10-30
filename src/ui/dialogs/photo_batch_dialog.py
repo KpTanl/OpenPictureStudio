@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from PyQt6.QtCore import QSettings, Qt, QTimer
-from PyQt6.QtWidgets import QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout
+from PySide6.QtCore import QSettings, Qt, QTimer, Slot
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout
 
 from resources.styles.theme_variables import SPACING_MD, SPACING_XL, px
 from ...utils.app_info import APP_NAME
@@ -116,17 +116,10 @@ class PhotoBatchDialog(BaseDialog):
         self._refresh_timer.setInterval(100)
         self._refresh_timer.timeout.connect(self._refresh)
         self._runner.changed.connect(self._schedule_refresh)
-        self.destroyed.connect(lambda: self._disconnect_runner())
         self._fields.itemChanged.connect(self._input_changed)
         self._range.activated.connect(self._input_changed)
         self._ev.textEdited.connect(self._input_changed)
         self.retranslate_ui()
-
-    def _disconnect_runner(self):
-        try:
-            self._runner.changed.disconnect(self._schedule_refresh)
-        except (RuntimeError, TypeError):
-            pass
 
     def capture_selection(self):
         self._context, self._prepared_signature = None, None
@@ -245,6 +238,7 @@ class PhotoBatchDialog(BaseDialog):
         self._execute.setEnabled(False)
         self._refresh()
 
+    @Slot(str)
     def _schedule_refresh(self, batch_id):
         if not self._refresh_timer.isActive():
             self._refresh_timer.start()

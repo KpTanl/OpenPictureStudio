@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy,
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy,
                             QSplitter, QVBoxLayout, QWidget)
 
 from resources.styles.theme_variables import INFO_SIDEBAR_WIDTH, SPACING_MD, SPACING_LG, SPACING_XL, px
@@ -49,7 +49,7 @@ class ManagementListGroup:
 
 
 class ManagementList(QWidget):
-    selection_changed = pyqtSignal(str)
+    selection_changed = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)

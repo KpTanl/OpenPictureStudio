@@ -7,10 +7,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 from PIL import Image
-from PyQt6.QtCore import QRectF, QSettings, QSize, QTimer
-from PyQt6.QtGui import QColor, QFontDatabase, QImage, QPainter
-from PyQt6.QtWidgets import QScrollArea
-from PyQt6 import sip
+from PySide6.QtCore import QRectF, QSettings, QSize, QTimer
+from PySide6.QtGui import QColor, QFontDatabase, QImage, QPainter
+from PySide6.QtWidgets import QScrollArea
+from shiboken6 import Shiboken
 
 from src.application.image_resources import ImageResourcePolicy, ImageResourcePool
 from src.application.image_source_service import SourceIdentity
@@ -175,7 +175,7 @@ def test_high_dpi_scale_uses_device_pixels_and_releases_on_widget_destruction(qa
     pixmap = next(iter(viewer._scaled_pixmaps.values()))
     assert pixmap.size() == QSize(480, 300) and pixmap.devicePixelRatio() == 1.5
     assert resources._reserved > 0
-    sip.delete(viewer)
+    Shiboken.delete(viewer)
     assert resources._reserved == 0
     runner.shutdown()
     area.close()
@@ -265,7 +265,7 @@ def test_source_completion_can_prepare_only_a_small_comparison(qapp):
 
 @pytest.mark.parametrize("language", ("zh-CN", "en", "fr"))
 def test_canvas_controls_translate_sizes_and_computation_path(qapp, canvas_fonts, language):
-    from PyQt6.QtGui import QAction
+    from PySide6.QtGui import QAction
     from src.application.studio_preview_cache import CanvasPreviewState
     from src.ui.dialogs.settings_dialog import SettingsDialog, SettingsValues
     from src.ui.widgets.canvas_toolbar import CanvasToolbar, CanvasToolbarActions, EDITOR
@@ -289,7 +289,7 @@ def test_canvas_controls_translate_sizes_and_computation_path(qapp, canvas_fonts
         assert not label.text() and "6720×4480" in label.accessibleName()
     finally:
         dialog.close()
-        sip.delete(dialog)
+        Shiboken.delete(dialog)
 
 
 def test_smooth_reduction_avoids_aliasing_on_fine_detail(qapp):
@@ -312,7 +312,6 @@ def test_smooth_reduction_avoids_aliasing_on_fine_detail(qapp):
 
     def rgb(image):
         data = image.bits()
-        data.setsize(image.sizeInBytes())
         return np.frombuffer(data, np.uint8).reshape(171, 257, 4)[..., :3].astype(np.int16)
 
     reference = np.asarray(Image.fromarray(pixels).resize((257, 171), Image.Resampling.LANCZOS)).astype(np.int16)

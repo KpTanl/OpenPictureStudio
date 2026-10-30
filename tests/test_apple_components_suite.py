@@ -3,9 +3,9 @@
 import os
 import pytest
 from PIL import Image
-from PyQt6.QtCore import Qt, QPoint, QPointF
-from PyQt6.QtGui import QKeyEvent, QMouseEvent
-from PyQt6.QtWidgets import QApplication, QStackedWidget
+from PySide6.QtCore import Qt, QPoint, QPointF
+from PySide6.QtGui import QKeyEvent, QMouseEvent
+from PySide6.QtWidgets import QApplication, QStackedWidget
 
 from src.ui.widgets import (
     AppleBrandButton,
@@ -194,6 +194,7 @@ def test_apple_segmented_control_bounds_and_mouse(qapp):
         press_event = QMouseEvent(
             QMouseEvent.Type.MouseButtonPress,
             QPointF(250.0, 15.0),
+            seg.mapToGlobal(QPointF(250.0, 15.0)),
             Qt.MouseButton.LeftButton,
             Qt.MouseButton.LeftButton,
             Qt.KeyboardModifier.NoModifier,
@@ -215,9 +216,11 @@ def test_apple_slider_double_click_event(qapp):
 
     # 在圆钮上双击才重置；圆钮位置随当前值变化
     slider.resize(200, 20)
+    position = slider._handle_rect().center()
     dbl_event = QMouseEvent(
         QMouseEvent.Type.MouseButtonDblClick,
-        slider._handle_rect().center(),
+        position,
+        slider.mapToGlobal(position),
         Qt.MouseButton.LeftButton,
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,

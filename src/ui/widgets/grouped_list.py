@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import QEvent, QRect, QRectF, Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QIcon, QKeyEvent, QMouseEvent, QPainter, QPaintEvent, QPen
-from PyQt6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QRect, QRectF, Qt, Signal
+from PySide6.QtGui import QFont, QIcon, QKeyEvent, QMouseEvent, QPainter, QPaintEvent, QPen
+from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import (CONTROL_HEIGHT, FONT_SIZE_BODY, FONT_SIZE_CAPTION, RADIUS_CONTROL,
                                               SPACING_MD, SPACING_SM, SPACING_XS, px)
@@ -24,8 +24,8 @@ _ICON_SIZE = 18
 class GroupedOptionRow(QWidget):
     """列表中的一行。"""
 
-    clicked = pyqtSignal(int)
-    double_clicked = pyqtSignal(int)
+    clicked = Signal(int)
+    double_clicked = Signal(int)
 
     def __init__(
         self,
@@ -183,8 +183,8 @@ class GroupedOptionRow(QWidget):
 class GroupedOptionCard(QWidget):
     """一列可单选的行。"""
 
-    selection_changed = pyqtSignal(int, str)
-    item_double_clicked = pyqtSignal(int, str)
+    selection_changed = Signal(int, str)
+    item_double_clicked = Signal(int, str)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)

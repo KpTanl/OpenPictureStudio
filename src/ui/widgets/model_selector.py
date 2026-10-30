@@ -1,5 +1,5 @@
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_SM, px
 from .apple_button import AppleButton
@@ -19,9 +19,9 @@ class ModelSelector(QWidget, ThemedI18nMixin):
     点安装入口发出 ``manage_requested``（能力、模型标识），控件自己不打开任何窗口。
     """
 
-    selected = pyqtSignal(str)
-    selection_changed = pyqtSignal(str, str)
-    manage_requested = pyqtSignal(str, str)
+    selected = Signal(str)
+    selection_changed = Signal(str, str)
+    manage_requested = Signal(str, str)
 
     def __init__(self, service, capability, parent=None, *, backend_status=None, pairing=None):
         super().__init__(parent)

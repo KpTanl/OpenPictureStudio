@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QDialog, QFileDialog, QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QDialog, QFileDialog, QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 from resources.styles.theme_variables import DIALOG_SIZES, SPACING_LG, SPACING_MD, SPACING_SM, SPACING_XL, SPACING_XS, px
 
 from ...application.storage_paths import (LOCATION_KEYS, TEMP_KEYS, data_root, read_settings,
@@ -41,7 +41,7 @@ def open_path(path):
 
 
 class StorageListDialog(BaseDialog):
-    selection_changed = pyqtSignal()
+    selection_changed = Signal()
     PAGE_SIZE = 50
 
     def __init__(self, title, translate, parent=None, *, note="", selectable=False, empty_key="storage.empty",
@@ -258,8 +258,8 @@ class StorageListDialog(BaseDialog):
 
 
 class StoragePage(QWidget):
-    manage_requested = pyqtSignal(str)
-    discard_limits_requested = pyqtSignal()
+    manage_requested = Signal(str)
+    discard_limits_requested = Signal()
     OWNER_KEYS = ("models", "runtimes", "assistant", "attachments", "styles", "library", "exports")
     CLEAN_KEYS = (*TEMP_KEYS, "drafts", "mask_assets", "projects", "logs", "backups", "wallpaper",
                   "presets", "model_downloads", "runtime_downloads")
@@ -657,7 +657,7 @@ class StoragePage(QWidget):
             if not objects:
                 def register():
                     dialog.accept()
-                    QTimer.singleShot(0, self.register)
+                    QTimer.singleShot(0, self, self.register)
                 dialog.add_action(self.tr("common.close"), dialog.reject)
                 dialog.add_action(self.tr("storage.register"), register, role="primary")
                 dialog.exec()

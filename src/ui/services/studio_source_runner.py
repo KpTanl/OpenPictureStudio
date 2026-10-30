@@ -7,8 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
 from time import perf_counter
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QImage
+from PySide6.QtCore import QObject, Qt, Signal, Slot
+from PySide6.QtGui import QImage
 
 from ...application.result_types import CoreResult, ErrorCode
 from ...application.studio_source_service import StudioLoadQueue
@@ -27,10 +27,10 @@ def source_qimage(image):
 
 
 class StudioSourceRunner(QObject):
-    finished = pyqtSignal(object, object, object)
-    preview_ready = pyqtSignal(object, object, object)
-    prefetch_failed = pyqtSignal()
-    _completed = pyqtSignal()
+    finished = Signal(object, object, object)
+    preview_ready = Signal(object, object, object)
+    prefetch_failed = Signal()
+    _completed = Signal()
 
     def __init__(self, service, preview_cache, parent=None):
         super().__init__(parent)
@@ -155,7 +155,7 @@ class StudioSourceRunner(QObject):
         except RuntimeError:
             self.shutdown()
 
-    @pyqtSlot()
+    @Slot()
     def _deliver(self):
         with self._lock:
             outcome, self._result = self._result, None

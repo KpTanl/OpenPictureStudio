@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Mapping, Optional
 
-from PyQt6.QtGui import QAction, QKeySequence
-from PyQt6.QtWidgets import QWidget
+from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtWidgets import QWidget
 
 from .shortcut_manager import ShortcutManager
 from .widgets.action_button import plain_action_text

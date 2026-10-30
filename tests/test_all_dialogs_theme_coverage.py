@@ -2,9 +2,9 @@
 
 import pytest
 from PIL import Image
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QPaintEvent
-from PyQt6.QtCore import QRect
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QPaintEvent
+from PySide6.QtCore import QRect
 
 from src.ui.theme import ThemeManager, set_theme_manager
 from src.ui.dialogs.compress_dialog import ImageProcessingDialog

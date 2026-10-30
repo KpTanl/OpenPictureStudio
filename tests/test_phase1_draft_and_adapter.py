@@ -129,7 +129,7 @@ class TestColorAdjustAdapter:
 
 @pytest.fixture(scope="module")
 def qapp():
-    from PyQt6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance()
     if app is None:

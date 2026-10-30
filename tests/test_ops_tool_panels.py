@@ -6,7 +6,9 @@ import os
 
 import pytest
 from PIL import Image
+from PySide6.QtCore import Qt
 
+from src.ui.services.ui_thread_relay import UiThreadRelay
 from src.core.tools.enhancement import ENHANCE_PARAMETERS, execution_plan
 from src.ui.panels.registry import PANEL_TYPES, TOOL_ENTRIES
 from tests.support import (
@@ -103,9 +105,9 @@ def test_panel_preview_emits(panel_factory, sample_image, tool_id):
 def test_neural_preview_requires_user_request(
     window_factory, sample_image, available_neural_models,
 ):
-    from PyQt6.QtCore import Qt
-    from PyQt6.QtGui import QImage
-    from PyQt6.QtTest import QTest
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage
+    from PySide6.QtTest import QTest
     win = window_factory()
     win.show()
     win.manager.open_file(sample_image)
@@ -212,7 +214,9 @@ class TestStudioIntegration:
         assert studio._commit_busy and studio._output_tasks
         outputs = []
         task = studio._output_tasks[studio._output_generation]
-        task.signals.finished.connect(lambda task_id, result: outputs.append(result))
+        relay = UiThreadRelay.shared()
+        task.signals.finished.connect(lambda task_id, result: relay.post(lambda: outputs.append(result)),
+                                      Qt.ConnectionType.DirectConnection)
         wait_until(lambda: outputs, "真实去模糊输出完成", timeout=30)
         assert outputs[-1].success, outputs[-1].error
         assert not errors, [result.error for result in errors]
@@ -244,7 +248,9 @@ class TestStudioIntegration:
         assert studio._commit_busy and studio._output_tasks
         outputs = []
         task = studio._output_tasks[studio._output_generation]
-        task.signals.finished.connect(lambda task_id, result: outputs.append(result))
+        relay = UiThreadRelay.shared()
+        task.signals.finished.connect(lambda task_id, result: relay.post(lambda: outputs.append(result)),
+                                      Qt.ConnectionType.DirectConnection)
         wait_until(lambda: outputs, "去模糊与调色连续输出", timeout=30)
         assert outputs[-1].success, outputs[-1].error
         assert applied == [sample_image] and not studio._commit_busy

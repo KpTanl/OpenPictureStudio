@@ -12,9 +12,9 @@ import logging
 from typing import Optional
 
 from PIL import Image
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QImage
-from PyQt6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QWidget
+from PySide6.QtCore import Signal
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QWidget
 
 from .base_tool_panel import BaseToolPanel
 from .canvas_result import ResultViewControl
@@ -66,7 +66,7 @@ _DPI = 300
 def _rgb_image(image: QImage) -> Image.Image:
     """画布上的一帧换成 PIL 的 RGB 图像（复制一份，交给后台）。"""
     rgb = image.convertToFormat(QImage.Format.Format_RGB888)
-    data = bytes(rgb.constBits().asarray(rgb.sizeInBytes()))
+    data = bytes(rgb.constBits())
     return Image.frombuffer("RGB", (rgb.width(), rgb.height()), data, "raw", "RGB", rgb.bytesPerLine(), 1)
 
 
@@ -489,7 +489,7 @@ class _IDPhotoControls(BaseToolPanel):
 class IDPhotoPanel(ManagedModelPanelMixin, _IDPhotoControls):
     """证件照（参数版本 2）：带抠图模型的选择，模型能不能用取自工具资源投影。"""
 
-    availability_changed = pyqtSignal()
+    availability_changed = Signal()
     MODEL_CAPABILITY = "segmentation"
     RESOURCE_FEATURES = ID_PHOTO_RESOURCE_FEATURES
     MODEL_FEATURE = "ai"

@@ -8,9 +8,9 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QEvent, QPointF, QRect, Qt  # noqa: E402
-from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPixmap  # noqa: E402
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtCore import QEvent, QPointF, QRect, Qt  # noqa: E402
+from PySide6.QtGui import QColor, QImage, QMouseEvent, QPixmap  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from src.application.services import SamplingHandle  # noqa: E402
 from src.core.mixer_sampling import (MIXER_CHANNELS, NO_SAMPLE, MixerSampling,  # noqa: E402

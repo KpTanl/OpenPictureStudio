@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QDesktopServices, QTextDocument
-from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy,
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QDesktopServices, QTextDocument
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QScrollArea, QSizePolicy,
                             QTextBrowser, QVBoxLayout, QWidget)
 
 from resources.styles.theme_variables import CONTROL_HEIGHT_COMPACT, SPACING_LG, SPACING_MD, SPACING_SM, px
@@ -154,7 +154,7 @@ def changes_title(action, tr) -> str:
 
 
 class AssistantMessage(QWidget):
-    action_requested = pyqtSignal(str, str)
+    action_requested = Signal(str, str)
 
     def __init__(self, message, tr, parent=None, *, changes=True, progress=True):
         """changes、progress：放在任务卡里时，改动与进行中的状态由任务卡统一显示，消息自己不再显示。"""
@@ -341,7 +341,7 @@ class AssistantMessage(QWidget):
 
 
 class AssistantRunCard(QWidget):
-    action_requested = pyqtSignal(str, str)
+    action_requested = Signal(str, str)
 
     def __init__(self, messages, tr, parent=None):
         super().__init__(parent)
@@ -614,8 +614,8 @@ class AssistantRunCard(QWidget):
 
 
 class AssistantTranscript(QScrollArea):
-    action_requested = pyqtSignal(str, str)
-    scroll_edited = pyqtSignal(float)
+    action_requested = Signal(str, str)
+    scroll_edited = Signal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -691,7 +691,7 @@ class AssistantTranscript(QScrollArea):
         self.new_reply.setText(tr("assistant.new_reply"))
         if changed:
             self._restore_ratio = scroll
-            QTimer.singleShot(0, self._restore_scroll)
+            QTimer.singleShot(0, self, self._restore_scroll)
 
     def _restore_scroll(self):
         self.verticalScrollBar().setValue(int(self.verticalScrollBar().maximum() * self._restore_ratio))
@@ -735,7 +735,7 @@ class AssistantTranscript(QScrollArea):
 
     def _user_scroll(self, _action):
         self._following = False
-        QTimer.singleShot(0, self._save_scroll)
+        QTimer.singleShot(0, self, self._save_scroll)
 
     def _save_scroll(self):
         scroll = self.verticalScrollBar()

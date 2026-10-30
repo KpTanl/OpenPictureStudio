@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from threading import Event
 
 import numpy as np
-from PyQt6.QtGui import QImage
+from PySide6.QtGui import QImage
 
 from resources.styles.semantic_colors import OVERLAY_COLORS, color_channels
 from ...core.local_color import Fields

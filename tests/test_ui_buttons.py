@@ -9,8 +9,8 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtGui import QColor, QPalette  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QWidget  # noqa: E402
+from PySide6.QtGui import QColor, QPalette  # noqa: E402
+from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
 
 from resources.styles.semantic_colors import BRAND_GRADIENT  # noqa: E402
 from resources.styles.theme_variables import (CONTROL_HEIGHT, CONTROL_HEIGHT_COMPACT, TOOL_BUTTON_SIZE,  # noqa: E402

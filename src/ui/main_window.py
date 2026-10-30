@@ -8,9 +8,9 @@ from threading import Event
 from time import monotonic
 
 from PIL import Image
-from PyQt6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QRunnable, pyqtSignal, pyqtSlot, QThreadPool, QTimer, QSettings, QPropertyAnimation
-from PyQt6.QtGui import QImage
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QRunnable, Signal, Slot, QThreadPool, QTimer, QSettings, QPropertyAnimation
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QScrollArea,
@@ -73,12 +73,12 @@ logger = logging.getLogger(__name__)
 
 
 class _StudioInitSignals(QObject):
-    ready = pyqtSignal(object)
-    failed = pyqtSignal(object)
+    ready = Signal(object)
+    failed = Signal(object)
 
 
 class _CacheCloseSignals(QObject):
-    finished = pyqtSignal(object)
+    finished = Signal(object)
 
 
 class _CacheCloseWorker(QRunnable):
@@ -616,7 +616,7 @@ class MainWindow(BaseWindow):
         super()._save_geometry()
         self._panel_prefs.save(QSettings(APP_NAME, "MainWindow"))
 
-    @pyqtSlot(str, bool)
+    @Slot(str, bool)
     def _on_viewer_load_status(self, key, retry):
         self._viewer_load_status = (key, retry)
         self._sync_window_notices()
@@ -865,23 +865,23 @@ class MainWindow(BaseWindow):
             return self.studio_workspace.viewer
         return self.viewer
 
-    @pyqtSlot()
+    @Slot()
     def _zoom_in(self):
         self.active_viewer.zoom_in()
 
-    @pyqtSlot()
+    @Slot()
     def _zoom_out(self):
         self.active_viewer.zoom_out()
 
-    @pyqtSlot()
+    @Slot()
     def _zoom_100(self):
         self.active_viewer.set_zoom_percent(100)
 
-    @pyqtSlot()
+    @Slot()
     def _zoom_fit(self):
         self.active_viewer.zoom_fit()
 
-    @pyqtSlot()
+    @Slot()
     def _open_file(self):
         """执行打开文件对话框操作 (多选)"""
         paths, _ = QFileDialog.getOpenFileNames(
@@ -889,10 +889,10 @@ class MainWindow(BaseWindow):
         if paths:
             self._begin_browse(paths=paths, append=bool(self.manager.image_list), origin="file_dialog")
 
-    @pyqtSlot()
+    @Slot()
     def _open_folder(self):
         """打开文件夹选择对话框"""
-        from PyQt6.QtWidgets import QFileDialog
+        from PySide6.QtWidgets import QFileDialog
         folder = QFileDialog.getExistingDirectory(self, self._tr("dialog.open_folder", "Select Folder"))
         if folder:
             self._begin_browse(directory=folder, origin="folder_dialog")
@@ -950,7 +950,7 @@ class MainWindow(BaseWindow):
         self._load_images_into_panels()
         return True
 
-    @pyqtSlot(object, object)
+    @Slot(object, object)
     def _on_browse_finished(self, request, result):
         if self._closing or self._browse_request is not request:
             return
@@ -987,9 +987,9 @@ class MainWindow(BaseWindow):
         self._update_menu_actions()
         self._refresh_studio_prefetch()
         if self._photo_browser.view.preferred_grid and self._content_stack.currentWidget() is self.workspace_stack:
-            QTimer.singleShot(0, self._open_photo_browser)
+            QTimer.singleShot(0, self, self._open_photo_browser)
 
-    @pyqtSlot()
+    @Slot()
     def _save_as(self):
         from pathlib import Path
         from .services.background_operation import run_background, batch_message
@@ -1030,7 +1030,7 @@ class MainWindow(BaseWindow):
             show_error(self, self._tr("dialog.save_as"), self._tr(str(error), str(error)))
 
 
-    @pyqtSlot()
+    @Slot()
     def _set_as_wallpaper(self):
         if not self.manager.current_path:
             return
@@ -1067,19 +1067,19 @@ class MainWindow(BaseWindow):
             )
 
 
-    @pyqtSlot()
+    @Slot()
     def _next_image(self):
         path = self.manager.next_image()
         if path:
             self._load_current()
 
-    @pyqtSlot()
+    @Slot()
     def _prev_image(self):
         path = self.manager.prev_image()
         if path:
             self._load_current()
 
-    @pyqtSlot()
+    @Slot()
     def _crop_image(self):
         """打开/切换右侧矩形裁剪侧栏。"""
         self.toggle_tool("crop")
@@ -1214,7 +1214,7 @@ class MainWindow(BaseWindow):
         finally:
             self._temp_paths.discard(path)
 
-    @pyqtSlot(object, str)
+    @Slot(object, str)
     def _on_transform_saved(self, request: TransformSaveRequest, error: str) -> None:
         tmp_dir = str(request.target_path.parent)
         if (
@@ -1240,7 +1240,7 @@ class MainWindow(BaseWindow):
         self._load_current()
         self._reclaim_orphaned_temp(request.source_path)
 
-    @pyqtSlot()
+    @Slot()
     def _rotate_90(self):
         self._apply_transform(
             ImageProcessor.rotate_90,
@@ -1248,7 +1248,7 @@ class MainWindow(BaseWindow):
             display_rotate=-90,
         )
 
-    @pyqtSlot()
+    @Slot()
     def _rotate_180(self):
         self._apply_transform(
             ImageProcessor.rotate_180,
@@ -1256,7 +1256,7 @@ class MainWindow(BaseWindow):
             display_rotate=180,
         )
 
-    @pyqtSlot()
+    @Slot()
     def _rotate_270(self):
         self._apply_transform(
             ImageProcessor.rotate_270,
@@ -1264,7 +1264,7 @@ class MainWindow(BaseWindow):
             display_rotate=90,
         )
 
-    @pyqtSlot()
+    @Slot()
     def _flip_horizontal(self):
         self._apply_transform(
             ImageProcessor.flip_horizontal,
@@ -1272,7 +1272,7 @@ class MainWindow(BaseWindow):
             display_flip_h=True,
         )
 
-    @pyqtSlot()
+    @Slot()
     def _flip_vertical(self):
         self._apply_transform(
             ImageProcessor.flip_vertical,
@@ -1280,17 +1280,17 @@ class MainWindow(BaseWindow):
             display_flip_v=True,
         )
 
-    @pyqtSlot()
+    @Slot()
     def _grid_crop_image(self):
         """打开/切换右侧九宫格裁剪侧栏。"""
         self.toggle_tool("grid_crop")
 
-    @pyqtSlot()
+    @Slot()
     def _open_shape_crop(self):
         """打开/切换右侧几何形状裁剪侧栏。"""
         self.toggle_tool("shape_crop")
 
-    @pyqtSlot()
+    @Slot()
     def _open_image_processing(self):
         selected_paths = self.active_thumbnail_panel.get_selected_paths()
         if not selected_paths:
@@ -1301,7 +1301,7 @@ class MainWindow(BaseWindow):
                                        output_service=self._output_service)
         dialog.exec()
 
-    @pyqtSlot()
+    @Slot()
     def _open_pdf_exporter(self):
         """打开 PDF 导出对话框"""
         selected_paths = self.active_thumbnail_panel.get_selected_paths()
@@ -1314,12 +1314,12 @@ class MainWindow(BaseWindow):
         dialog = PDFDialog(selected_paths, self)
         dialog.exec()
 
-    @pyqtSlot()
+    @Slot()
     def _open_bg_remover(self):
         """打开/切换右侧背景移除侧栏。"""
         self.toggle_tool("bg_remove")
 
-    @pyqtSlot()
+    @Slot()
     def _open_lasso_tool(self):
         """打开/切换右侧套索抠图侧栏。"""
         self.toggle_tool("lasso")
@@ -1415,14 +1415,14 @@ class MainWindow(BaseWindow):
         self._studio_init_worker = worker
         QThreadPool.globalInstance().start(worker)
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _on_studio_core_ready(self, core) -> None:
         if self._closing or self.studio_workspace is not None:
             core.tools.close()
             return
         if not self._studio_mount_scheduled:
             self._studio_mount_scheduled = True
-            QTimer.singleShot(0, lambda: self._on_studio_core_ready(core))
+            QTimer.singleShot(0, self, lambda: self._on_studio_core_ready(core))
             return
         started = monotonic()
         self._studio_mount_scheduled = False
@@ -1543,11 +1543,11 @@ class MainWindow(BaseWindow):
         if self._current_workspace_index == 1:
             self.workspace_stack.setCurrentIndex(1)
         self._studio_init_worker = None
-        QTimer.singleShot(0, lambda: studio_thumbs.load_images(
+        QTimer.singleShot(0, studio_thumbs, lambda: studio_thumbs.load_images(
             self.manager.image_list, self.manager.current_path, version=self.manager.list_version
         ))
         if self.manager.current_path:
-            QTimer.singleShot(0, lambda: studio_thumbs.select_image(self.manager.current_path))
+            QTimer.singleShot(0, studio_thumbs, lambda: studio_thumbs.select_image(self.manager.current_path))
         if self._current_workspace_index == 1 and self.manager.current_path:
             self._start_studio_source_load(self.manager.current_path)
         pending_tool = self._pending_studio_tool_id
@@ -1606,7 +1606,7 @@ class MainWindow(BaseWindow):
                     non_raw_display_mode=snapshot.non_raw_display_mode):
                 self.studio_workspace.show_loading_placeholder(snapshot, generation=generation)
 
-    @pyqtSlot(object, object, object)
+    @Slot(object, object, object)
     def _on_studio_cached_preview(self, request, image, reference_size):
         studio = self.studio_workspace
         if (studio is not None and self._current_workspace_index == 1
@@ -1615,7 +1615,7 @@ class MainWindow(BaseWindow):
                 and request.preview_key == studio.preview_key(request.path)):
             studio.show_loading_preview(image, reference_size)
 
-    @pyqtSlot()
+    @Slot()
     def _refresh_studio_prefetch(self):
         if self._is_studio_active() and self.studio_workspace.can_prefetch():
             for thumbnails in self._thumbnail_panels():
@@ -1632,11 +1632,11 @@ class MainWindow(BaseWindow):
                     logger.warning("OPS prefetch color failed: image=%r error=%s", os.path.basename(path), error)
             self._studio_source_runner.prefetch(targets)
 
-    @pyqtSlot()
+    @Slot()
     def _on_studio_prefetch_failed(self):
         self.show_toast(self._tr("studio.prefetch_failed", "Unable to preload an image."), 5000)
 
-    @pyqtSlot(object, object, object)
+    @Slot(object, object, object)
     def _on_studio_source_finished(self, request, result, qimage) -> None:
         studio = self.studio_workspace
         if (studio is None or self._current_workspace_index != 1
@@ -1836,10 +1836,10 @@ class MainWindow(BaseWindow):
         if (self._library_runner.service.loaded or self._library_runner.service.error) and self._library_deferred_open is not None:
             path, siblings, origin = self._library_deferred_open
             self._library_deferred_open = None
-            QTimer.singleShot(0, lambda: self.open_image_path(path, load_siblings=siblings, origin=origin))
+            QTimer.singleShot(0, self, lambda: self.open_image_path(path, load_siblings=siblings, origin=origin))
         elif self._library_refresh_current and self.manager.current_path and not self._library_path_blocked(self.manager.current_path):
             self._library_refresh_current = False
-            QTimer.singleShot(0, self._load_current)
+            QTimer.singleShot(0, self, self._load_current)
 
     def _on_library_evaluated(self):
         # 只有图库视图的照片范围依赖可用性与动态状态；选片状态缓存由浏览服务按交付修订自行失效
@@ -1877,7 +1877,7 @@ class MainWindow(BaseWindow):
         self.workspace_stack.setEnabled(not locked)
         self.thumbnail_panel.setEnabled(not locked)
         if not locked:
-            QTimer.singleShot(0, self._resume_studio_after_library)
+            QTimer.singleShot(0, self, self._resume_studio_after_library)
 
     def _resume_studio_after_library(self):
         # 重定位开始时取消了 OPS 载入；解锁后当前照片仍无会话就重新发起
@@ -1909,7 +1909,7 @@ class MainWindow(BaseWindow):
         if self._library_exit_pending and not self._library_runner.busy:
             self._library_exit_pending = False
             self._library_runner.resume()
-            QTimer.singleShot(0, self.close)
+            QTimer.singleShot(0, self, self.close)
 
     def _open_photo_calibration(self):
         if self._calibration_runner is None:
@@ -1933,7 +1933,7 @@ class MainWindow(BaseWindow):
     def _on_calibration_idle(self):
         if self._calibration_exit_pending:
             self._calibration_exit_pending = False
-            QTimer.singleShot(0, self.close)
+            QTimer.singleShot(0, self, self.close)
 
     def _on_browser_empty(self):
         self.viewer.clear()
@@ -1959,7 +1959,7 @@ class MainWindow(BaseWindow):
     def _on_export_idle(self):
         if self._export_exit_pending:
             self._export_exit_pending = False
-            QTimer.singleShot(0, self.close)
+            QTimer.singleShot(0, self, self.close)
 
     def _on_batch_photo_changed(self, path):
         studio = self.studio_workspace
@@ -1973,7 +1973,7 @@ class MainWindow(BaseWindow):
     def _on_batch_idle(self):
         if self._batch_exit_pending:
             self._batch_exit_pending = False
-            QTimer.singleShot(0, self.close)
+            QTimer.singleShot(0, self, self.close)
 
     def _on_batch_display_ready(self, request, result):
         if request[1] != self.manager.current_path or self._current_workspace_index != 0:
@@ -1998,12 +1998,12 @@ class MainWindow(BaseWindow):
         self._refresh_editor_actions()
         self._update_top_bar_title()
 
-    @pyqtSlot(str, str)
+    @Slot(str, str)
     def _on_studio_detail_state(self, state, error_key) -> None:
         if self._current_workspace_index == EDITOR and self.canvas_toolbar is not None:
             self.canvas_toolbar.set_detail_state(state, error_key)
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _on_studio_init_failed(self, error) -> None:
         self._studio_loading_snapshot = None
         self._studio_init_started = False
@@ -2016,7 +2016,7 @@ class MainWindow(BaseWindow):
             self._settings_dialog.show_resource_error(message)
         self.show_toast(message, 5000)
 
-    @pyqtSlot(int)
+    @Slot(int)
     def _on_workspace_index_changed(self, index: int) -> None:
         """切换工作区（0 看图，1 编辑）；切换被拒绝时顶栏回到实际所在的工作区。"""
         self._switch_workspace(index)
@@ -2065,10 +2065,10 @@ class MainWindow(BaseWindow):
             self.info_sidebar.panel.set_active(True)
             self._sync_photo_info_action()
             if self.viewer.is_fit_mode():
-                QTimer.singleShot(0, self.viewer.zoom_fit)
+                QTimer.singleShot(0, self.viewer, self.viewer.zoom_fit)
         self._sync_canvas_toolbar()
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _on_studio_applied(self, new_path: str) -> None:
         """修图工作区保存并应用修改（可能是覆盖原路径或另存的新路径）。"""
         old_path = self.manager.current_path
@@ -2084,7 +2084,7 @@ class MainWindow(BaseWindow):
         self._on_workspace_index_changed(0)
         self.show_toast(self._tr("status.tool_applied", "Changes applied successfully"))
 
-    @pyqtSlot()
+    @Slot()
     def _on_studio_back_requested(self) -> None:
         """从修图工作区返回看图工作区。"""
         self._on_workspace_index_changed(0)
@@ -2145,7 +2145,7 @@ class MainWindow(BaseWindow):
             services=self._panel_services,
         )
 
-    @pyqtSlot(QImage)
+    @Slot(QImage)
     def _on_tool_preview_ready(self, qimage: QImage) -> None:
         if not self._active_tool_id:
             return
@@ -2185,7 +2185,7 @@ class MainWindow(BaseWindow):
         panel.set_sampling_state("preparing")
         panel.prepare_sampling(self._tool_sampling_epoch)
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _on_tool_sampled_preview(self, packet):
         panel = self.sender()
         if (panel is not self._tool_sampling_panel or panel is not self.tool_sidebar.get_current_panel()
@@ -2232,13 +2232,13 @@ class MainWindow(BaseWindow):
         """True when the Studio workspace owns the shared tool sidebar."""
         return getattr(self, "_current_workspace_index", 0) == 1 and self.studio_workspace is not None
 
-    @pyqtSlot()
+    @Slot()
     def _on_tool_close_requested(self) -> None:
         if self._is_studio_active():
             return  # Studio collapses its own sidebar.
         self.deactivate_tool(discard_stash=False)
 
-    @pyqtSlot()
+    @Slot()
     def _on_tool_reset_requested(self) -> None:
         if self._is_studio_active():
             return  # Studio handles reset.
@@ -2249,7 +2249,7 @@ class MainWindow(BaseWindow):
             self._edit_state_store.discard(self.manager.current_path, self._active_tool_id)
             self.tool_sidebar.set_stash_banner_visible(False)
 
-    @pyqtSlot()
+    @Slot()
     def _on_tool_discard_stash_requested(self) -> None:
         if self._is_studio_active():
             return  # Studio handles its own drafts.
@@ -2260,12 +2260,12 @@ class MainWindow(BaseWindow):
             self._edit_state_store.discard(self.manager.current_path, self._active_tool_id)
             self.tool_sidebar.set_stash_banner_visible(False)
 
-    @pyqtSlot()
+    @Slot()
     def _open_color_adjust(self):
         """打开/切换右侧调色实验室侧栏。"""
         self.toggle_tool("color_adjust")
 
-    @pyqtSlot()
+    @Slot()
     def _open_denoise_dialog(self):
         """保留图片降噪对话框。"""
         if not self._tool_entry_available("ai_enhance", self._open_denoise_dialog):
@@ -2282,7 +2282,7 @@ class MainWindow(BaseWindow):
         dialog.exec()
         dialog.deleteLater()
 
-    @pyqtSlot()
+    @Slot()
     def _open_ai_enhance(self):
         """打开/切换右侧 AI 增强侧栏。"""
         selected_paths = self.active_thumbnail_panel.get_selected_paths()
@@ -2291,17 +2291,17 @@ class MainWindow(BaseWindow):
         else:
             self.toggle_tool("ai_enhance")
 
-    @pyqtSlot()
+    @Slot()
     def _open_beauty(self):
         """打开/切换右侧人像美颜侧栏。"""
         self.toggle_tool("beauty")
 
-    @pyqtSlot()
+    @Slot()
     def _open_id_photo(self):
         """打开/切换左侧的证件照工具。"""
         self.toggle_tool("id_photo")
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _on_thumbnail_selected(self, path):
         """响应缩略图点击：切换到对应图片并刷新显示"""
         if self._library_runner.path_blocked(path) or self.studio_workspace is not None and self.studio_workspace._commit_busy:
@@ -2309,7 +2309,7 @@ class MainWindow(BaseWindow):
         if self.manager.select_image(path):
             self._load_current()
 
-    @pyqtSlot(list)
+    @Slot(object)
     def _on_thumbnail_reordered(self, new_paths):
         """处理缩略图顺序手动调整后的同步"""
         panel = self.sender()
@@ -2322,7 +2322,7 @@ class MainWindow(BaseWindow):
         self._sync_canvas_toolbar()
         self._refresh_studio_prefetch()
 
-    @pyqtSlot(int)
+    @Slot(int)
     def _on_thumbnail_listing_ready(self, version):
         panel = self.sender()
         if (self._closing or not isinstance(panel, ThumbnailPanel)
@@ -2335,7 +2335,7 @@ class MainWindow(BaseWindow):
                 self.show_toast(self._tr("status.filter_no_match"), 3000)
         self._refresh_studio_prefetch()
 
-    @pyqtSlot()
+    @Slot()
     def _update_menu_actions(self):
         """根据是否有加载的图片启用或禁用批量操作菜单与侧边栏动作"""
         enabled = self.manager.current_path is not None
@@ -2449,13 +2449,13 @@ class MainWindow(BaseWindow):
         self._update_menu_actions()
 
     def request_restart(self):
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         app = QApplication.instance()
         app.setProperty("ops_restart", True)
         self.close()
 
     def _cancel_exit(self):
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         QApplication.instance().setProperty("ops_restart", False)
         self._projects_saved_for_exit = False
 
@@ -2600,7 +2600,7 @@ class MainWindow(BaseWindow):
         self._edit_cache.close()
         self._thumbnail_cache.close()
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _on_exit_caches_closed(self, error):
         self._cache_exit_pending = False
         self._cache_close_worker = None
@@ -2687,7 +2687,7 @@ class MainWindow(BaseWindow):
         if self._studio_preview_cache is not None:
             self._studio_preview_cache.close()
 
-    @pyqtSlot()
+    @Slot()
     def _clear_all_ratings(self):
         """清除所有评分（持久化）—— 弹窗确认，二次确认避免误删。"""
         from ..core.rating_store import get_rating_store
@@ -2718,7 +2718,7 @@ class MainWindow(BaseWindow):
 
     _clear_ratings = _clear_all_ratings
 
-    @pyqtSlot(str)
+    @Slot(str)
     def set_rating_filter(self, mode: str) -> None:
         """设置图库星级筛选模式，并同步两处胶片条。"""
         self.manager.set_rating_filter(mode)
@@ -2775,7 +2775,7 @@ class MainWindow(BaseWindow):
         dialog.deleteLater()
         storage_runner.deleteLater()
         if restart:
-            QTimer.singleShot(0, self.request_restart)
+            QTimer.singleShot(0, self, self.request_restart)
 
     def _manage_storage(self, dialog, key):
         if key in ("models", "runtimes"):
@@ -2788,7 +2788,7 @@ class MainWindow(BaseWindow):
             dialog.storage_page.refresh()
         elif key in ("library", "exports"):
             dialog.accept()
-            QTimer.singleShot(0, self._open_photo_library if key == "library" else self._open_photo_export)
+            QTimer.singleShot(0, self, self._open_photo_library if key == "library" else self._open_photo_export)
 
     def _get_assistant_runner(self):
         if self._assistant_runner is None:
@@ -2933,7 +2933,7 @@ class MainWindow(BaseWindow):
         for panel in self._thumbnail_panels():
             panel.apply_rating_filter(mode)
 
-    @pyqtSlot()
+    @Slot()
     def _load_current(self):
         if self.manager.current_path and self._library_runner.path_blocked(self.manager.current_path):
             self._library_refresh_current = True
@@ -2977,12 +2977,12 @@ class MainWindow(BaseWindow):
                 panel.cleanup()
         self._update_menu_actions()
 
-    @pyqtSlot()
+    @Slot()
     def _refresh_all(self):
         self._load_images_into_panels()
         self._load_current()
 
-    @pyqtSlot(str, int)
+    @Slot(str, int)
     def _on_rating_changed(self, path: str, value: int):
         """评分变化时刷新底部工具条（仅当变化的是当前图）。"""
         if path == self.manager.current_path:
@@ -3002,7 +3002,7 @@ class MainWindow(BaseWindow):
                 return
 
         from ..core.rating_store import get_rating_store
-        from PyQt6.QtWidgets import QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTextEdit, QPlainTextEdit
+        from PySide6.QtWidgets import QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTextEdit, QPlainTextEdit
 
         # 焦点在文本/数值输入控件时，数字键交给控件本身（与调色对话框版保持一致）。
         # 大多数此类控件会自行消费按键，但有可编辑 QComboBox 等不消费的情况，显式避让更稳。

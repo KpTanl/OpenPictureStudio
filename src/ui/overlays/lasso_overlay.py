@@ -1,8 +1,8 @@
 """Lasso overlay for interactive polygonal and freehand selection on ImageViewer."""
 
 from typing import Any, Dict, List, Optional, Tuple
-from PyQt6.QtCore import Qt, QRect
-from PyQt6.QtGui import QPainter, QPen, QMouseEvent, QPainterPath
+from PySide6.QtCore import Qt, QRect
+from PySide6.QtGui import QPainter, QPen, QMouseEvent, QPainterPath
 from resources.styles.semantic_colors import OVERLAY_COLORS
 from ..theme import to_qcolor
 from .base_overlay import ViewerOverlay

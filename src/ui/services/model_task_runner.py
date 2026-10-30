@@ -1,7 +1,7 @@
 import weakref
 
-from PyQt6 import sip
-from PyQt6.QtCore import QObject, pyqtSignal
+from shiboken6 import Shiboken
+from PySide6.QtCore import QObject, Signal
 
 from .ui_thread_relay import UiThreadRelay
 
@@ -23,7 +23,7 @@ class _Delivery:
     def _deliver(self) -> None:
         """在界面线程执行：接收方仍然存在才发出信号。"""
         runner = self._runner()
-        if self._closed or runner is None or sip.isdeleted(runner):
+        if self._closed or runner is None or not Shiboken.isValid(runner):
             self.close()
             return
         runner.changed.emit()
@@ -38,7 +38,7 @@ class _Delivery:
 class ModelTaskRunner(QObject):
     """把模型、运行环境等后台服务的状态变化转成界面线程上的 changed 信号。"""
 
-    changed = pyqtSignal()
+    changed = Signal()
 
     def __init__(self, service, parent=None):
         super().__init__(parent)

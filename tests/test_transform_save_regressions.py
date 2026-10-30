@@ -3,9 +3,9 @@ from threading import Event
 import numpy as np
 import pytest
 from PIL import Image
-from PyQt6.QtCore import QThreadPool
-from PyQt6.QtGui import QImage
-from PyQt6.QtWidgets import QFileDialog
+from PySide6.QtCore import QThreadPool
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QFileDialog
 
 from src.ui.services.transform_save import TransformSaveWorker
 from src.ui.widgets.message_dialog import MessageDialog

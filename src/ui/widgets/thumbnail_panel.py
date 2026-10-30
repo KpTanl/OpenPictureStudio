@@ -6,9 +6,9 @@ from bisect import bisect_left
 from collections import OrderedDict, deque
 from time import perf_counter
 
-from PyQt6.QtCore import Qt, QSize, QEvent, QRectF, QTimer, pyqtSignal, pyqtSlot, QMimeData, QSettings, QItemSelectionModel
-from PyQt6.QtGui import QAction, QPixmap, QIcon, QColor, QDrag, QWheelEvent, QFont, QPainter, QPen, QKeySequence
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QSize, QEvent, QRectF, QTimer, Signal, Slot, QMimeData, QSettings, QItemSelectionModel
+from PySide6.QtGui import QAction, QPixmap, QIcon, QColor, QDrag, QWheelEvent, QFont, QPainter, QPen, QKeySequence
+from PySide6.QtWidgets import (
     QWidget, QListWidget, QListWidgetItem,
     QLabel, QHBoxLayout, QSplitter, QStyledItemDelegate, QSizePolicy
 )
@@ -150,8 +150,8 @@ class _ReorderListWidget(QListWidget):
     导致 item 间出现间隙或位置混乱。本类完全接管 dropEvent，
     根据释放位置计算目标索引，通过 takeItem + insertItem 保证严格顺序。
     """
-    reordered = pyqtSignal()
-    thumb_zoom_requested = pyqtSignal(int)
+    reordered = Signal()
+    thumb_zoom_requested = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -264,17 +264,17 @@ class _ReorderListWidget(QListWidget):
 
 
 class ThumbnailPanel(QWidget):
-    image_selected = pyqtSignal(str)
-    order_changed = pyqtSignal(list)
-    building_changed = pyqtSignal(bool)
-    listing_ready = pyqtSignal(int)
-    collapsed_changed = pyqtSignal(bool)
-    rating_filter_requested = pyqtSignal(str)  # 用户在筛选下拉里选了一项
-    batch_requested = pyqtSignal()
-    browser_requested = pyqtSignal()
-    selection_changed = pyqtSignal()
-    mark_requested = pyqtSignal(str)
-    rating_requested = pyqtSignal(int)
+    image_selected = Signal(str)
+    order_changed = Signal(object)
+    building_changed = Signal(bool)
+    listing_ready = Signal(int)
+    collapsed_changed = Signal(bool)
+    rating_filter_requested = Signal(str)  # 用户在筛选下拉里选了一项
+    batch_requested = Signal()
+    browser_requested = Signal()
+    selection_changed = Signal()
+    mark_requested = Signal(str)
+    rating_requested = Signal(int)
 
     def __init__(self, parent=None, *, image_source_service):
         super().__init__(parent)
@@ -426,7 +426,7 @@ class ThumbnailPanel(QWidget):
         # 分隔条记着这一格原来的高度，高度上限变成零也不会自己把它让给画布，必须明确交还
         self._request_height(self._panel_height(self._thumb_width))
         if not collapsed:
-            QTimer.singleShot(0, self._scroll_to_current)
+            QTimer.singleShot(0, self, self._scroll_to_current)
         QSettings(APP_NAME, "ThumbnailPanel").setValue("collapsed", collapsed)
         self.collapsed_changed.emit(collapsed)
 
@@ -456,7 +456,7 @@ class ThumbnailPanel(QWidget):
         if isinstance(splitter, QSplitter) and splitter is not self._watched_splitter:
             self._watched_splitter = splitter
             splitter.splitterMoved.connect(self._on_splitter_moved)
-        QTimer.singleShot(0, lambda: self._request_height(self._panel_height(self._thumb_width)))
+        QTimer.singleShot(0, self, lambda: self._request_height(self._panel_height(self._thumb_width)))
         self._schedule_requests()
         self._queue_build()
 
@@ -479,7 +479,7 @@ class ThumbnailPanel(QWidget):
             self._thumb_width = self._fitted_width()
             self._thumb_chosen = True
             self._save_timer.start()
-            QTimer.singleShot(0, self._scroll_to_current)
+            QTimer.singleShot(0, self, self._scroll_to_current)
 
     def _set_height_limits(self) -> None:
         if self._collapsed:
@@ -530,7 +530,7 @@ class ThumbnailPanel(QWidget):
                 return True
         if obj is self.list_widget.viewport() and event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.Hide):
             self._schedule_requests()
-            QTimer.singleShot(0, self._queue_build)
+            QTimer.singleShot(0, self, self._queue_build)
         return super().eventFilter(obj, event)
 
     @staticmethod
@@ -681,7 +681,7 @@ class ThumbnailPanel(QWidget):
             self._thumb_chosen = True
             self._request_height(self._panel_height(width))
             self._save_timer.start()
-            QTimer.singleShot(0, self._scroll_to_current)
+            QTimer.singleShot(0, self, self._scroll_to_current)
 
     @property
     def list_version(self):
@@ -1039,7 +1039,7 @@ class ThumbnailPanel(QWidget):
 
     def _on_item_clicked(self, item):
         if self._browser is not None:
-            from PyQt6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication
             if QApplication.keyboardModifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
                 return
         path = item.data(Qt.ItemDataRole.UserRole)
@@ -1052,7 +1052,7 @@ class ThumbnailPanel(QWidget):
                                   if not item.isHidden()])
             self.selection_changed.emit()
 
-    @pyqtSlot(str, int)
+    @Slot(str, int)
     def _on_rating_changed(self, path: str, value: int):
         """评分变化时仅重绘那一项，若有筛选模式则动态调整隐藏状态。"""
         if self._browser is not None:
@@ -1070,7 +1070,7 @@ class ThumbnailPanel(QWidget):
             self._filter_pending.append(self._path_indices[path])
             self._queue_build()
 
-    @pyqtSlot()
+    @Slot()
     def _on_reordered(self):
         """拖拽重排完成后，重建 path → item 映射并通知外部"""
         if self.has_pending_items:

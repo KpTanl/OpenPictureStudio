@@ -8,7 +8,7 @@ from threading import Lock, Event
 from typing import Any, Callable, Optional
 
 from PIL import Image
-from PyQt6.QtCore import QObject, Qt, pyqtSignal, pyqtSlot
+from PySide6.QtCore import QObject, Qt, Signal, Slot
 
 from ...application.image_source_service import ImageSourceService, SourceBundle
 
@@ -42,7 +42,7 @@ class BackgroundResult:
 class PreviewTaskRunner(QObject):
     """运行图像任务；完成回调在创建执行器的 Qt 线程中调用。"""
 
-    _completed = pyqtSignal(object)
+    _completed = Signal(object)
 
     def __init__(self, workers: int = 2):
         super().__init__()
@@ -185,7 +185,7 @@ class PreviewTaskRunner(QObject):
         future.add_done_callback(finish)
         return job_id
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _deliver(self, result: Any) -> None:
         with self._lock:
             queued = self._results.pop(result.job_id, None)

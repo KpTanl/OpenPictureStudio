@@ -6,10 +6,10 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QEvent, QObject, QPoint, Qt  # noqa: E402
-from PyQt6.QtGui import QColor, QFont, QFontMetrics, QHelpEvent, QIcon, QPalette  # noqa: E402
-from PyQt6.QtTest import QTest  # noqa: E402
-from PyQt6.QtWidgets import (QApplication, QLabel, QProgressBar, QPushButton, QToolTip,  # noqa: E402
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt  # noqa: E402
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QHelpEvent, QIcon, QPalette  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import (QApplication, QLabel, QProgressBar, QPushButton, QToolTip,  # noqa: E402
                              QWidget)
 
 from resources.styles.semantic_colors import color_channels, mix  # noqa: E402
@@ -113,7 +113,7 @@ def test_toggle_button_follows_the_theme_and_reports_only_clicks(theme):
     host = _host(button)
     assert button.height() == CONTROL_HEIGHT
     clicks = []
-    button.clicked.connect(clicks.append)
+    button.clicked[bool].connect(clicks.append)
     button.setChecked(True)
     assert clicks == []
     for name in THEMES:

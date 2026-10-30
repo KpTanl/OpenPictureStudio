@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import QEvent, Qt, QPointF, QRectF, pyqtSignal
-from PyQt6.QtGui import QPainter, QPen, QColor, QPainterPath, QFont
-from PyQt6.QtWidgets import QWidget, QSizePolicy
+from PySide6.QtCore import QEvent, Qt, QPointF, QRectF, Signal
+from PySide6.QtGui import QPainter, QPen, QColor, QPainterPath, QFont
+from PySide6.QtWidgets import QWidget, QSizePolicy
 
 from ..theme import get_theme_tokens, to_qcolor
 from resources.styles.semantic_colors import CHANNEL_COLORS
@@ -30,9 +30,9 @@ CURVE_CHANNELS = ("rgb", "r", "g", "b")
 class CurvesWidget(QWidget):
     """交互式曲线编辑组件。"""
 
-    curves_changed = pyqtSignal()
-    interaction_started = pyqtSignal()
-    interaction_finished = pyqtSignal()
+    curves_changed = Signal()
+    interaction_started = Signal()
+    interaction_finished = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

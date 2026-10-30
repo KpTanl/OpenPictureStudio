@@ -8,15 +8,15 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QWidget
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_SM, SPACING_XS, px
 from .toggle_switch import LabeledToggle
 
 
 class ToggleSection(QFrame):
-    toggled_by_user = pyqtSignal(bool)
+    toggled_by_user = Signal(bool)
 
     def __init__(self, title: str = "", description: str = "", parent: Optional[QWidget] = None):
         super().__init__(parent)

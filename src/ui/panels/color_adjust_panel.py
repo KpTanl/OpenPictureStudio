@@ -6,8 +6,8 @@ import logging
 from typing import Optional
 from PIL import Image
 
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
 
 from resources.styles.theme_variables import SPACING_SM, px
 from .base_tool_panel import BaseToolPanel
@@ -70,21 +70,21 @@ class ColorAdjustPanel(BaseToolPanel):
     TOOL_TITLE_KEY = "menu.edit.color_lab"
     TOOL_TITLE_DEFAULT = "Color Lab"
     TOOL_ADAPTER = ColorAdjustAdapter()
-    sampling_requested = pyqtSignal(bool)
-    sampling_picked = pyqtSignal(float, float)
-    sampled_preview_ready = pyqtSignal(object)
-    mask_mode_changed = pyqtSignal(bool)
-    mask_ui_changed = pyqtSignal()
-    mask_create_requested = pyqtSignal(object)
-    mask_upgrade_requested = pyqtSignal()
-    mask_gesture_started = pyqtSignal(object)
-    mask_gesture_changed = pyqtSignal(object)
-    mask_gesture_finished = pyqtSignal(object)
-    mask_gesture_cancelled = pyqtSignal()
+    sampling_requested = Signal(bool)
+    sampling_picked = Signal(float, float)
+    sampled_preview_ready = Signal(object)
+    mask_mode_changed = Signal(bool)
+    mask_ui_changed = Signal()
+    mask_create_requested = Signal(object)
+    mask_upgrade_requested = Signal()
+    mask_gesture_started = Signal(object)
+    mask_gesture_changed = Signal(object)
+    mask_gesture_finished = Signal(object)
+    mask_gesture_cancelled = Signal()
     # 画布上正在新建区域（类型、添加或减去）与结束；画笔设置条随之出现与收起
-    mask_tool_started = pyqtSignal(str, str)
-    mask_tool_finished = pyqtSignal()
-    mask_generation_cancel_requested = pyqtSignal()
+    mask_tool_started = Signal(str, str)
+    mask_tool_finished = Signal()
+    mask_generation_cancel_requested = Signal()
 
     def __init__(
         self,
@@ -560,7 +560,7 @@ class ColorAdjustPanel(BaseToolPanel):
             return False
         if self.mask_overlay.handle_key_press(key):
             return True
-        from PyQt6.QtCore import Qt
+        from PySide6.QtCore import Qt
         if key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace) and self._mask_selected is not None:
             # 删除的是键盘焦点所在那一层的选中项；焦点在画布上时先删选中的区域，没有选中区域再删蒙版
             focus = self._mask_panel.focused_list()

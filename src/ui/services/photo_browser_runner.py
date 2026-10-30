@@ -6,8 +6,8 @@ from collections import OrderedDict, deque
 from concurrent.futures import CancelledError, ThreadPoolExecutor
 from dataclasses import dataclass
 
-from PyQt6.QtCore import QObject, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QImage, QPixmap
+from PySide6.QtCore import QObject, QTimer, Qt, Signal, Slot
+from PySide6.QtGui import QImage, QPixmap
 
 from ...application.export_store import ExportPreset
 from ...application.output_writer import OperationCancellation
@@ -36,11 +36,11 @@ class BrowserImage:
 
 
 class PhotoBrowserRunner(QObject):
-    ready = pyqtSignal(str)
-    changed = pyqtSignal()
-    clearing = pyqtSignal(str)
-    idle = pyqtSignal()
-    _completed = pyqtSignal(object, object)
+    ready = Signal(str)
+    changed = Signal()
+    clearing = Signal(str)
+    idle = Signal()
+    _completed = Signal(object, object)
 
     def __init__(self, service, parent=None, *, foreground_busy=lambda: False, source_active=lambda: False):
         super().__init__(parent)
@@ -402,6 +402,7 @@ class PhotoBrowserRunner(QObject):
         if snapshot is not None and self._deferred_snapshots.pop(snapshot.id, None) is not None:
             self.service.sessions.core.release_export_snapshot(snapshot)
 
+    @Slot(object, object)
     def _deliver(self, active, packet):
         self._active = None
         key, path, snapshot, cancellation, owned, list_version = active

@@ -1,7 +1,7 @@
 """Base overlay interface for spatial interactive tools."""
 
-from PyQt6.QtCore import QObject, QRect, Qt, pyqtSignal
-from PyQt6.QtGui import QPainter, QMouseEvent
+from PySide6.QtCore import QObject, QRect, Qt, Signal
+from PySide6.QtGui import QPainter, QMouseEvent
 
 
 class ViewerOverlay(QObject):
@@ -17,9 +17,9 @@ class ViewerOverlay(QObject):
       - drag_started、drag_finished 信号：一次拖动的首尾，使用方据此把途中的多次变化记成一步
     """
 
-    geometry_changed = pyqtSignal()
-    drag_started = pyqtSignal()
-    drag_finished = pyqtSignal()
+    geometry_changed = Signal()
+    drag_started = Signal()
+    drag_finished = Signal()
 
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)

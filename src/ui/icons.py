@@ -8,9 +8,9 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
-from PyQt6.QtCore import QByteArray, QRect, QRectF, QSize, Qt
-from PyQt6.QtGui import QIcon, QIconEngine, QPainter, QPixmap, QPixmapCache
-from PyQt6.QtSvg import QSvgRenderer
+from PySide6.QtCore import QByteArray, QRect, QRectF, QSize, Qt
+from PySide6.QtGui import QIcon, QIconEngine, QPainter, QPixmap, QPixmapCache
+from PySide6.QtSvg import QSvgRenderer
 
 from ..utils.resource_paths import resolve_resource
 from .theme import get_theme_tokens

@@ -1,7 +1,7 @@
 """Shortcut management for OpenPictureStudio."""
 
-from PyQt6.QtCore import QSettings
-from PyQt6.QtGui import QKeySequence
+from PySide6.QtCore import QSettings
+from PySide6.QtGui import QKeySequence
 
 from ..utils.app_info import APP_NAME
 

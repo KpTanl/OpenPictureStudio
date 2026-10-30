@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import re
 
-from PyQt6.QtCore import QEvent, QPoint, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QTextCursor
-from PyQt6.QtWidgets import QApplication, QFrame, QListWidget, QListWidgetItem, QVBoxLayout
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, Signal
+from PySide6.QtGui import QTextCursor
+from PySide6.QtWidgets import QApplication, QFrame, QListWidget, QListWidgetItem, QVBoxLayout
 
 from resources.styles.theme_variables import ASSISTANT_COMMAND_WIDTH, CONTROL_HEIGHT, SPACING_XS, px
 
@@ -15,7 +15,7 @@ COMMANDS = (("agent", "assistant.mode.agent"), ("plan", "assistant.mode.plan"),
 
 
 class AssistantCommandMenu(QFrame):
-    selected = pyqtSignal(str)
+    selected = Signal(str)
 
     def __init__(self, editor):
         super().__init__(editor, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)

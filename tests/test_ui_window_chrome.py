@@ -10,10 +10,10 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QPoint, Qt  # noqa: E402
-from PyQt6.QtGui import QAction, QPalette  # noqa: E402
-from PyQt6.QtTest import QTest  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QWidget  # noqa: E402
+from PySide6.QtCore import QPoint, Qt  # noqa: E402
+from PySide6.QtGui import QAction, QPalette  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
 
 from resources.styles.theme_variables import TOP_BAR_HEIGHT  # noqa: E402
 from src.ui.theme import ThemeManager, get_theme_tokens, to_qcolor  # noqa: E402
@@ -234,8 +234,8 @@ def test_main_window_keeps_the_system_title_bar_where_the_frame_cannot_be_taken_
 _PROBE = r"""
 import ctypes, json, sys
 from ctypes import wintypes
-from PyQt6.QtCore import QPoint, QRect, Qt
-from PyQt6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtWidgets import QApplication, QMainWindow
 from src.ui.window_chrome import CAPTION, CLIENT, MAXIMIZE, WindowChrome
 
 app = QApplication(sys.argv[:1])

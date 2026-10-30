@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from PyQt6.QtCore import QSize
-from PyQt6.QtGui import QAction, QKeySequence
-from PyQt6.QtWidgets import QWidget
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtWidgets import QWidget
 
 from resources.styles.theme_variables import TOOL_BUTTON_SIZE
 from ..icons import themed_icon

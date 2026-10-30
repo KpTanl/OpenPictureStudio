@@ -1,8 +1,8 @@
 """Shape crop overlay for interactive geometric shape cropping on ImageViewer."""
 
 from typing import Dict, Optional
-from PyQt6.QtCore import Qt, QRect, QPoint
-from PyQt6.QtGui import QPainter, QPen, QMouseEvent, QPainterPath
+from PySide6.QtCore import Qt, QRect, QPoint
+from PySide6.QtGui import QPainter, QPen, QMouseEvent, QPainterPath
 from resources.styles.semantic_colors import OVERLAY_COLORS
 from ..theme import to_qcolor
 from .base_overlay import ViewerOverlay

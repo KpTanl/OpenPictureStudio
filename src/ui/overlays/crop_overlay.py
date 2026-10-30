@@ -1,8 +1,8 @@
 """Crop overlay for interactive rectangular cropping on ImageViewer."""
 
 from typing import Dict, Optional, Tuple
-from PyQt6.QtCore import Qt, QRect, QPoint
-from PyQt6.QtGui import QPainter, QPen, QMouseEvent
+from PySide6.QtCore import Qt, QRect, QPoint
+from PySide6.QtGui import QPainter, QPen, QMouseEvent
 from resources.styles.semantic_colors import OVERLAY_COLORS
 from ..theme import to_qcolor
 from .base_overlay import ViewerOverlay

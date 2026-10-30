@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_MD, px
 from .apple_button import AppleButton, AppleGhostButton
@@ -26,8 +26,8 @@ def _row(control, parent):
 
 
 class StyleConfirmation(QWidget):
-    confirmed = pyqtSignal(str, object)
-    cancelled = pyqtSignal()
+    confirmed = Signal(str, object)
+    cancelled = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -132,11 +132,11 @@ class StyleConfirmation(QWidget):
 
 
 class StyleManager(QWidget):
-    command_requested = pyqtSignal(str, object)
-    apply_requested = pyqtSignal(str, str, str)
-    replay_requested = pyqtSignal(str, str)
-    preference_requested = pyqtSignal(str)
-    back_requested = pyqtSignal()
+    command_requested = Signal(str, object)
+    apply_requested = Signal(str, str, str)
+    replay_requested = Signal(str, str)
+    preference_requested = Signal(str)
+    back_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

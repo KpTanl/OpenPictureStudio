@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtWidgets import (QCheckBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QScrollArea,
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtWidgets import (QCheckBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QScrollArea,
                              QSpinBox, QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from resources.styles.theme_variables import SPACING_MD, SPACING_XL, px

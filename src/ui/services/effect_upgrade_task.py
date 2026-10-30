@@ -1,11 +1,11 @@
-from PyQt6.QtCore import QObject, QRunnable, pyqtSignal
+from PySide6.QtCore import QObject, QRunnable, Signal
 
 from ...application.output_writer import OperationCancellation
 from ...core.contracts.result import CoreResult
 
 
 class _UpgradeSignals(QObject):
-    finished = pyqtSignal(object, object)
+    finished = Signal(object, object)
 
 
 class EffectUpgradeTask(QRunnable):

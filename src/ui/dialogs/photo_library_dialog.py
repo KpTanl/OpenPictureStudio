@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QItemSelectionModel, QSize, Qt, pyqtSignal
-from PyQt6.QtWidgets import (QAbstractItemView, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
+from PySide6.QtCore import QItemSelectionModel, QSize, Qt, Signal
+from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
                              QLineEdit, QProxyStyle, QScrollArea, QSplitter, QStackedWidget, QStyle, QStyledItemDelegate,
                              QStyleOptionViewItem, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
@@ -221,7 +221,7 @@ class LibraryRuleDialog(BaseDialog):
 
 
 class PhotoLibraryDialog(BaseDialog):
-    photo_requested = pyqtSignal(str)
+    photo_requested = Signal(str)
 
     def __init__(self, runner, translate, parent=None):
         super().__init__(parent=parent, title_key="library.title", min_width=1060, min_height=600,

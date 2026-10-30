@@ -1,7 +1,7 @@
 from concurrent.futures import CancelledError, ThreadPoolExecutor
 import logging
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal
+from PySide6.QtCore import QObject, Qt, Signal, Slot
 
 from ...application.image_load_queue import ImageLoadQueue
 from ...application.image_info import ImageInfoQuery, ImageInfoRequest, ImageInfoResult
@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 class ImageInfoRunner(QObject):
     """后台读取并交付当前文件版本的信息快照。"""
-    started = pyqtSignal(object)
-    ready = pyqtSignal(object)
-    _completed = pyqtSignal(object, object)
+    started = Signal(object)
+    ready = Signal(object)
+    _completed = Signal(object, object)
 
     def __init__(self, read_info, file_stamp, parent=None):
         super().__init__(parent)
@@ -92,6 +92,7 @@ class ImageInfoRunner(QObject):
         except RuntimeError:
             logger.debug("图片信息接收方已关闭")
 
+    @Slot(object, object)
     def _deliver(self, job, result):
         try:
             if (self._closed or job.cancellation.is_set()

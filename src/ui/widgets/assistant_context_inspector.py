@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import (ASSISTANT_CONTEXT_EDIT_HEIGHT, CONTROL_HEIGHT_COMPACT,
                                               SPACING_MD, SPACING_SM, px)
@@ -23,10 +23,10 @@ def disclosure_text(context, model, tr):
 
 
 class ContextInspector(QScrollArea):
-    edited = pyqtSignal(dict)
-    summary_edited = pyqtSignal(str)
-    summarize_requested = pyqtSignal()
-    close_requested = pyqtSignal()
+    edited = Signal(object)
+    summary_edited = Signal(str)
+    summarize_requested = Signal()
+    close_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

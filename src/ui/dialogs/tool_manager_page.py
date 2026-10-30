@@ -1,8 +1,8 @@
 """设置窗口里的“工具”页，以及安装前确认固定清单的对话框。"""
 
-from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QProgressBar, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QProgressBar, QScrollArea, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_SM, SPACING_LG, SPACING_XL, px
 from ...application.tool_resource_service import ToolResourceService
@@ -29,8 +29,8 @@ def _text_label(text, parent):
 
 
 class _ResourceRow(QWidget):
-    view_requested = pyqtSignal(object)
-    cancel_requested = pyqtSignal(object)
+    view_requested = Signal(object)
+    cancel_requested = Signal(object)
 
     def __init__(self, resource, parent=None):
         super().__init__(parent)
@@ -129,9 +129,9 @@ class ToolManagerPage(QWidget, ThemedI18nMixin):
     参数与资源身份。查看某个模型或运行环境时发出请求，由所在的设置窗口切到对应的页。
     """
 
-    tools_changed = pyqtSignal(tuple)
-    model_view_requested = pyqtSignal(str)
-    runtime_view_requested = pyqtSignal(str)
+    tools_changed = Signal(object)
+    model_view_requested = Signal(str)
+    runtime_view_requested = Signal(str)
 
     def __init__(self, core, parent=None, *, runtime_service=None, context_provider=None, tool_id=None):
         super().__init__(parent)

@@ -8,8 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
-from PyQt6 import sip
-from PyQt6.QtCore import QCoreApplication, QEvent, QThreadPool
+from shiboken6 import Shiboken
+from PySide6.QtCore import QCoreApplication, QEvent, QThreadPool
 
 
 def wait_until(predicate, description, *, timeout=10):
@@ -153,7 +153,7 @@ def wait_for_studio(window, path, tool_id="color_adjust"):
 
 
 def close_studio_workspace(studio):
-    if sip.isdeleted(studio):
+    if not Shiboken.isValid(studio):
         return
     wait_until(lambda: not studio._commit_busy, "Studio 提交结束")
     studio.assistant_panel.invalidate()
@@ -183,7 +183,7 @@ def close_studio_workspace(studio):
 
 
 def close_main_window(window, *, delete=True):
-    if sip.isdeleted(window):
+    if not Shiboken.isValid(window):
         return
     studio = window.studio_workspace
     if not window._caches_closed_for_exit and studio is not None:
@@ -211,7 +211,7 @@ def close_main_window(window, *, delete=True):
 
 
 def isolate_paths(root, monkeypatch):
-    from PyQt6.QtCore import QSettings, QStandardPaths
+    from PySide6.QtCore import QSettings, QStandardPaths
     from src.utils import model_paths
 
     root = Path(root)

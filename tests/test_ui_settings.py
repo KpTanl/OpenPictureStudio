@@ -1,9 +1,9 @@
 """设置窗口：表单行、快捷键录入、只在用户编辑时发出信号，以及在主窗口里改了就生效。"""
 
-from PyQt6.QtCore import QObject, QSettings, Qt, pyqtSignal
-from PyQt6.QtGui import QKeySequence
-from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QGroupBox, QPushButton, QSpinBox, QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtCore import QObject, QSettings, Qt, Signal
+from PySide6.QtGui import QKeySequence
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QGroupBox, QPushButton, QSpinBox, QTabWidget, QVBoxLayout, QWidget
 
 from src.application.image_display_settings import ImageDisplaySettings
 from src.application.managed_cache import ManagedCacheStatus
@@ -32,9 +32,9 @@ ROWS = (
 
 
 class _Runner(QObject):
-    state_changed = pyqtSignal()
-    clear_finished = pyqtSignal(int, str)
-    maintenance_failed = pyqtSignal(str)
+    state_changed = Signal()
+    clear_finished = Signal(int, str)
+    maintenance_failed = Signal(str)
 
     def __init__(self, used, limit, *, writer=True):
         super().__init__()
@@ -194,6 +194,29 @@ def test_settings_dialog_projection_is_silent_and_user_edits_emit(qapp, qtbot):
     dialog.canvas_background._on_action_triggered(dialog.canvas_background.findData("beige"))
     assert events == [("images", ImageDisplaySettings(RawDisplayMode.ORIGINAL, CanvasBackground.THEME)),
                       ("images", ImageDisplaySettings(RawDisplayMode.ORIGINAL, CanvasBackground.BEIGE))]
+    dialog.close()
+
+
+def test_update_switch_reports_user_clicks_and_keys_only(qapp):
+    dialog = SettingsDialog(values=SettingsValues(check_updates=True))
+    dialog.show()
+    edited = []
+    dialog.update_enabled_edited.connect(edited.append)
+    switch = dialog.update_switch
+    switch.set_checked_silent(False)
+    assert edited == []
+    switch.click()
+    assert edited == [True]
+    QTest.mouseClick(switch, Qt.MouseButton.LeftButton)
+    assert edited == [True, False]
+    QTest.keyClick(switch, Qt.Key.Key_Space)
+    QTest.keyClick(switch, Qt.Key.Key_Return)
+    assert edited == [True, False, True, False]
+    switch.set_checked_silent(True)
+    switch.setEnabled(False)
+    QTest.mouseClick(switch, Qt.MouseButton.LeftButton)
+    QTest.keyClick(switch, Qt.Key.Key_Space)
+    assert edited == [True, False, True, False]
     dialog.close()
 
 

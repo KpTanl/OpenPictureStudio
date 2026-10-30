@@ -4,9 +4,9 @@ from threading import Event
 from time import sleep
 
 import pytest
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication, QScrollArea
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QScrollArea
 
 from src.ui.base_window import BaseDialog
 from src.ui.dialogs.apply_target_dialog import ApplyTarget, ask_apply_target

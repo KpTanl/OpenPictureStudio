@@ -4,7 +4,7 @@ import os
 import numpy as np
 import pytest
 from PIL import Image
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 import src.core.photo_engine as photo_engine
 from src.core.photo_engine import (

@@ -5,7 +5,7 @@ import ctypes
 import sys
 from ctypes import wintypes
 
-from PyQt6.QtCore import QSettings
+from PySide6.QtCore import QSettings
 
 from ..utils.app_info import APP_NAME
 from .chat_completion import ModelSettings

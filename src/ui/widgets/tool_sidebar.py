@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, Optional, Sequence
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QStackedWidget, QScrollArea, QFrame
 )
@@ -68,11 +68,11 @@ class ToolSidebar(QWidget, ThemedI18nMixin):
     ``stage_reset_requested``。``set_variants()``、``set_edit_stack()`` 是程序回填，不发出信号。
     """
 
-    close_requested = pyqtSignal()
-    reset_requested = pyqtSignal()
-    discard_stash_requested = pyqtSignal()
-    tool_requested = pyqtSignal(str)
-    stage_reset_requested = pyqtSignal(str)
+    close_requested = Signal()
+    reset_requested = Signal()
+    discard_stash_requested = Signal()
+    tool_requested = Signal(str)
+    stage_reset_requested = Signal(str)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)

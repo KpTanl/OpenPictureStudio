@@ -6,7 +6,7 @@ from concurrent.futures import CancelledError, ThreadPoolExecutor
 from contextlib import contextmanager
 from threading import Event
 
-from PyQt6.QtCore import QObject, QTimer, Qt, pyqtSignal
+from PySide6.QtCore import QObject, QTimer, Qt, Signal, Slot
 
 from ...application.output_writer import OperationCancellation
 from ...application.result_types import CoreResult, ErrorCode
@@ -32,15 +32,15 @@ class BatchItemCancellation:
 
 
 class PhotoBatchRunner(QObject):
-    changed = pyqtSignal(str)
-    item_changed = pyqtSignal(str)
-    finished = pyqtSignal(str)
-    idle = pyqtSignal()
-    display_ready = pyqtSignal(object, object)
-    _prepared = pyqtSignal(object, object)
-    _display_prepared = pyqtSignal(object, object)
-    _photo_prepared = pyqtSignal(object, object)
-    _rendered = pyqtSignal(object, object)
+    changed = Signal(str)
+    item_changed = Signal(str)
+    finished = Signal(str)
+    idle = Signal()
+    display_ready = Signal(object, object)
+    _prepared = Signal(object, object)
+    _display_prepared = Signal(object, object)
+    _photo_prepared = Signal(object, object)
+    _rendered = Signal(object, object)
 
     def __init__(self, service, drafts, parent=None):
         super().__init__(parent)
@@ -86,7 +86,7 @@ class PhotoBatchRunner(QObject):
     def _next_job(self):
         if self._active is None and self._queue and not self._closed:
             self._active = self._queue.popleft()
-            QTimer.singleShot(0, self._next_item)
+            QTimer.singleShot(0, self, self._next_item)
 
     def _next_item(self):
         job = self._active
@@ -102,7 +102,7 @@ class PhotoBatchRunner(QObject):
                         item.status, item.error = "failed", self.drafts.load_error.to_dict()
                 self._finish(job, CoreResult(success=False, error=self.drafts.load_error))
                 return
-            QTimer.singleShot(100, self._next_item)
+            QTimer.singleShot(100, self, self._next_item)
             return
         if job["cancelled"].is_set() or job["index"] >= len(batch.items):
             if job["action"] == "apply":
@@ -115,7 +115,7 @@ class PhotoBatchRunner(QObject):
         item = batch.items[index]
         if item.status == "skipped":
             job["index"] += 1
-            QTimer.singleShot(0, self._next_item)
+            QTimer.singleShot(0, self, self._next_item)
             return
         if job["action"] != "apply":
             try:
@@ -126,11 +126,11 @@ class PhotoBatchRunner(QObject):
                 item.error = CoreResult.from_exception(error, message_key="batch.failed").error.to_dict()
             job["index"] += 1
             self.changed.emit(batch.id)
-            QTimer.singleShot(0, self._next_item)
+            QTimer.singleShot(0, self, self._next_item)
         elif item.after_revision or item.status in ("success", "unchanged"):
             self.service.retry_draft(batch.id, index)
             job["index"] += 1
-            QTimer.singleShot(0, self._next_item)
+            QTimer.singleShot(0, self, self._next_item)
         else:
             item.status, item.error = "preparing", None
             path = item.path
@@ -151,6 +151,7 @@ class PhotoBatchRunner(QObject):
         elif result.success:
             self.service.core.release_source(result.data.source_id)
 
+    @Slot(object, object)
     def _deliver(self, job, result):
         if self._closed or self._active is not job:
             if result.success:
@@ -185,7 +186,7 @@ class PhotoBatchRunner(QObject):
                 self.service.core.release_source(result.data.source_id)
         job["index"] += 1
         self.changed.emit(batch.id)
-        QTimer.singleShot(0, self._next_item)
+        QTimer.singleShot(0, self, self._next_item)
 
     def _render_calibration(self, job, index):
         batch, agent = self.service.get(job["batch"]), self.service.agent
@@ -230,6 +231,7 @@ class PhotoBatchRunner(QObject):
         if not self._closed:
             self._rendered.emit(job, result)
 
+    @Slot(object, object)
     def _deliver_rendered(self, job, result):
         if self._closed or self._active is not job:
             return
@@ -255,7 +257,7 @@ class PhotoBatchRunner(QObject):
                 item.status = "failed"
         job["index"] += 1
         self.changed.emit(batch.id)
-        QTimer.singleShot(0, self._next_item)
+        QTimer.singleShot(0, self, self._next_item)
 
     def _save(self, job):
         batch = self.service.get(job["batch"])
@@ -317,6 +319,7 @@ class PhotoBatchRunner(QObject):
         if not self._closed:
             self._photo_prepared.emit(request, result)
 
+    @Slot(object, object)
     def _deliver_photo(self, request, result):
         reference, session_id, version, callback, is_cancelled = request
         state = self.service.core.get_session(session_id)
@@ -360,6 +363,7 @@ class PhotoBatchRunner(QObject):
             if memory is not None:
                 memory.__exit__(None, None, None)
 
+    @Slot(object, object)
     def _deliver_display(self, request, packet):
         result, memory = packet
         generation, path, session_id, version = request

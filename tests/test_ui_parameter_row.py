@@ -6,9 +6,9 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QEvent, QPointF, Qt  # noqa: E402
-from PyQt6.QtGui import QColor, QKeyEvent, QMouseEvent, QPalette  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QWidget  # noqa: E402
+from PySide6.QtCore import QEvent, QPointF, Qt  # noqa: E402
+from PySide6.QtGui import QColor, QKeyEvent, QMouseEvent, QPalette  # noqa: E402
+from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
 
 from resources.styles.semantic_colors import MIXER_CHANNEL_COLORS, TRACK_GRADIENTS, mixer_track_colors  # noqa: E402
 from resources.styles.theme_variables import get_theme_qss, get_theme_tokens_by_name  # noqa: E402

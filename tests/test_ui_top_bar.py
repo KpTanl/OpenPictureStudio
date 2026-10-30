@@ -6,10 +6,10 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QPoint, Qt  # noqa: E402
-from PyQt6.QtGui import QAction, QColor, QKeySequence, QPalette  # noqa: E402
-from PyQt6.QtTest import QTest  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QWidget  # noqa: E402
+from PySide6.QtCore import QPoint, Qt  # noqa: E402
+from PySide6.QtGui import QAction, QColor, QKeySequence, QPalette  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
 
 from resources.styles.theme_variables import TOP_BAR_HEIGHT, get_theme_qss  # noqa: E402
 from src.ui.shortcut_manager import ShortcutManager  # noqa: E402

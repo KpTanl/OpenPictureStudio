@@ -1,5 +1,5 @@
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QFileDialog, QGridLayout, QProgressBar, QVBoxLayout, QWidget
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QFileDialog, QGridLayout, QProgressBar, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_MD, px
 from ..themed_mixin import ThemedI18nMixin

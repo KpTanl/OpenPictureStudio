@@ -6,10 +6,10 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QPoint, Qt  # noqa: E402
-from PyQt6.QtGui import QAction, QColor, QPalette, QPixmap  # noqa: E402
-from PyQt6.QtTest import QTest  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QScrollArea, QStatusBar, QWidget  # noqa: E402
+from PySide6.QtCore import QPoint, Qt  # noqa: E402
+from PySide6.QtGui import QAction, QColor, QPalette, QPixmap  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication, QScrollArea, QStatusBar, QWidget  # noqa: E402
 
 from resources.styles.theme_variables import (CANVAS_TOOLBAR_HEIGHT, CANVAS_TOOLBAR_MARGIN,  # noqa: E402
                                               get_theme_qss)

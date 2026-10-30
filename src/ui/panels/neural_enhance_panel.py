@@ -1,5 +1,5 @@
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_SM, px
 from .base_tool_panel import BaseToolPanel
@@ -43,9 +43,9 @@ class AIEnhancePanel(BaseToolPanel):
     TOOL_TITLE_KEY = "menu.edit.ai_enhance"
     TOOL_TITLE_DEFAULT = "Image Enhancement"
     MANUAL_PREVIEW = True
-    preview_requested = pyqtSignal()
-    cancel_requested = pyqtSignal()
-    availability_changed = pyqtSignal()
+    preview_requested = Signal()
+    cancel_requested = Signal()
+    availability_changed = Signal()
 
     def __init__(self, image_path, parent=None, edit_state_store=None, **services):
         from ...application.panel_render_service import PanelRenderService

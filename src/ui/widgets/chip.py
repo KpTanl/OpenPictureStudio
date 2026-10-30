@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtWidgets import QButtonGroup, QGridLayout, QPushButton, QSizePolicy, QWidget
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtWidgets import QButtonGroup, QGridLayout, QPushButton, QSizePolicy, QWidget
 
 from resources.styles.theme_variables import CONTROL_HEIGHT_COMPACT, SPACING_SM, px
 from .apple_button import bold_text_extra
@@ -38,7 +38,7 @@ class ChipGroup(QWidget):
     只有用户点击发出 ``current_changed``；``set_current()`` 回填不发出，也可以回填成全部不选中。
     """
 
-    current_changed = pyqtSignal(str)
+    current_changed = Signal(str)
 
     def __init__(self, columns: int = 0, parent: Optional[QWidget] = None):
         super().__init__(parent)

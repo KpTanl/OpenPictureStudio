@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 from threading import Event, Lock
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal, pyqtSlot
+from PySide6.QtCore import QObject, Qt, Signal, Slot
 
 from ...application.browse_service import BrowseRequest
 
@@ -10,9 +10,9 @@ logger = logging.getLogger(__name__)
 
 
 class BrowseTaskRunner(QObject):
-    finished = pyqtSignal(object, object)
-    busy_changed = pyqtSignal(bool)
-    _completed = pyqtSignal()
+    finished = Signal(object, object)
+    busy_changed = Signal(bool)
+    _completed = Signal()
 
     def __init__(self, service, parent=None):
         super().__init__(parent)
@@ -68,7 +68,7 @@ class BrowseTaskRunner(QObject):
         except RuntimeError:
             self.shutdown()
 
-    @pyqtSlot()
+    @Slot()
     def _deliver(self):
         with self._lock:
             outcome, self._outcome = self._outcome, None

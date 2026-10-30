@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from typing import Optional
 from PIL import Image
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFormLayout, QFileDialog, QLineEdit
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFormLayout, QFileDialog, QLineEdit
 
 from resources.styles.theme_variables import SPACING_SM, px
 from .base_tool_panel import BaseToolPanel

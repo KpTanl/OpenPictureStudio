@@ -9,9 +9,9 @@ import math
 from pathlib import Path
 from typing import Callable, Optional
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QTextOption
-from PyQt6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea, QSizePolicy, QTextEdit,
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QTextOption
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea, QSizePolicy, QTextEdit,
                              QVBoxLayout, QWidget)
 
 from resources.styles.theme_variables import (INFO_SIDEBAR_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, SPACING_LG,
@@ -132,14 +132,14 @@ def _rule(parent: QWidget, *, vertical: bool = False) -> QFrame:
 
 
 class PhotoInfoPanel(QWidget, ThemedI18nMixin):
-    info_requested = pyqtSignal(object)
-    reading_stopped = pyqtSignal()
-    expanded_changed = pyqtSignal(bool)
-    path_changed = pyqtSignal()
-    metadata_changed = pyqtSignal(object)
+    info_requested = Signal(object)
+    reading_stopped = Signal()
+    expanded_changed = Signal(bool)
+    path_changed = Signal()
+    metadata_changed = Signal(object)
     # 带直方图的面板：展开着并且有照片时请求当前画面的直方图，收起、停用或没有照片时通知不再需要
-    histogram_requested = pyqtSignal()
-    histogram_stopped = pyqtSignal()
+    histogram_requested = Signal()
+    histogram_stopped = Signal()
 
     def __init__(self, parent=None, *, read_summary=False, histogram=False):
         super().__init__(parent)

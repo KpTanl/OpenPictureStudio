@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 from PIL import Image
 
-from PyQt6.QtWidgets import QWidget, QLabel
+from PySide6.QtWidgets import QWidget, QLabel
 
 from .base_tool_panel import BaseToolPanel
 from .canvas_result import ResultViewControl

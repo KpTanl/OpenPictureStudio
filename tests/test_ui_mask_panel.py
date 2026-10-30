@@ -2,8 +2,9 @@
 
 import copy
 
-from PyQt6.QtCore import QEvent, QPointF, QRect, Qt
-from PyQt6.QtGui import QMouseEvent
+from PySide6.QtCore import QEvent, QPointF, QRect, Qt
+from PySide6.QtGui import QMouseEvent
+from PySide6.QtTest import QTest
 
 from src.core.mask_components import prepare_components
 from src.ui.overlays.mask_overlay import MaskOverlay
@@ -58,6 +59,22 @@ def test_selected_mask_lists_its_areas_then_its_adjustments(qapp):
     assert panel._rows[_id(4)][0]._subtitle == "mask.disabled"
     assert panel._areas_empty.isHidden() and panel._subtract.isEnabled()
     assert panel._parameter_rows["exposure_amt"].slider.value() == 50
+
+
+def test_range_button_reports_user_changes_only(qapp):
+    panel = _panel(qapp)
+    requested = []
+    panel.range_requested.connect(requested.append)
+    panel.set_state(_params(), _id(1), ready=True, show_range=True)
+    assert requested == []
+    panel.show()
+    QTest.mouseClick(panel._range, Qt.MouseButton.LeftButton)
+    assert requested == [False]
+    QTest.keyClick(panel._range, Qt.Key.Key_Space)
+    assert requested == [False, True]
+    panel.set_state(_params(), _id(1), ready=True, show_range=False)
+    assert requested == [False, True]
+    panel.close()
 
 
 def test_detecting_shows_progress_and_can_be_cancelled(qapp):

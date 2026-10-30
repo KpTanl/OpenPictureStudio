@@ -6,8 +6,8 @@ import sys
 from threading import Event
 import time
 
-from PyQt6.QtCore import QObject, QSettings, QTimer, Qt, QUrl, pyqtSignal
-from PyQt6.QtGui import QDesktopServices
+from PySide6.QtCore import QObject, QSettings, QTimer, Qt, QUrl, Signal, Slot
+from PySide6.QtGui import QDesktopServices
 
 from ...utils.app_info import APP_NAME
 from ...application.storage_paths import bootstrap_root
@@ -34,9 +34,9 @@ class _SettingsStore:
 
 
 class VersionCheckRunner(QObject):
-    changed = pyqtSignal(object)
-    failed = pyqtSignal(str)
-    _completed = pyqtSignal(str, object, str)
+    changed = Signal(object)
+    failed = Signal(str)
+    _completed = Signal(str, object, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -138,6 +138,7 @@ class VersionCheckRunner(QObject):
         elif self._automatic_due and self.state.enabled:
             self.check()
 
+    @Slot(str, object, str)
     def _deliver(self, name, state, error):
         if self._closed:
             return

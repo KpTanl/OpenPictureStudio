@@ -1,8 +1,8 @@
 """设置里的文件关联页：格式列表、开关、筛选与搜索，以及随设置窗口的生命周期。"""
 
 import pytest
-from PyQt6.QtCore import QCoreApplication, QEvent
-from PyQt6.QtWidgets import QApplication, QFrame, QLineEdit, QPushButton, QScrollArea
+from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtWidgets import QApplication, QFrame, QLineEdit, QPushButton, QScrollArea
 
 from src.ui.dialogs import file_association_page
 from src.ui.dialogs.file_association_page import (

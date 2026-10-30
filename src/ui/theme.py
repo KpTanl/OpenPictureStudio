@@ -7,9 +7,9 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QObject, pyqtSignal
-from PyQt6.QtGui import QColor, QPalette
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QObject, Signal
+from PySide6.QtGui import QColor, QPalette
+from PySide6.QtWidgets import QApplication
 
 try:
     from resources.styles.theme_variables import (
@@ -114,7 +114,7 @@ class ThemeManager(QObject):
     通过 Qt 6.5+ 的 QStyleHints.colorScheme() 检测系统主题。
     """
 
-    theme_changed = pyqtSignal(str)
+    theme_changed = Signal(str)
 
     THEME_DARK = "dark"
     THEME_LIGHT = "light"

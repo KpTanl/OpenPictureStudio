@@ -7,16 +7,16 @@ AppleDropDown 兼容 QComboBox 的常用接口，可在右侧显示一段说明�
 from __future__ import annotations
 
 from typing import Any, Optional, Sequence
-from PyQt6.QtCore import (
+from PySide6.QtCore import (
     QElapsedTimer,
     QEvent,
     QPoint,
     QRect,
     QSize,
     Qt,
-    pyqtSignal,
+    Signal,
 )
-from PyQt6.QtGui import (
+from PySide6.QtGui import (
     QAction,
     QIcon,
     QKeyEvent,
@@ -24,7 +24,7 @@ from PyQt6.QtGui import (
     QPaintEvent,
     QPixmap,
 )
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QMenu,
     QPushButton,
     QSizePolicy,
@@ -87,9 +87,9 @@ class AppleMenu(QMenu):
 class AppleDropDown(QPushButton):
     """下拉选择，接口与 QComboBox 的常用部分一致。"""
 
-    currentIndexChanged = pyqtSignal(int)
-    currentTextChanged = pyqtSignal(str)
-    activated = pyqtSignal(int)
+    currentIndexChanged = Signal(int)
+    currentTextChanged = Signal(str)
+    activated = Signal(int)
 
     _MIN_VISIBLE_CHARS = 4
 

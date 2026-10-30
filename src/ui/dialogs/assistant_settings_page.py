@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtWidgets import QGridLayout, QLineEdit, QListWidget, QListWidgetItem, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtWidgets import QGridLayout, QLineEdit, QListWidget, QListWidgetItem, QStackedWidget, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import ASSISTANT_CONTEXT_EDIT_HEIGHT, ASSISTANT_MODEL_LIST_HEIGHT, ASSISTANT_SETTINGS_FIELD_WIDTH, SPACING_MD, px
 from ...application.assistant_models import AssistantConnection, AssistantModel, endpoint_url, new_id
@@ -102,7 +102,7 @@ class AssistantSettingsPage(ManagementPage, ThemedI18nMixin):
             control.activated.connect(lambda _index: self._edited(name))
         elif kind == "bool":
             control = AppleCheckBox("", row)
-            control.clicked.connect(lambda _checked: self._edited(name))
+            control.clicked[bool].connect(lambda _checked: self._edited(name))
         elif kind == "int":
             control = AppleSpinBox(row)
             control.setRange(low, high)
@@ -136,7 +136,7 @@ class AssistantSettingsPage(ManagementPage, ThemedI18nMixin):
         self._row(section, "connection.endpoint", note=True)
         self._row(section, "connection.api_key", note=True)
         self.show_key = AppleCheckBox("", page)
-        self.show_key.clicked.connect(lambda visible: self._fields["connection.api_key"][0].setEchoMode(
+        self.show_key.clicked[bool].connect(lambda visible: self._fields["connection.api_key"][0].setEchoMode(
             QLineEdit.EchoMode.Normal if visible else QLineEdit.EchoMode.Password))
         self._rows["connection.api_key"].add_control(self.show_key)
         self.connection_options = CollapsibleCard("", page, is_expanded=False)
@@ -540,7 +540,7 @@ class AssistantSettingsPage(ManagementPage, ThemedI18nMixin):
         self._when_saved(lambda: self._runner.command("default_model", identity=self._model_id))
 
     def _add_connection(self):
-        from PyQt6.QtCore import QPoint
+        from PySide6.QtCore import QPoint
         menu = AppleMenu(self)
         for provider in ("openai", "deepseek", "generic"):
             menu.addAction(self._tr("assistant.option." + provider),

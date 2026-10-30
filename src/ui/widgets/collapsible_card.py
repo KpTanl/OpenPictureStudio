@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QPushButton, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_MD, SPACING_SM, SPACING_XS, px
 from ..icons import themed_icon
@@ -15,7 +15,7 @@ _ARROW_SIZE = 16
 
 
 class CollapsibleCard(QFrame):
-    toggled = pyqtSignal(bool)
+    toggled = Signal(bool)
 
     def __init__(self, title: str, parent=None, is_expanded: bool = True):
         super().__init__(parent)

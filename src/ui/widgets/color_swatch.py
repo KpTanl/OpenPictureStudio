@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import QRectF, QSize, Qt
-from PyQt6.QtGui import QColor, QPainter, QPen
-from PyQt6.QtWidgets import QAbstractButton, QSizePolicy, QWidget
+from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtWidgets import QAbstractButton, QSizePolicy, QWidget
 
 from resources.styles.theme_variables import CONTROL_HEIGHT_COMPACT, RADIUS_SMALL, px
 from ..theme import get_theme_tokens, to_qcolor

@@ -11,7 +11,7 @@ import os
 from typing import Callable, Optional
 
 from PIL import Image
-from PyQt6.QtWidgets import QFileDialog, QWidget
+from PySide6.QtWidgets import QFileDialog, QWidget
 
 from ..dialogs.apply_target_dialog import ApplyTarget, ask_apply_target
 

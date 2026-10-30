@@ -9,7 +9,7 @@ from pathlib import Path
 from io import BytesIO
 from threading import Event, Lock, Thread
 
-from PyQt6.QtCore import QObject, QRunnable, Qt, pyqtSignal
+from PySide6.QtCore import QObject, QRunnable, Qt, Signal, Slot
 
 from ...application.assistant_conversations import AssistantConversationService
 from ...application.assistant_models import IMAGE_SOURCES, context_matches
@@ -162,8 +162,8 @@ class _ActionJob(QRunnable):
 
 
 class AssistantRunner(QObject):
-    event_received = pyqtSignal(str, object)
-    changed = pyqtSignal(object)
+    event_received = Signal(str, object)
+    changed = Signal(object)
 
     def __init__(self, directory: str, parent=None):
         super().__init__(parent)
@@ -634,6 +634,7 @@ class AssistantRunner(QObject):
             cancelled.set()
             raise
 
+    @Slot(str, object)
     def _receive(self, kind, value):
         if kind == "error":
             self.last_error = value

@@ -5,7 +5,7 @@ import tempfile
 import numpy as np
 import pytest
 from PIL import Image
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 from src.ui.widgets.collapsible_card import CollapsibleCard
 from src.ui.widgets.color_mixer_widget import ColorMixerWidget

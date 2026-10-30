@@ -7,9 +7,9 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image  # noqa: E402
-from PyQt6.QtCore import Qt  # noqa: E402
-from PyQt6.QtGui import QPalette  # noqa: E402
-from PyQt6.QtTest import QTest  # noqa: E402
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtGui import QPalette  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 
 from src.i18n import TranslationService, get_translation_service, set_translation_service  # noqa: E402
 from src.ui.theme import ThemeManager  # noqa: E402
@@ -204,7 +204,7 @@ def test_grid_panel_marks_even_presets_and_keeps_the_export_at_the_bottom(open_p
 
 @pytest.mark.parametrize("tool_id", ["crop", "shape_crop", "lasso", "grid_crop"])
 def test_panels_follow_a_language_switch_without_inline_styles(open_panel, language, tool_id):
-    from PyQt6.QtWidgets import QLabel, QWidget
+    from PySide6.QtWidgets import QLabel, QWidget
     panel, changes = open_panel(tool_id)
     before = [label.text() for label in panel.findChildren(QLabel) if label.text()]
     language.set_language("en")

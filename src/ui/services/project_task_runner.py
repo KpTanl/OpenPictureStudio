@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
 from time import monotonic
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal, pyqtSlot
+from PySide6.QtCore import QObject, Qt, Signal, Slot
 
 from ...application.project_requests import ProjectRequest
 from ...application.result_types import CoreResult, ErrorCode
@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 
 class ProjectTaskRunner(QObject):
-    finished = pyqtSignal(object, object)
-    _completed = pyqtSignal()
+    finished = Signal(object, object)
+    _completed = Signal()
 
     def __init__(self, core, parent=None):
         super().__init__(parent)
@@ -106,7 +106,7 @@ class ProjectTaskRunner(QObject):
         except RuntimeError:
             self.shutdown()
 
-    @pyqtSlot()
+    @Slot()
     def _deliver(self):
         with self._lock:
             outcome, self._result = self._result, None

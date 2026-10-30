@@ -6,7 +6,7 @@ import importlib.metadata
 import importlib.util
 import sys
 
-REQUIRED_MODULES = ("PyQt6", "rawpy", "httpx", "cv2", "onnxruntime", "rembg", "mediapipe", "PyInstaller")
+REQUIRED_MODULES = ("PySide6", "shiboken6", "rawpy", "httpx", "cv2", "onnxruntime", "rembg", "mediapipe", "PyInstaller")
 
 
 def problems():

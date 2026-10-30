@@ -2,10 +2,10 @@
 import os
 import sys
 
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QSettings, QTranslator, QLibraryInfo, QTimer
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QSettings, QTranslator, QLibraryInfo, QTimer
 
-from PyQt6.QtGui import QImageReader, QIcon
+from PySide6.QtGui import QImageReader, QIcon
 from .utils.app_info import APP_NAME, APP_VERSION
 from .utils.logging_setup import configure_logging
 from .utils.resource_paths import resolve_app_icon_path
@@ -43,7 +43,7 @@ def main():
     QImageReader.setAllocationLimit(0)
     
     logger = configure_logging(APP_NAME)
-    from PyQt6.QtCore import QThreadPool
+    from PySide6.QtCore import QThreadPool
     from resources.styles.theme_variables import THREAD_POOL_MAX_THREADS
     logger.info("计算资源策略 capacity=%s slots=%s interactive_threads=%s operator_threads=%s thumbnail_slots=%s",
                 resource_policy.thread_capacity, resource_policy.compute_slots, resource_policy.interactive_threads,
@@ -52,7 +52,7 @@ def main():
     QThreadPool.globalInstance().setMaxThreadCount(THREAD_POOL_MAX_THREADS)
 
     # 配置高质量抗锯齿系统字体，字体栈与样式表共用同一份定义
-    from PyQt6.QtGui import QFont, QFontDatabase
+    from PySide6.QtGui import QFont, QFontDatabase
     from resources.styles.theme_variables import FONT_FAMILIES
     installed_families = set(QFontDatabase.families())
     matched_families = [f for f in FONT_FAMILIES if f in installed_families]
@@ -63,7 +63,7 @@ def main():
         default_font.setFamilies(matched_families)
     app.setFont(default_font)
     # 菜单与下拉即点即现，不跟随系统的淡入或滑出效果
-    from PyQt6.QtCore import Qt
+    from PySide6.QtCore import Qt
     for effect in (Qt.UIEffect.UI_AnimateMenu, Qt.UIEffect.UI_FadeMenu, Qt.UIEffect.UI_AnimateCombo):
         app.setEffectEnabled(effect, False)
 
@@ -119,15 +119,15 @@ def main():
         window.show()
         if len(sys.argv) > 1:
             file_path = sys.argv[1]
-            QTimer.singleShot(0, lambda: window.open_image_path(file_path, origin="startup"))
+            QTimer.singleShot(0, window, lambda: window.open_image_path(file_path, origin="startup"))
 
-        QTimer.singleShot(800, window.prewarm_studio)
+        QTimer.singleShot(800, window, window.prewarm_studio)
 
         # 进入事件循环，等待用户交互
         exit_code = app.exec()
         storage_session.close()
         if app.property("ops_restart"):
-            from PyQt6.QtCore import QProcess
+            from PySide6.QtCore import QProcess
             QProcess.startDetached(sys.executable, sys.argv[1:] if getattr(sys, "frozen", False) else sys.argv)
         return exit_code
     except Exception:

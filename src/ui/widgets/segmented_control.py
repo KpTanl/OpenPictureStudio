@@ -7,15 +7,15 @@
 from __future__ import annotations
 
 from typing import Any, Optional, Sequence
-from PyQt6.QtCore import (
+from PySide6.QtCore import (
     QEvent,
     QPoint,
     QRectF,
     QSize,
     Qt,
-    pyqtSignal,
+    Signal,
 )
-from PyQt6.QtGui import (
+from PySide6.QtGui import (
     QColor,
     QFontMetrics,
     QIcon,
@@ -25,7 +25,7 @@ from PyQt6.QtGui import (
     QPaintEvent,
     QPen,
 )
-from PyQt6.QtWidgets import QSizePolicy, QStackedWidget, QWidget
+from PySide6.QtWidgets import QSizePolicy, QStackedWidget, QWidget
 
 from resources.styles.theme_variables import (CONTROL_HEIGHT, FONT_SIZE_BODY, RADIUS_CONTROL, RADIUS_SMALL,
                                               SPACING_LG, px)
@@ -37,9 +37,9 @@ _INSET = 3.0
 class AppleSegmentedControl(QWidget):
     """分段开关。"""
 
-    currentIndexChanged = pyqtSignal(int)
-    currentTextChanged = pyqtSignal(str)
-    activated = pyqtSignal(int)
+    currentIndexChanged = Signal(int)
+    currentTextChanged = Signal(str)
+    activated = Signal(int)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)

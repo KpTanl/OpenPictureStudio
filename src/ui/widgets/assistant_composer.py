@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit
 
-from PyQt6.QtCore import QPoint, QRectF, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QGuiApplication, QPainter, QPen
-from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QSizePolicy,
+from PySide6.QtCore import QPoint, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QGuiApplication, QPainter, QPen
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QSizePolicy,
                             QStyle, QStyleOptionButton, QStylePainter, QVBoxLayout)
 
 from resources.styles.theme_variables import (ASSISTANT_INPUT_HEIGHT, ASSISTANT_INPUT_MAX_HEIGHT,
@@ -22,10 +22,10 @@ from .tooltip import set_tooltip
 
 
 class AssistantTextEdit(QPlainTextEdit):
-    textEdited = pyqtSignal(str)
-    submitted = pyqtSignal()
-    focus_changed = pyqtSignal(bool)
-    file_dropped = pyqtSignal(str)
+    textEdited = Signal(str)
+    submitted = Signal()
+    focus_changed = Signal(bool)
+    file_dropped = Signal(str)
 
     def __init__(self, parent=None, *, submit=False):
         super().__init__(parent)
@@ -160,9 +160,9 @@ class AssistantMenuButton(AppleGhostButton):
 
 
 class AssistantModelPicker(AssistantMenuButton):
-    model_selected = pyqtSignal(str)
-    effort_selected = pyqtSignal(str)
-    settings_requested = pyqtSignal()
+    model_selected = Signal(str)
+    effort_selected = Signal(str)
+    settings_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -274,18 +274,18 @@ class AssistantContextUsage(AppleIconButton):
 
 class AssistantComposer(QFrame):
     """投影会话偏好、输入和本地命令，状态由会话服务保存。"""
-    submitted = pyqtSignal()
-    stopped = pyqtSignal()
-    context_requested = pyqtSignal()
-    mode_selected = pyqtSignal(str)
-    image_selected = pyqtSignal(str)      # "" 表示不发送照片
-    analysis_toggled = pyqtSignal(bool)
-    settings_requested = pyqtSignal()
+    submitted = Signal()
+    stopped = Signal()
+    context_requested = Signal()
+    mode_selected = Signal(str)
+    image_selected = Signal(str)      # "" 表示不发送照片
+    analysis_toggled = Signal(bool)
+    settings_requested = Signal()
 
     MODES = ("agent", "plan")
-    reference_requested = pyqtSignal()
-    reference_dropped = pyqtSignal(str)
-    reference_removed = pyqtSignal()
+    reference_requested = Signal()
+    reference_dropped = Signal(str)
+    reference_removed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -310,7 +310,7 @@ class AssistantComposer(QFrame):
         self.photo = Chip(parent=self)
         self.photo.clicked.connect(self._photo_menu)
         self.analysis = Chip(parent=self, checkable=True)
-        self.analysis.clicked.connect(lambda checked: self.analysis_toggled.emit(checked))
+        self.analysis.clicked[bool].connect(lambda checked: self.analysis_toggled.emit(checked))
         self.scope = Chip(parent=self)
         self.scope.clicked.connect(self._scope_menu)
         self.context = AssistantContextUsage(self)

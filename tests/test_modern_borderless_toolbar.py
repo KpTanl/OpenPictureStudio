@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from PyQt6.QtWidgets import QApplication, QToolBar, QToolButton
+from PySide6.QtWidgets import QApplication, QToolBar, QToolButton
 
 from resources.styles.theme_variables import (
     DARK,

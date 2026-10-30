@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Callable, Optional
 
-from PyQt6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget
 
 from ..widgets.message_dialog import DialogButton, ask_choice
 

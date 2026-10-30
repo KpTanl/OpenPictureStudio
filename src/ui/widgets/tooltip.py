@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import html
 
-from PyQt6.QtCore import QEvent, QObject, Qt
-from PyQt6.QtWidgets import QToolTip, QWidget
+from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtWidgets import QToolTip, QWidget
 
 from resources.styles.semantic_colors import mix
 from ..theme import get_theme_tokens

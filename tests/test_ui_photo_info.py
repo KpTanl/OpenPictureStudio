@@ -7,10 +7,10 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image  # noqa: E402
-from PyQt6.QtCore import QPoint, QPointF, Qt  # noqa: E402
-from PyQt6.QtGui import QColor, QPalette, QWheelEvent  # noqa: E402
-from PyQt6.QtTest import QTest  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QWidget  # noqa: E402
+from PySide6.QtCore import QPoint, QPointF, Qt  # noqa: E402
+from PySide6.QtGui import QColor, QPalette, QWheelEvent  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QWidget  # noqa: E402
 
 from resources.styles.theme_variables import INFO_SIDEBAR_WIDTH, get_theme_qss  # noqa: E402
 from src.application.image_info import ImageInfo, ImageInfoRequest, ImageInfoResult, PhotoMetadata  # noqa: E402

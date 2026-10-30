@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import QRect, QRectF, QSize, Qt
-from PyQt6.QtGui import QFont, QFontMetrics, QPainter, QPaintEvent, QPen
-from PyQt6.QtWidgets import QSizePolicy, QWidget
+from PySide6.QtCore import QRect, QRectF, QSize, Qt
+from PySide6.QtGui import QFont, QFontMetrics, QPainter, QPaintEvent, QPen
+from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from resources.styles.theme_variables import FONT_SIZE_CAPTION, SPACING_SM, SPACING_XS, px
 from ..icons import themed_icon

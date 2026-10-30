@@ -5,8 +5,8 @@ import copy
 from typing import Optional
 from PIL import Image
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QVBoxLayout
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QVBoxLayout
 
 from resources.styles.theme_variables import SPACING_SM, px
 from .base_tool_panel import BaseToolPanel
@@ -100,7 +100,7 @@ class LegacyBeautyPanel(BaseToolPanel):
                 self._params = checked.data if checked.success else defaults
                 if not checked.success:
                     request_path = self._image_path
-                    QTimer.singleShot(0, lambda: self.request_status.emit(
+                    QTimer.singleShot(0, self, lambda: self.request_status.emit(
                         self._tr("beauty.invalid_params", "Invalid beauty settings"))
                         if self._image_path == request_path else None)
             else:

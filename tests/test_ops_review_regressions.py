@@ -35,7 +35,7 @@ def graph(exposure):
 
 
 def test_phase0_import_is_qt_free(tmp_path):
-    result = subprocess.run([sys.executable, "-c", "import sys; from src.core.workflow import WorkflowExecutor; from src.application import CoreAPI; assert 'PyQt6' not in sys.modules"], capture_output=True)
+    result = subprocess.run([sys.executable, "-c", "import sys; from src.core.workflow import WorkflowExecutor; from src.application import CoreAPI; assert 'PySide6' not in sys.modules"], capture_output=True)
     assert result.returncode == 0, result.stderr
 
 

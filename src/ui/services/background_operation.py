@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal
 
 from ...application.output_writer import OperationCancellation
 from ..widgets.progress_dialog import ProgressDialog
+from .ui_thread_relay import UiThreadRelay
 
 
 class _Signals(QObject):
-    finished = pyqtSignal(object, object)
+    finished = Signal(object, object)
 
 
 class _Operation(QRunnable):
@@ -41,7 +42,9 @@ def run_background(parent, operation, *, label=None, cancellation=None):
         if cancellation.cancel():
             dialog.set_cancelling(tr("export.cancelling", "Cancelling…"))
 
-    task.signals.finished.connect(finished)
+    relay = UiThreadRelay.shared()
+    task.signals.finished.connect(lambda value, error: relay.post(lambda: finished(value, error)),
+                                  Qt.ConnectionType.DirectConnection)
     dialog.cancelled.connect(cancelled)
     QThreadPool.globalInstance().start(task)
     while not outcome:
@@ -69,7 +72,9 @@ def start_background(operation, finished, *, cancellation=None):
         finished(value, error)
 
     _running.add(task)
-    task.signals.finished.connect(done)
+    relay = UiThreadRelay.shared()
+    task.signals.finished.connect(lambda value, error: relay.post(lambda: done(value, error)),
+                                  Qt.ConnectionType.DirectConnection)
     QThreadPool.globalInstance().start(task)
     return cancellation
 

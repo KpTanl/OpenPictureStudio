@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from time import monotonic
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal
+from PySide6.QtCore import QObject, Qt, Signal, Slot
 
 from ...application.image_load_queue import ImageLoadQueue
 from ...application.result_types import CoreResult, CoreOperationError
@@ -35,10 +35,10 @@ class OriginalDisplay:
 
 
 class StudioOriginalRunner(QObject):
-    ready = pyqtSignal(object, object, object)
-    source_ready = pyqtSignal(object, object)
-    _source_completed = pyqtSignal(object)
-    _completed = pyqtSignal(object, object, object)
+    ready = Signal(object, object, object)
+    source_ready = Signal(object, object)
+    _source_completed = Signal(object)
+    _completed = Signal(object, object, object)
 
     def __init__(self, sources, parent=None, *, complete_source=None):
         super().__init__(parent)
@@ -131,6 +131,7 @@ class StudioOriginalRunner(QObject):
                 image.close()
             logger.debug("OPS 原图对比接收方已关闭")
 
+    @Slot(object, object, object)
     def _deliver(self, request, image, error):
         try:
             if not self._closed and not request.cancellation.is_set():
@@ -141,6 +142,7 @@ class StudioOriginalRunner(QObject):
             for following in self._queue.finish(request):
                 self._pool.submit(self._run, following)
 
+    @Slot(object)
     def _deliver_source(self, request):
         with self._source_lock:
             result = self._prepared_sources.pop(id(request), None)

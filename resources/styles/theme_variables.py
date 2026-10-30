@@ -260,7 +260,7 @@ class _CanvasColorsView:
     @staticmethod
     def _current() -> dict:
         try:
-            from PyQt6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication
             app = QApplication.instance()
             if app is not None:
                 name = app.property("ops.theme")

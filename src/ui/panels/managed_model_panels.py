@@ -1,5 +1,5 @@
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QLabel
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QLabel
 
 from .base_tool_panel import BaseToolPanel
 from .beauty_panel import LegacyBeautyPanel
@@ -139,7 +139,7 @@ class ManagedModelPanelMixin:
 
 
 class BGRemovePanel(ManagedModelPanelMixin, LegacyBGRemovePanel):
-    availability_changed = pyqtSignal()
+    availability_changed = Signal()
     MODEL_CAPABILITY = "segmentation"
     PARAMETER_CONTRACT = MANAGED_BG_PARAMETERS
     RESOURCE_FEATURES = BACKGROUND_RESOURCE_FEATURES
@@ -175,7 +175,7 @@ class BGRemovePanel(ManagedModelPanelMixin, LegacyBGRemovePanel):
 
 
 class BeautyPanel(ManagedModelPanelMixin, LegacyBeautyPanel):
-    availability_changed = pyqtSignal()
+    availability_changed = Signal()
     MODEL_CAPABILITY = "face_detection"
     PARAMETER_CONTRACT = MANAGED_BEAUTY_PARAMETERS
     RESOURCE_FEATURES = BEAUTY_RESOURCE_FEATURES

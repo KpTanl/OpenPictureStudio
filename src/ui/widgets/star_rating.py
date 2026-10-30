@@ -8,9 +8,9 @@ from __future__ import annotations
 import math
 from typing import Optional
 
-from PyQt6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen
-from PyQt6.QtWidgets import QSizePolicy, QWidget
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen
+from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from resources.styles.theme_variables import SPACING_XS, px
 from ..theme import get_theme_tokens, to_qcolor
@@ -37,7 +37,7 @@ def _star_path(bounds: QRectF) -> QPainterPath:
 
 
 class StarRating(QWidget):
-    rating_edited = pyqtSignal(int)
+    rating_edited = Signal(int)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)

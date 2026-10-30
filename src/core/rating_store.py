@@ -15,7 +15,7 @@ import os
 import hashlib
 import logging
 
-from PyQt6.QtCore import QObject, QSettings, pyqtSignal
+from PySide6.QtCore import QObject, QSettings, Signal
 
 from ..utils.app_info import APP_NAME
 
@@ -55,8 +55,8 @@ class RatingStore(QObject):
     单实例使用 —— 通过 ``get_rating_store()`` 获取。
     """
 
-    rating_changed = pyqtSignal(str, int)  # (path, new_value)
-    save_failed = pyqtSignal(str)
+    rating_changed = Signal(str, int)  # (path, new_value)
+    save_failed = Signal(str)
 
     SETTINGS_GROUP = APP_NAME
     SETTINGS_KEY = "Ratings"
@@ -150,7 +150,7 @@ class RatingStore(QObject):
             self._library_write(tuple(registered), done=done, **values)
         return tuple(legacy)
 
-    marks_changed = pyqtSignal()
+    marks_changed = Signal()
 
     @staticmethod
     def _cache_key(path):

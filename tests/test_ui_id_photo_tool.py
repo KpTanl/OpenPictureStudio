@@ -9,10 +9,10 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image  # noqa: E402
-from PyQt6.QtCore import QPoint, QRect, Qt  # noqa: E402
-from PyQt6.QtGui import QPalette  # noqa: E402
-from PyQt6.QtTest import QTest  # noqa: E402
-from PyQt6.QtWidgets import QWidget  # noqa: E402
+from PySide6.QtCore import QPoint, QRect, Qt  # noqa: E402
+from PySide6.QtGui import QPalette  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QWidget  # noqa: E402
 
 from src.core.tools.id_photo import (LAYOUT_SHEET, MANAGED_ID_PHOTO_PARAMETERS, PORTRAIT_GUIDE, SHEET_SIZE,
                                      SIZE_PRESETS)  # noqa: E402
@@ -270,8 +270,8 @@ def test_overlay_keeps_the_ratio_in_pixels_and_stays_inside(qapp):
 
 
 def _event(point, button):
-    from PyQt6.QtCore import QPointF
-    from PyQt6.QtGui import QMouseEvent
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QMouseEvent
     kind = (QMouseEvent.Type.MouseButtonPress if button != Qt.MouseButton.NoButton else QMouseEvent.Type.MouseMove)
     return QMouseEvent(kind, QPointF(point), QPointF(point), button, button, Qt.KeyboardModifier.NoModifier)
 

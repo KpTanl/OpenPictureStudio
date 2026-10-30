@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
-from PyQt6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QKeyEvent, QLinearGradient, QMouseEvent, QPainter, QPen, QWheelEvent
-from PyQt6.QtWidgets import QSlider, QWidget
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QKeyEvent, QLinearGradient, QMouseEvent, QPainter, QPen, QWheelEvent
+from PySide6.QtWidgets import QSlider, QWidget
 
 from ..theme import get_theme_tokens, to_qcolor
 from .value_editing import ValueEditMixin
@@ -25,8 +25,8 @@ _HEIGHT = 20
 class AppleSlider(QSlider, ValueEditMixin):
     """水平滑块。"""
 
-    resetRequested = pyqtSignal()
-    valueEdited = pyqtSignal(int)
+    resetRequested = Signal()
+    valueEdited = Signal(int)
 
     def __init__(
         self,

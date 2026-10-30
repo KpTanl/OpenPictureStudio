@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Iterable, Optional, Sequence
 
-from PyQt6.QtCore import QPointF, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QPainter, QPaintEvent
-from PyQt6.QtWidgets import QFrame, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtCore import QPointF, QSize, Qt, Signal
+from PySide6.QtGui import QPainter, QPaintEvent
+from PySide6.QtWidgets import QFrame, QToolButton, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_SM, SPACING_XS, TOOL_RAIL_WIDTH, px
 from ..icons import themed_icon
@@ -56,7 +56,7 @@ class _RailButton(QToolButton):
 
 
 class ToolRail(QFrame):
-    entry_requested = pyqtSignal(str)
+    entry_requested = Signal(str)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)

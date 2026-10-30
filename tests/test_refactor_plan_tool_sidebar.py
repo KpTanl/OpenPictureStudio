@@ -6,10 +6,11 @@ import os
 from pathlib import Path
 from PIL import Image
 import pytest
-from PyQt6.QtCore import Qt, QPointF, QRect, QPoint
-from PyQt6.QtGui import QMouseEvent, QImage
-from PyQt6.QtWidgets import QApplication, QFileDialog
+from PySide6.QtCore import Qt, QPointF, QRect, QPoint
+from PySide6.QtGui import QMouseEvent, QImage
+from PySide6.QtWidgets import QApplication, QFileDialog
 
+from src.ui.services.ui_thread_relay import UiThreadRelay
 from src.core.edit_state import EditStateStore
 from src.core.contracts.tools import ToolReference
 from src.ui.dialogs.apply_target_dialog import ApplyTarget
@@ -219,7 +220,9 @@ def record_editor_outputs(studio, monkeypatch):
         start_output(request, apply=apply)
         task = studio._output_tasks.get(studio._output_generation)
         if task is not None and studio._output_generation != generation:
-            task.signals.finished.connect(lambda task_id, result: outputs.append(result))
+            relay = UiThreadRelay.shared()
+            task.signals.finished.connect(lambda task_id, result: relay.post(lambda: outputs.append(result)),
+                                          Qt.ConnectionType.DirectConnection)
 
     monkeypatch.setattr(studio, "_start_output", start)
     return outputs
@@ -474,7 +477,8 @@ class TestCoreStateAndWorkflowFixes:
             move_event = QMouseEvent(
                 QMouseEvent.Type.MouseMove,
                 QPointF(550.0, 550.0),
-                Qt.MouseButton.LeftButton,
+                QPointF(550.0, 550.0),
+                Qt.MouseButton.NoButton,
                 Qt.MouseButton.LeftButton,
                 Qt.KeyboardModifier.NoModifier,
             )

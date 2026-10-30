@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from threading import Event, Lock
 import logging
 
-from PyQt6.QtCore import QObject, QSize, Qt, pyqtSignal
+from PySide6.QtCore import QObject, QSize, Qt, Signal, Slot
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +41,8 @@ class _ScaleJob:
 
 
 class CanvasScaleRunner(QObject):
-    ready = pyqtSignal(object, object, object)
-    _completed = pyqtSignal(object)
+    ready = Signal(object, object, object)
+    _completed = Signal(object)
 
     def __init__(self, resources, parent=None):
         super().__init__(parent)
@@ -123,6 +123,7 @@ class CanvasScaleRunner(QObject):
             if packet is not None:
                 packet.close()
 
+    @Slot(object)
     def _deliver(self, job):
         with self._lock:
             packet = self._packets.pop(job, None)

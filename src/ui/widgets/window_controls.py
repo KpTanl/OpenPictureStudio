@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QPainter, QPaintEvent, QPen
-from PyQt6.QtWidgets import QAbstractButton, QHBoxLayout, QSizePolicy, QWidget
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QPainter, QPaintEvent, QPen
+from PySide6.QtWidgets import QAbstractButton, QHBoxLayout, QSizePolicy, QWidget
 
 from ..theme import get_theme_tokens, to_qcolor
 from .tooltip import set_tooltip
@@ -92,9 +92,9 @@ class _ControlButton(QAbstractButton):
 
 
 class WindowControls(QWidget):
-    minimize_requested = pyqtSignal()
-    maximize_requested = pyqtSignal()
-    close_requested = pyqtSignal()
+    minimize_requested = Signal()
+    maximize_requested = Signal()
+    close_requested = Signal()
 
     def __init__(self, translate: Callable[[str, str], str], parent: Optional[QWidget] = None):
         super().__init__(parent)

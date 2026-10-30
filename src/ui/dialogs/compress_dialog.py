@@ -9,8 +9,8 @@ from ..services.background_operation import batch_message
 import os
 import logging
 from functools import partial
-from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QVBoxLayout
+from PySide6.QtCore import Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QVBoxLayout
 
 from resources.styles.theme_variables import SPACING_LG, SPACING_SM, SPACING_XL, px
 from ..base_window import BaseDialog
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class ImageProcessingWorker(QThread):
-    progress_updated = pyqtSignal(int, int, str)
+    progress_updated = Signal(int, int, str)
 
     def __init__(self, generation, tasks, output_service, parent=None):
         super().__init__(parent)
@@ -60,7 +60,7 @@ class ImageProcessingWorker(QThread):
 
 
 class SourceInfoWorker(QThread):
-    source_ready = pyqtSignal(int, str, object, str)
+    source_ready = Signal(int, str, object, str)
 
     def __init__(self, generation, paths, output_service, parent=None):
         super().__init__(parent)
@@ -483,6 +483,7 @@ class ImageProcessingDialog(BaseDialog):
         self._info_worker.finished.connect(self._on_info_finished)
         self._info_worker.start()
 
+    @Slot(int, str, object, str)
     def _on_source_ready(self, generation, path, info, error):
         if self._closing or generation != self._info_generation:
             return
@@ -493,6 +494,7 @@ class ImageProcessingDialog(BaseDialog):
         self._refresh_source_label()
         self._refresh_previews()
 
+    @Slot()
     def _on_info_finished(self):
         worker = self._info_worker
         self._info_worker = None
@@ -531,6 +533,7 @@ class ImageProcessingDialog(BaseDialog):
         self._match_worker.finished.connect(self._on_match_finished)
         self._match_worker.start()
 
+    @Slot()
     def _on_match_finished(self):
         worker = self._match_worker
         self._match_worker = None
@@ -622,12 +625,14 @@ class ImageProcessingDialog(BaseDialog):
         self._set_controls_enabled(False)
         self._worker.start()
 
+    @Slot(int, int, str)
     def _on_worker_progress(self, generation, index, name):
         if self._closing or self._worker is None or generation != self._export_generation:
             return
         self.progress.set_progress(index + 1, self._task_count)
         self.progress.set_text(self._tr("compress.status.handling", "Handling: {name}...", name=name))
 
+    @Slot()
     def _on_worker_finished(self):
         worker = self._worker
         result = worker.result

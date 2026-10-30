@@ -8,10 +8,10 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image  # noqa: E402
-from PyQt6.QtCore import QMimeData, QObject, QPoint, QPointF, Qt, pyqtSignal  # noqa: E402
-from PyQt6.QtGui import QAction, QColor, QDropEvent, QPainter, QPalette, QPixmap  # noqa: E402
-from PyQt6.QtTest import QTest  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QSplitter, QWidget  # noqa: E402
+from PySide6.QtCore import QMimeData, QObject, QPoint, QPointF, Qt, Signal  # noqa: E402
+from PySide6.QtGui import QAction, QColor, QDropEvent, QPainter, QPalette, QPixmap  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication, QSplitter, QWidget  # noqa: E402
 
 from resources.styles.theme_variables import FILMSTRIP_HEIGHT, get_theme_qss  # noqa: E402
 from src.application.image_source_service import ImageSourceService  # noqa: E402
@@ -340,8 +340,8 @@ def test_edited_thumbnails_are_cropped_to_squares_like_source_thumbnails(filmstr
         squares[path] = SimpleNamespace(pixmap=square, error="")
 
     class _Runner(QObject):
-        ready = pyqtSignal(str)
-        clearing = pyqtSignal(str)
+        ready = Signal(str)
+        clearing = Signal(str)
 
         def request(self, channel, paths, maximum=300, *, square=False):
             requested.append((tuple(paths), square))

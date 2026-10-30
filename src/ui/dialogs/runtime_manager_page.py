@@ -1,5 +1,5 @@
-from PyQt6.QtCore import QTimer, pyqtSignal
-from PyQt6.QtWidgets import QFileDialog, QGridLayout, QHBoxLayout, QProgressBar, QVBoxLayout, QWidget
+from PySide6.QtCore import QTimer, Signal
+from PySide6.QtWidgets import QFileDialog, QGridLayout, QHBoxLayout, QProgressBar, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_MD, px
 from ..themed_mixin import ThemedI18nMixin
@@ -16,7 +16,7 @@ from ...core.contracts.inference import CPU
 
 
 class RuntimeManagerPage(QWidget, ThemedI18nMixin):
-    restart_requested = pyqtSignal()
+    restart_requested = Signal()
 
     def __init__(self, service, parent=None):
         super().__init__(parent)

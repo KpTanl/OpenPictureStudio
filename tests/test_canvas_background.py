@@ -6,7 +6,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from resources.styles.semantic_colors import CANVAS_BACKGROUNDS  # noqa: E402
 from resources.styles.theme_variables import BEIGE, DARK, LIGHT, get_theme_qss  # noqa: E402

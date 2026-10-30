@@ -1,14 +1,14 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal
+from PySide6.QtCore import QObject, Qt, Signal, Slot
 
 
 class StorageRunner(QObject):
-    finished = pyqtSignal(str, object, str)
-    busy_changed = pyqtSignal(bool)
-    limits_changed = pyqtSignal()
-    _completed = pyqtSignal(str, object, str)
+    finished = Signal(str, object, str)
+    busy_changed = Signal(bool)
+    limits_changed = Signal()
+    _completed = Signal(str, object, str)
 
     def __init__(self, service, parent=None):
         super().__init__(parent)
@@ -49,6 +49,7 @@ class StorageRunner(QObject):
         except RuntimeError:
             pass
 
+    @Slot(str, object, str)
     def _deliver(self, name, result, error):
         self.busy = False
         if not self._closed:

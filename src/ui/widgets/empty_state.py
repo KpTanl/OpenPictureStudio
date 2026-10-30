@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
-from PyQt6.QtCore import QRect, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QPainter, QPaintEvent
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtCore import QRect, QSize, Qt, Signal
+from PySide6.QtGui import QPainter, QPaintEvent
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_LG, SPACING_MD, SPACING_SM, SPACING_XL, SPACING_XS, px
 from ..icons import themed_icon
@@ -44,7 +44,7 @@ class _Icon(QWidget):
 
 
 class EmptyState(QWidget):
-    action_triggered = pyqtSignal(str)
+    action_triggered = Signal(str)
 
     def __init__(self, icon: str, parent: Optional[QWidget] = None, *,
                  actions: Sequence[str] = (), drop_target: bool = False, on_canvas: bool = False):

@@ -10,9 +10,9 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from PyQt6.QtCore import QPoint, QRect, QSettings, QSize, Qt
-from PyQt6.QtGui import QGuiApplication, QIcon
-from PyQt6.QtWidgets import QDialog, QMainWindow
+from PySide6.QtCore import QPoint, QRect, QSettings, QSize, Qt
+from PySide6.QtGui import QGuiApplication, QIcon
+from PySide6.QtWidgets import QDialog, QMainWindow
 
 from ..utils.app_info import APP_NAME
 from ..i18n import get_translation_service
@@ -136,7 +136,6 @@ class BaseWindow(QMainWindow):
             handled, result = self._chrome.native_event(message)
             if handled:
                 return True, result
-        # 不转交基类：基类什么也不做，而 PyQt 把它的返回值再传回去会访问到无效地址
         return False, 0
 
     # ------------------------------------------------------------------

@@ -11,10 +11,10 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image  # noqa: E402
-from PyQt6.QtCore import QPoint, QSettings, QSize, Qt  # noqa: E402
-from PyQt6.QtGui import QPalette  # noqa: E402
-from PyQt6.QtTest import QTest  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QFrame, QWidget  # noqa: E402
+from PySide6.QtCore import QPoint, QSettings, QSize, Qt  # noqa: E402
+from PySide6.QtGui import QPalette  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFrame, QWidget  # noqa: E402
 
 from resources.styles.theme_variables import (CANVAS_TOOLBAR_HEIGHT, CANVAS_TOOLBAR_MARGIN, EDIT_SIDEBAR_WIDTH,  # noqa: E402
                                               EDIT_SIDEBAR_WIDTH_WIDE, FILMSTRIP_HEIGHT, FILMSTRIP_HEIGHT_COMPACT,
@@ -457,8 +457,8 @@ _POSITION_PROBE = r"""
 import ctypes, json, os, sys
 from ctypes import wintypes
 from pathlib import Path
-from PyQt6.QtCore import QPoint, QSettings, QSize, Qt
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint, QSettings, QSize, Qt
+from PySide6.QtWidgets import QApplication
 from pytest import MonkeyPatch
 from tests.support import isolate_paths
 

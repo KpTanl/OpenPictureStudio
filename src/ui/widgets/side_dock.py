@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import QEvent, QObject
-from PyQt6.QtWidgets import QWidget
+from PySide6.QtCore import QEvent, QObject
+from PySide6.QtWidgets import QWidget
 
 
 class SideDock(QObject):

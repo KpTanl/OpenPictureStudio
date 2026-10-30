@@ -9,9 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
-from PyQt6.QtCore import QEvent, QRect, QRectF, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QFontMetrics, QIcon, QKeyEvent, QMouseEvent, QPainter, QPaintEvent, QPen
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QFont, QFontMetrics, QIcon, QKeyEvent, QMouseEvent, QPainter, QPaintEvent, QPen
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import (CONTROL_HEIGHT, CONTROL_HEIGHT_COMPACT, FONT_SIZE_BODY,
                                               FONT_SIZE_CAPTION, RADIUS_CONTROL, SPACING_MD, SPACING_SM,
@@ -39,8 +39,8 @@ class StackRow:
 
 
 class _StageRow(QWidget):
-    clicked = pyqtSignal(str)
-    reset_clicked = pyqtSignal(str)
+    clicked = Signal(str)
+    reset_clicked = Signal(str)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -164,8 +164,8 @@ class _StageRow(QWidget):
 
 
 class EditStackView(QWidget):
-    stage_requested = pyqtSignal(str)
-    reset_requested = pyqtSignal(str)
+    stage_requested = Signal(str)
+    reset_requested = Signal(str)
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)

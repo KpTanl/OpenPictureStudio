@@ -9,13 +9,13 @@ from ...application.photo_browser import BROWSER_TOOLS
 from ...application.photo_calibration import CALIBRATION_TOOLS
 from ...application.photo_library import LIBRARY_TOOLS
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal
+from PySide6.QtCore import QObject, Qt, Signal, Slot
 
 logger = logging.getLogger(__name__)
 
 
 class AssistantBatchBridge(QObject):
-    requested = pyqtSignal(object)
+    requested = Signal(object)
 
     def __init__(self, runner, capture, parent=None, *, exports=None):
         super().__init__(parent)
@@ -53,6 +53,7 @@ class AssistantBatchBridge(QObject):
         if not request["loop"].is_closed():
             request["loop"].call_soon_threadsafe(deliver)
 
+    @Slot(object)
     def _execute(self, request):
         try:
             if request["cancelled"]():

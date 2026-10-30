@@ -1,5 +1,6 @@
 # Core dependencies — required for the application to run
-PyQt6>=6.5.0
+PySide6_Essentials==6.11.3
+shiboken6==6.11.3
 Pillow>=10.0.0
 img2pdf>=0.4.0
 numpy>=1.26.0

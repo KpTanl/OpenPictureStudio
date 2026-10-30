@@ -4,8 +4,8 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal
-from PyQt6.QtGui import QImage
+from PySide6.QtCore import QObject, Qt, Signal, Slot
+from PySide6.QtGui import QImage
 
 from ...application.image_load_queue import ImageLoadQueue
 from ...application.result_types import CoreOperationError, CoreResult
@@ -47,8 +47,8 @@ class DetailResources:
 
 
 class StudioDetailRunner(QObject):
-    ready = pyqtSignal(object, object)
-    _completed = pyqtSignal(object, object)
+    ready = Signal(object, object)
+    _completed = Signal(object, object)
 
     def __init__(self, service, parent=None):
         super().__init__(parent)
@@ -118,6 +118,7 @@ class StudioDetailRunner(QObject):
             if pending is not None:
                 pending.close()
 
+    @Slot(object, object)
     def _deliver(self, job, preview):
         with self._lock:
             packet = self._packets.pop(job.request_id, None)

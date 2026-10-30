@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 import sys
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QIcon, QPainter
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QIcon, QPainter
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_LG, SPACING_XS, px
 from ..themed_mixin import ThemedI18nMixin
@@ -30,8 +30,8 @@ class _LogoLabel(QLabel):
 
 
 class AboutPage(QWidget, ThemedI18nMixin):
-    check_requested = pyqtSignal()
-    download_requested = pyqtSignal()
+    check_requested = Signal()
+    download_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from threading import Event, Thread
 
-from PyQt6.QtCore import QEventLoop, QObject, QSettings, Qt, pyqtSignal
-from PyQt6.QtWidgets import QMessageBox, QProgressDialog
+from PySide6.QtCore import QEventLoop, QObject, QSettings, Qt, Signal
+from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
 from ..application.storage_paths import StorageSession, read_settings
 from ..application.runtime_bootstrap import activate
@@ -14,8 +14,8 @@ from .app_info import APP_NAME
 
 
 class _StartupSignals(QObject):
-    progress = pyqtSignal(str)
-    done = pyqtSignal()
+    progress = Signal(str)
+    done = Signal()
 
 
 def prepare_storage(app):

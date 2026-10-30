@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QEvent, QSize, pyqtSignal
-from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QSize, Signal
+from PySide6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_MD, SPACING_SM, px
 from ..icons import themed_icon
@@ -22,8 +22,8 @@ _ICONS = {"brush": "brush", "erase": "eraser"}
 
 
 class MaskToolBar(QFrame):
-    settings_edited = pyqtSignal(object)
-    finish_requested = pyqtSignal()
+    settings_edited = Signal(object)
+    finish_requested = Signal()
 
     def __init__(self, tr, parent=None):
         super().__init__(parent)

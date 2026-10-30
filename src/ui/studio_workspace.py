@@ -25,9 +25,9 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 from PIL import Image
 from resources.styles.theme_variables import (CANVAS_TOOLBAR_HEIGHT, CANVAS_TOOLBAR_MARGIN,
                                               SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, SPACING_MD, SPACING_SM, px)
-from PyQt6.QtCore import QSize, Qt, QThreadPool, QTimer, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QImage
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QSize, Qt, QThreadPool, QTimer, Signal, Slot
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
     QFileDialog,
@@ -106,19 +106,19 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
     管理统一会话、级联渲染管线与工具面板容器。
     """
 
-    applied = pyqtSignal(str)           # 新保存的图片路径
-    back_requested = pyqtSignal()       # 请求切回看图工作区
+    applied = Signal(str)           # 新保存的图片路径
+    back_requested = Signal()       # 请求切回看图工作区
 
-    resource_management_requested = pyqtSignal(str)
-    model_management_requested = pyqtSignal(str, str)  # 能力、当前所选模型的标识
-    action_state_changed = pyqtSignal(object)  # StudioActionState
-    detail_state_changed = pyqtSignal(str, str)
-    canvas_preview_changed = pyqtSignal(object)
-    toast_requested = pyqtSignal(str, int)     # 一句话的短暂消息与显示时长（毫秒）
-    sidebar_preferences_changed = pyqtSignal(bool, int, int)  # 右侧栏是否收起、它的宽度、照片信息栏的宽度（0 为未拖过）
+    resource_management_requested = Signal(str)
+    model_management_requested = Signal(str, str)  # 能力、当前所选模型的标识
+    action_state_changed = Signal(object)  # StudioActionState
+    detail_state_changed = Signal(str, str)
+    canvas_preview_changed = Signal(object)
+    toast_requested = Signal(str, int)     # 一句话的短暂消息与显示时长（毫秒）
+    sidebar_preferences_changed = Signal(bool, int, int)  # 右侧栏是否收起、它的宽度、照片信息栏的宽度（0 为未拖过）
 
-    preview_started = pyqtSignal()
-    preview_finished = pyqtSignal()
+    preview_started = Signal()
+    preview_finished = Signal()
 
     def __init__(
         self,
@@ -916,7 +916,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._update_actions_state()
         self.assistant_panel.refresh()
         if not preserve_view:
-            QTimer.singleShot(0, self._refit_canvas)
+            QTimer.singleShot(0, self, self._refit_canvas)
 
     def _refit_canvas(self):
         if self.viewer.is_fit_mode():
@@ -925,9 +925,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._apply_sidebar_widths()
-        QTimer.singleShot(0, self._refresh_detail)
+        QTimer.singleShot(0, self, self._refresh_detail)
         if self.viewer.is_fit_mode() and self.viewer._pixmap:
-            QTimer.singleShot(0, self._refit_canvas)
+            QTimer.singleShot(0, self, self._refit_canvas)
 
     def hideEvent(self, event) -> None:
         self._invalidate_detail(release_source=True)
@@ -1314,7 +1314,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             self._mask_needs_base = True
             self._preview_queue.cancel()
             if resume and self.session is not None and not self._image_loading:
-                QTimer.singleShot(0, self._schedule_pipeline_render)
+                QTimer.singleShot(0, self, self._schedule_pipeline_render)
 
     def _upgrade_masks(self, panel):
         from .widgets.message_dialog import show_confirm
@@ -2035,7 +2035,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                     and self.session.state_version == request.session.state_version
                     and not self._comparing)))
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _on_sampled_render_finished(self, request):
         delivery, self._sampling_resources.delivery = self._sampling_resources.delivery, None
         packet = delivery.take() if delivery is not None else None
@@ -2075,7 +2075,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             if delivery is not None:
                 delivery.close()
 
-    @pyqtSlot(object, object, object, object)
+    @Slot(object, object, object, object)
     def _on_pipeline_render_finished(self, request, qimg, frame, error, *, sampling=None,
                                      detail_result=None, detail_image=None) -> None:
         self._preview_queue.finish(request)
@@ -3389,7 +3389,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._set_commit_busy(True)
         self._output_pool.start(task)
 
-    @pyqtSlot(object, object)
+    @Slot(object, object)
     def _on_effect_upgrade_finished(self, task, result):
         if self._upgrade_task is not task:
             return
@@ -3472,7 +3472,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         else:
             self._schedule_pipeline_render()
 
-    @pyqtSlot(object, object)
+    @Slot(object, object)
     def _on_project_finished(self, request, result):
         if self._project_request is not request:
             if request.purpose == "open" and result.success:
@@ -3643,7 +3643,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             self._output_progress.deleteLater()
             self._output_progress = None
 
-    @pyqtSlot(int, object)
+    @Slot(int, object)
     def _on_output_finished(self, task_id, result):
         self._output_tasks.pop(task_id, None)
         if task_id != self._output_generation:

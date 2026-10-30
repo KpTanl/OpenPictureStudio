@@ -14,6 +14,7 @@ import itertools
 import json
 from contextlib import nullcontext
 import os
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,8 +23,8 @@ from PIL import Image
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QThreadPool  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QFileDialog  # noqa: E402
+from PySide6.QtCore import QThreadPool  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFileDialog  # noqa: E402
 
 from src.application import assistant_conversations  # noqa: E402
 from src.application.assistant_conversations import AssistantConversationService  # noqa: E402
@@ -604,3 +605,27 @@ def test_a_failing_face_check_does_not_block_the_request(assistant):
     message = assistant.runner.state["messages"][-1]
     assert message["status"] == "completed" and message.get("action")
     assert "photo_analysis" in json.dumps(assistant.network.payloads[0], ensure_ascii=False)
+
+
+def test_comparison_result_returns_from_worker_to_gui_thread(assistant, monkeypatch):
+    panel = assistant.panel
+    gui = threading.get_ident()
+    workers, deliveries = [], []
+    original = panel._comparison_ready
+
+    def before_image(context, action, *, is_cancelled):
+        workers.append(threading.get_ident())
+        return {"image": Image.new("RGB", (8, 8), "red")}
+
+    def receive(generation, context, result):
+        deliveries.append(threading.get_ident())
+        original(generation, context, result)
+
+    monkeypatch.setattr(panel._actions, "before_image", before_image)
+    monkeypatch.setattr(panel, "_comparison_ready", receive)
+    wait_until(lambda: not panel.is_busy(), "助手空闲")
+    panel._toggle_comparison({"id": "comparison", "action": {}})
+    wait_until(lambda: bool(workers), "助手比较计算开始")
+    wait_until(lambda: bool(deliveries), "助手比较结果送达")
+    assert len(workers) == 1 and workers[0] != gui
+    assert deliveries == [gui]

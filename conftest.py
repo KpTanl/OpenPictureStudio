@@ -12,8 +12,8 @@ import src.application.storage_workspaces  # noqa: E402,F401
 
 @pytest.fixture(autouse=True)
 def isolated_app_state(tmp_path, monkeypatch, qapp):
-    from PyQt6 import sip
-    from PyQt6.QtCore import QCoreApplication, QEvent
+    from shiboken6 import Shiboken
+    from PySide6.QtCore import QCoreApplication, QEvent
     from src.core import rating_store
     from tests.support import (
         close_main_window, close_studio_workspace, finish_executors,
@@ -38,7 +38,7 @@ def isolated_app_state(tmp_path, monkeypatch, qapp):
         monkeypatch.setattr(previous_theme, "_current", previous_theme._current)
         monkeypatch.setattr(previous_theme, "_canvas_background", previous_theme._canvas_background)
     app = QCoreApplication.instance()
-    widgets_module = sys.modules.get("PyQt6.QtWidgets")
+    widgets_module = sys.modules.get("PySide6.QtWidgets")
     widget_app = app if widgets_module and isinstance(app, widgets_module.QApplication) else None
     old_widgets = set(widget_app.allWidgets()) if widget_app else set()
     palette = widget_app.palette() if widget_app else None
@@ -56,15 +56,15 @@ def isolated_app_state(tmp_path, monkeypatch, qapp):
         yield
     finally:
         app = QCoreApplication.instance()
-        widgets_module = sys.modules.get("PyQt6.QtWidgets")
+        widgets_module = sys.modules.get("PySide6.QtWidgets")
         widget_app = app if widgets_module and isinstance(app, widgets_module.QApplication) else None
         widgets = [widget for widget in widget_app.allWidgets() if widget not in old_widgets] if widget_app else []
         main_module = sys.modules.get("src.ui.main_window")
         studio_module = sys.modules.get("src.ui.studio_workspace")
         panel_module = sys.modules.get("src.ui.panels.base_tool_panel")
-        main_windows = [widget for widget in widgets if not sip.isdeleted(widget)
+        main_windows = [widget for widget in widgets if Shiboken.isValid(widget)
                         and main_module and isinstance(widget, main_module.MainWindow)]
-        studios = [widget for widget in widgets if not sip.isdeleted(widget)
+        studios = [widget for widget in widgets if Shiboken.isValid(widget)
                    and studio_module and isinstance(widget, studio_module.StudioWorkspace)]
         attached_studios = {getattr(window, "studio_workspace", None) for window in main_windows}
         studio_panels = {panel for studio in studios
@@ -72,18 +72,18 @@ def isolated_app_state(tmp_path, monkeypatch, qapp):
         for window in main_windows:
             cleanup(lambda window=window: close_main_window(window, delete=False))
         for studio in studios:
-            if not sip.isdeleted(studio) and studio not in attached_studios:
+            if Shiboken.isValid(studio) and studio not in attached_studios:
                 cleanup(lambda studio=studio: close_studio_workspace(studio))
         for widget in widgets:
-            if (not sip.isdeleted(widget) and widget not in studio_panels
+            if (Shiboken.isValid(widget) and widget not in studio_panels
                     and panel_module and isinstance(widget, panel_module.BaseToolPanel)):
                 cleanup(widget.cleanup)
-        from PyQt6.QtCore import QThreadPool
+        from PySide6.QtCore import QThreadPool
         pool = QThreadPool.globalInstance()
         cleanup(lambda: wait_until(
             lambda: pool.activeThreadCount() == 0, "测试 Qt 任务结束"))
         for widget in widgets:
-            if not sip.isdeleted(widget) and widget.parent() is None:
+            if Shiboken.isValid(widget) and widget.parent() is None:
                 widget.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         if app is not None:
@@ -146,7 +146,7 @@ def tool_services(image_sources):
 
 @pytest.fixture
 def panel_factory(tool_services, request):
-    from PyQt6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtCore import QCoreApplication, QEvent
     from src.ui.panels.registry import create_tool_panel
 
     def create(tool_id, path, **kwargs):

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from PyQt6.QtCore import QObject, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QWidget
+from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtWidgets import QWidget
 
 from ...i18n import tr
 from ..widgets.action_footer import ActionFooter
@@ -24,9 +24,9 @@ _BUSY_DELAY_MS = 300
 
 class ResultViewControl(QObject):
     # 请求看结果（True）或回到调整（False）
-    requested = pyqtSignal(bool)
+    requested = Signal(bool)
     # 宿主告知的状态变了：现在是否在看结果
-    viewing_changed = pyqtSignal(bool)
+    viewing_changed = Signal(bool)
 
     def __init__(self, panel: QWidget, *, prepare: Optional[Callable[[], None]] = None):
         """prepare 在请求看结果之前调用，面板在里面把还没记入的内容记入（如闭合正在画的轮廓）。"""

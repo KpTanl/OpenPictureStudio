@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PyQt6.QtCore import QSettings
-from PyQt6.QtWidgets import QSplitter, QWidget
+from PySide6.QtCore import QSettings
+from PySide6.QtWidgets import QSplitter, QWidget
 
 from resources.styles.theme_variables import (EDIT_SIDEBAR_WIDTH, EDIT_SIDEBAR_WIDTH_WIDE, FILMSTRIP_HEIGHT,
                                               FILMSTRIP_HEIGHT_COMPACT, FILMSTRIP_HEIGHT_WIDE, INFO_SIDEBAR_WIDTH,

@@ -7,8 +7,8 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6 import sip  # noqa: E402
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from shiboken6 import Shiboken  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from src.application.listeners import ListenerRegistry  # noqa: E402
 from src.ui.services.model_task_runner import ModelTaskRunner  # noqa: E402
@@ -87,7 +87,7 @@ def test_close_unsubscribes_and_stops_delivery(qapp):
 def test_destroyed_runner_is_unsubscribed(qapp):
     service = _Service()
     runner = ModelTaskRunner(service)
-    sip.delete(runner)
+    Shiboken.delete(runner)
     assert service.subscribers == 0
     service.notify_from_worker()
     qapp.processEvents()
@@ -99,7 +99,7 @@ def test_notification_queued_before_destruction_is_dropped(qapp):
     runner, calls = ModelTaskRunner(service), []
     runner.changed.connect(lambda: calls.append(1))
     service.notify_from_worker()
-    sip.delete(runner)
+    Shiboken.delete(runner)
     qapp.processEvents()
     assert calls == []
 

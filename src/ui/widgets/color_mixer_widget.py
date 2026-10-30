@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import math
 
-from PyQt6.QtCore import Qt, QSignalBlocker, pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, QSignalBlocker, Signal
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from resources.styles.semantic_colors import MIXER_CHANNEL_COLORS, mixer_track_colors
 from resources.styles.theme_variables import CONTROL_HEIGHT_COMPACT, SPACING_MD, SPACING_SM, SPACING_XS, px
@@ -44,8 +44,8 @@ def hue_of_rgb(red: int, green: int, blue: int) -> float:
 class ColorMixerWidget(QWidget):
     """8 色通道色彩混合器控件 (HSL Mixer)"""
 
-    values_changed = pyqtSignal()
-    eyedropper_toggled = pyqtSignal(bool)
+    values_changed = Signal()
+    eyedropper_toggled = Signal(bool)
 
     def __init__(self, tr_fn, parent=None):
         super().__init__(parent)

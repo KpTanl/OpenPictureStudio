@@ -49,11 +49,11 @@ def _violations(package: str, forbidden: tuple[str, ...], allowed: frozenset = f
 
 
 def test_core_does_not_depend_on_widgets_or_upper_layers():
-    assert _violations("core", ("PyQt6.QtWidgets", "src.application", "src.ui")) == []
+    assert _violations("core", ("PySide6.QtWidgets", "src.application", "src.ui")) == []
 
 
 def test_application_does_not_depend_on_ui():
-    assert _violations("application", ("PyQt6.QtWidgets", "src.ui")) == []
+    assert _violations("application", ("PySide6.QtWidgets", "src.ui")) == []
 
 
 def test_panels_and_widgets_do_not_reach_into_the_color_dialog():

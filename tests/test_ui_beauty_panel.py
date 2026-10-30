@@ -8,8 +8,8 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PIL import Image  # noqa: E402
-from PyQt6.QtGui import QPalette  # noqa: E402
-from PyQt6.QtWidgets import QWidget  # noqa: E402
+from PySide6.QtGui import QPalette  # noqa: E402
+from PySide6.QtWidgets import QWidget  # noqa: E402
 
 from src.core.tools import beauty_backend  # noqa: E402
 from src.core.contracts.tools import ToolReference  # noqa: E402

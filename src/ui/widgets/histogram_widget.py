@@ -5,9 +5,9 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QPointF, QRectF
-from PyQt6.QtGui import QPainter, QColor, QPen, QPolygonF
-from PyQt6.QtWidgets import QWidget, QSizePolicy
+from PySide6.QtCore import Qt, QPointF, QRectF
+from PySide6.QtGui import QPainter, QColor, QPen, QPolygonF
+from PySide6.QtWidgets import QWidget, QSizePolicy
 
 from resources.styles.semantic_colors import CHANNEL_COLORS
 from resources.styles.theme_variables import RADIUS_SMALL, px

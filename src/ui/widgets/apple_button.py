@@ -14,9 +14,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QFontMetrics, QIcon
-from PyQt6.QtWidgets import QPushButton, QSizePolicy, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QFontMetrics, QIcon
+from PySide6.QtWidgets import QPushButton, QSizePolicy, QWidget
 
 from resources.styles.theme_variables import CONTROL_HEIGHT, CONTROL_HEIGHT_COMPACT, TOOL_BUTTON_SIZE
 

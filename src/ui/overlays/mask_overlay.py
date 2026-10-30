@@ -3,8 +3,8 @@ from __future__ import annotations
 import copy
 import math
 
-from PyQt6.QtCore import QEvent, QPointF, QRectF, Qt, pyqtSignal
-from PyQt6.QtGui import QPainter, QPainterPath, QPen, QTransform
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import QPainter, QPainterPath, QPen, QTransform
 
 from resources.styles.semantic_colors import OVERLAY_COLORS
 from ...core.local_masks import default_mask
@@ -15,14 +15,14 @@ from .base_overlay import ViewerOverlay
 
 
 class MaskOverlay(ViewerOverlay):
-    selected = pyqtSignal(object)
-    gesture_started = pyqtSignal(object)
-    gesture_changed = pyqtSignal(object)
-    gesture_finished = pyqtSignal(object)
-    gesture_cancelled = pyqtSignal()
-    creation_started = pyqtSignal(str, str)
-    creation_finished = pyqtSignal()
-    constraint_reached = pyqtSignal(str)
+    selected = Signal(object)
+    gesture_started = Signal(object)
+    gesture_changed = Signal(object)
+    gesture_finished = Signal(object)
+    gesture_cancelled = Signal()
+    creation_started = Signal(str, str)
+    creation_finished = Signal()
+    constraint_reached = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)

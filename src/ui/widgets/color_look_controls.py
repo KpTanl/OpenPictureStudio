@@ -1,5 +1,5 @@
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
 
 from resources.styles.theme_variables import SPACING_SM, px
 from ...core.tools.color import OPS_LOOK, color_look_options
@@ -13,8 +13,8 @@ _LOOKS = ("none", OPS_LOOK)
 class ColorLookControls(QWidget, ThemedI18nMixin):
     """观感选择器，保留旧观感状态并提供旧曝光的升级入口。"""
 
-    look_edited = pyqtSignal(str)
-    upgrade_requested = pyqtSignal()
+    look_edited = Signal(str)
+    upgrade_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
-from PyQt6.QtGui import QMouseEvent, QPainter, QPainterPath, QPen
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
+from PySide6.QtGui import QMouseEvent, QPainter, QPainterPath, QPen
 
 from resources.styles.semantic_colors import OVERLAY_COLORS
 from ...core.tools.id_photo import PORTRAIT_GUIDE

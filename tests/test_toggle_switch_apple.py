@@ -1,9 +1,9 @@
 """Apple HIG 风格 ToggleSwitch 与 LabeledToggle 胶囊滑块组件专项测试。"""
 
 import pytest
-from PyQt6.QtCore import QPointF, Qt
-from PyQt6.QtGui import QKeyEvent, QMouseEvent
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import QPointF, Qt
+from PySide6.QtGui import QKeyEvent, QMouseEvent
+from PySide6.QtWidgets import QApplication
 
 from src.ui.widgets.toggle_switch import LabeledToggle, ToggleSwitch
 from src.ui.theme import ThemeManager, set_theme_manager
@@ -58,6 +58,7 @@ def test_apple_toggle_switch_mouse_and_drag(qapp):
     press_event = QMouseEvent(
         QMouseEvent.Type.MouseButtonPress,
         QPointF(10, 12),
+        switch.mapToGlobal(QPointF(10, 12)),
         Qt.MouseButton.LeftButton,
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
@@ -68,8 +69,9 @@ def test_apple_toggle_switch_mouse_and_drag(qapp):
     release_event = QMouseEvent(
         QMouseEvent.Type.MouseButtonRelease,
         QPointF(10, 12),
+        switch.mapToGlobal(QPointF(10, 12)),
         Qt.MouseButton.LeftButton,
-        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.NoButton,
         Qt.KeyboardModifier.NoModifier,
     )
     switch.mouseReleaseEvent(release_event)
@@ -82,7 +84,8 @@ def test_apple_toggle_switch_mouse_and_drag(qapp):
     move_event = QMouseEvent(
         QMouseEvent.Type.MouseMove,
         QPointF(0, 12),
-        Qt.MouseButton.LeftButton,
+        switch.mapToGlobal(QPointF(0, 12)),
+        Qt.MouseButton.NoButton,
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
     )
@@ -152,6 +155,7 @@ def test_labeled_toggle_composite(qapp):
     press_event = QMouseEvent(
         QMouseEvent.Type.MouseButtonPress,
         QPointF(20, 10),
+        toggle.mapToGlobal(QPointF(20, 10)),
         Qt.MouseButton.LeftButton,
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,

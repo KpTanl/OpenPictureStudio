@@ -6,7 +6,7 @@ import os
 from PIL import Image
 import pytest
 
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 from src.ui.main_window import MainWindow
 from tests.support import wait_for_studio, wait_for_thumbnails, wait_until

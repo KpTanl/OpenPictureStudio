@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QImage, QPainter
-from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLayout, QScrollArea, QSizePolicy, QVBoxLayout,
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QImage, QPainter
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLayout, QScrollArea, QSizePolicy, QVBoxLayout,
                              QWidget)
 
 from resources.styles.theme_variables import (ASSISTANT_VARIANT_HEIGHT, ASSISTANT_VARIANT_SUMMARY_HEIGHT,
@@ -29,10 +29,10 @@ class _ComparisonArea(QScrollArea):
 
 
 class AssistantVariants(QWidget):
-    images_requested = pyqtSignal(str, str)
-    adopt_requested = pyqtSignal(str, str)
-    expand_requested = pyqtSignal()
-    end_requested = pyqtSignal()
+    images_requested = Signal(str, str)
+    adopt_requested = Signal(str, str)
+    expand_requested = Signal()
+    end_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

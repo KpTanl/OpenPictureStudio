@@ -1,8 +1,8 @@
 """Apple HIG 风格 AppleMenu 与 AppleDropDown 专项单元测试。"""
 import pytest
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon, QPixmap
-from PyQt6.QtWidgets import QApplication, QWidget, QToolButton
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtWidgets import QApplication, QWidget, QToolButton
 
 from src.ui.widgets.apple_menu import AppleMenu, AppleDropDown
 from src.ui.dialogs.settings_dialog import SettingsDialog

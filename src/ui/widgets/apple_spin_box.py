@@ -3,9 +3,9 @@
 只有用户操作（点加减、键入、方向键）才发出 valueEdited，程序用 setValue 回填不触发。
 """
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QFocusEvent, QKeyEvent
-from PyQt6.QtWidgets import QPushButton, QSpinBox
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QFocusEvent, QKeyEvent
+from PySide6.QtWidgets import QPushButton, QSpinBox
 
 from resources.styles.theme_variables import CONTROL_HEIGHT
 from ..icons import themed_icon
@@ -16,7 +16,7 @@ _ICON = 16
 
 
 class AppleSpinBox(QSpinBox, ValueEditMixin):
-    valueEdited = pyqtSignal(int)
+    valueEdited = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)

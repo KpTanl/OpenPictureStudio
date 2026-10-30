@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from PyQt6.QtCore import QEvent, Qt, pyqtSignal
-from PyQt6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from resources.styles.theme_variables import SPACING_LG, SPACING_MD, SPACING_SM, SPACING_XL, SPACING_XS, px
 from ...core.local_masks import MASK_LIMIT, LOCAL_UI_FIELDS, EFFECTIVE_RANGES, local_ui_values
@@ -103,13 +103,13 @@ class MaskPanel(QWidget):
     参数由调色面板经 ``set_state()`` 投影。
     """
 
-    selected = pyqtSignal(object)
-    create_requested = pyqtSignal(object)
-    component_selected = pyqtSignal(object)
-    edit_requested = pyqtSignal(str, object)
-    range_requested = pyqtSignal(bool)
-    upgrade_requested = pyqtSignal()
-    generation_cancel_requested = pyqtSignal()
+    selected = Signal(object)
+    create_requested = Signal(object)
+    component_selected = Signal(object)
+    edit_requested = Signal(str, object)
+    range_requested = Signal(bool)
+    upgrade_requested = Signal()
+    generation_cancel_requested = Signal()
 
     def __init__(self, tr, track_edit, finish_edit, parent=None):
         super().__init__(parent)
@@ -189,7 +189,7 @@ class MaskPanel(QWidget):
         self._rename.editingFinished.connect(self._finish_rename)
         self._rename.installEventFilter(self)
         self._range = ToggleButton(icon_name="eye", parent=self._detail)
-        self._range.clicked.connect(self.range_requested.emit)
+        self._range.clicked[bool].connect(self.range_requested.emit)
         title_row.addWidget(self._title, 1)
         title_row.addWidget(self._rename, 1)
         title_row.addWidget(self._range)

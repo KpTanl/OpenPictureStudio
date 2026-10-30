@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import QAbstractListModel, QEvent, QItemSelectionModel, QModelIndex, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QGridLayout, QHBoxLayout, QLabel,
+from PySide6.QtCore import QAbstractListModel, QEvent, QItemSelectionModel, QModelIndex, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QGridLayout, QHBoxLayout, QLabel,
                              QListView, QScrollArea, QSplitter, QStackedWidget, QVBoxLayout, QWidget)
 
 from resources.styles.theme_variables import SPACING_MD, SPACING_SM, px
@@ -67,9 +67,9 @@ class PhotoGridModel(QAbstractListModel):
 
 
 class PhotoBrowserWorkspace(QWidget):
-    image_requested = pyqtSignal(str)
-    single_requested = pyqtSignal()
-    changed = pyqtSignal()
+    image_requested = Signal(str)
+    single_requested = Signal()
+    changed = Signal()
 
     def __init__(self, service, runner, translate, parent=None, *, settings=None):
         super().__init__(parent)
@@ -122,8 +122,8 @@ class PhotoBrowserWorkspace(QWidget):
         self.link = QCheckBox(self)
         self.advance.setChecked(settings.value("advance", False, type=bool) if settings is not None else False)
         self.link.setChecked(settings.value("link", True, type=bool) if settings is not None else True)
-        self.advance.clicked.connect(lambda value: self._save_preference("advance", value))
-        self.link.clicked.connect(lambda value: self._save_preference("link", value))
+        self.advance.clicked[bool].connect(lambda value: self._save_preference("advance", value))
+        self.link.clicked[bool].connect(lambda value: self._save_preference("link", value))
         preferences.addWidget(self.advance)
         preferences.addWidget(self.link)
         self._status = QLabel(self)
@@ -248,7 +248,7 @@ class PhotoBrowserWorkspace(QWidget):
         self.single_requested.emit()
 
     def _focus_image(self, index):
-        from PyQt6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         if not QApplication.keyboardModifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
             self.image_requested.emit(self.model.paths[index.row()])
 

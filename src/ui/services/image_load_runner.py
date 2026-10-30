@@ -3,8 +3,8 @@ from threading import Lock
 from time import perf_counter
 import logging
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal
-from PyQt6.QtGui import QImage
+from PySide6.QtCore import QObject, Qt, Signal, Slot
+from PySide6.QtGui import QImage
 
 from ...application.image_load_queue import ImageLoadQueue
 
@@ -12,10 +12,10 @@ logger = logging.getLogger(__name__)
 
 
 class ImageLoadRunner(QObject):
-    ready = pyqtSignal(object, object, object)
-    display_ready = pyqtSignal(object, object, object, object)
-    quick_ready = pyqtSignal(object, object, object)
-    _completed = pyqtSignal()
+    ready = Signal(object, object, object)
+    display_ready = Signal(object, object, object, object)
+    quick_ready = Signal(object, object, object)
+    _completed = Signal()
 
     def __init__(self, source_service, *, thumbnail=False, parent=None):
         super().__init__(parent)
@@ -83,6 +83,7 @@ class ImageLoadRunner(QObject):
         except RuntimeError:
             self.shutdown()
 
+    @Slot()
     def _deliver(self):
         with self._lock:
             results, self._results = self._results, []

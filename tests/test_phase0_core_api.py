@@ -31,7 +31,7 @@ class TestHeadlessImport:
     def test_core_layer_imports_without_qt(self):
         code = (
             "import sys; import src.application, src.core.contracts; "
-            "assert 'PyQt6' not in sys.modules, 'Qt leaked into Core'; "
+            "assert 'PySide6' not in sys.modules, 'Qt leaked into Core'; "
             "print('ok')"
         )
         proc = subprocess.run(

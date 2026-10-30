@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import logging
 
-from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 
 from ...application.draft_persistence import DraftSaveRequest
 from ...application.result_types import CoreResult, ErrorCode
@@ -11,11 +11,11 @@ logger = logging.getLogger(__name__)
 
 
 class DraftPersistenceRunner(QObject):
-    ready = pyqtSignal()
-    failed = pyqtSignal(object)
-    saved = pyqtSignal()
-    persisted = pyqtSignal(int)
-    _completed = pyqtSignal(object, object)
+    ready = Signal()
+    failed = Signal(object)
+    saved = Signal()
+    persisted = Signal(int)
+    _completed = Signal(object, object)
 
     def __init__(self, service, state_store, parent=None):
         super().__init__(parent)
@@ -83,6 +83,7 @@ class DraftPersistenceRunner(QObject):
         else:
             self._pending = request
 
+    @Slot(object, object)
     def _deliver(self, task, result):
         self._active = None
         if self._closed:
@@ -134,7 +135,7 @@ class DraftPersistenceRunner(QObject):
         for version, callback in self._version_waiters:
             if error is not None or self._loaded and self._saved_version >= version:
                 result = error if error is not None else CoreResult.ok(self._saved_version)
-                QTimer.singleShot(0, lambda callback=callback, result=result: callback(result))
+                QTimer.singleShot(0, self, lambda callback=callback, result=result: callback(result))
             else:
                 remaining.append((version, callback))
         self._version_waiters = remaining
@@ -151,7 +152,7 @@ class DraftPersistenceRunner(QObject):
     def _finish_flush(self, result):
         callback, self._flush_callback = self._flush_callback, None
         if callback is not None:
-            QTimer.singleShot(0, lambda: callback(result))
+            QTimer.singleShot(0, self, lambda: callback(result))
 
     def retry(self):
         if self._closed:

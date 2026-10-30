@@ -9,9 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
 
-from PyQt6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QAction, QIcon, QKeyEvent
-from PyQt6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QWidget
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QIcon, QKeyEvent
+from PySide6.QtWidgets import QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QWidget
 
 from resources.styles.theme_variables import CANVAS_TOOLBAR_HEIGHT, SPACING_MD, SPACING_SM, SPACING_XS, px
 from ..icons import themed_icon
@@ -44,7 +44,7 @@ class CanvasToolbarActions:
 class _ZoomReadout(QLineEdit):
     """倍率读数：平时像标签，点击后键入百分比，回车提交，Esc 或移开焦点放弃。"""
 
-    percent_edited = pyqtSignal(int)
+    percent_edited = Signal(int)
 
     def __init__(self, parent: QWidget):
         super().__init__(parent)
@@ -81,7 +81,7 @@ class _ZoomReadout(QLineEdit):
 
     def focusInEvent(self, event) -> None:
         super().focusInEvent(event)
-        QTimer.singleShot(0, self.selectAll)
+        QTimer.singleShot(0, self, self.selectAll)
 
     def focusOutEvent(self, event) -> None:
         super().focusOutEvent(event)
@@ -111,12 +111,12 @@ class _MenuActionButton(ActionIconButton):
 
 
 class CanvasToolbar(QFrame):
-    zoom_percent_edited = pyqtSignal(int)
-    rating_edited = pyqtSignal(int)
-    filmstrip_toggled = pyqtSignal(bool)
-    compare_pressed = pyqtSignal()
-    compare_released = pyqtSignal()
-    preview_mode_selected = pyqtSignal(str)
+    zoom_percent_edited = Signal(int)
+    rating_edited = Signal(int)
+    filmstrip_toggled = Signal(bool)
+    compare_pressed = Signal()
+    compare_released = Signal()
+    preview_mode_selected = Signal(str)
 
     def __init__(self, actions: CanvasToolbarActions, translate: Callable[[str, str], str],
                  parent: Optional[QWidget] = None):
@@ -191,7 +191,7 @@ class CanvasToolbar(QFrame):
         self._filmstrip_button.setIconSize(QSize(_ICON_SIZE, _ICON_SIZE))
         self._filmstrip_button.setCheckable(True)
         self._filmstrip_button.setChecked(True)
-        self._filmstrip_button.clicked.connect(self.filmstrip_toggled.emit)
+        self._filmstrip_button.clicked[bool].connect(self.filmstrip_toggled.emit)
         layout.addWidget(self._filmstrip_button)
 
         self.retranslate_ui()

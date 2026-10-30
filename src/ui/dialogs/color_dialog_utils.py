@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QColorDialog
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QColorDialog
 
 
 def pick_color(parent, initial_color, title: str):

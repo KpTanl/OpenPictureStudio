@@ -1,13 +1,13 @@
 import logging
 from threading import Event
 
-from PyQt6.QtCore import QObject, QRunnable, QThreadPool, Qt, pyqtSignal
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal, Slot
 
 logger = logging.getLogger(__name__)
 
 
 class _CacheSignals(QObject):
-    finished = pyqtSignal(object, object)
+    finished = Signal(object, object)
 
 
 class _CacheWorker(QRunnable):
@@ -33,9 +33,9 @@ class _CacheWorker(QRunnable):
 
 
 class CacheMaintenanceRunner(QObject):
-    state_changed = pyqtSignal()
-    clear_finished = pyqtSignal(int, str)
-    maintenance_failed = pyqtSignal(str)
+    state_changed = Signal()
+    clear_finished = Signal(int, str)
+    maintenance_failed = Signal(str)
 
     def __init__(self, cache, version, parent=None, *, message_keys):
         super().__init__(parent)
@@ -104,6 +104,7 @@ class CacheMaintenanceRunner(QObject):
             return
         self._start("clear", self._cache.clear)
 
+    @Slot(object, object)
     def _finished(self, result, error):
         self._worker = None
         if self._closed:
@@ -122,6 +123,7 @@ class CacheMaintenanceRunner(QObject):
             limit, self._pending_limit = self._pending_limit, None
             self.set_limit(limit)
 
+    @Slot(object, object)
     def _query_finished(self, result, error):
         self._query_worker = None
         if self._closed:

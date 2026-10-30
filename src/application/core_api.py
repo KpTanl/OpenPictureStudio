@@ -44,6 +44,7 @@ from ..core.project import ProjectDocument, ProjectStore
 from ..core.project.document import resolve_source_path
 from ..core.project.project_store import ProjectChangedError
 from ..core.project.assets import ProjectAssetError, validate_asset
+from ..core.raw_loader import RawSupportUnavailableError, is_raw_file
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +220,6 @@ class CoreAPI:
 
     def bind_source(self, path, *, is_cancelled=lambda: False):
         from .services import make_source_id
-        from ..core.raw_loader import is_raw_file
         if not self.source_access_guard(path):
             return CoreResult.fail(ErrorCode.CANCELLED, "library.recovery_required")
         try:
@@ -800,7 +800,6 @@ class CoreAPI:
                 if not decoded.success:
                     return CoreResult(success=False, error=decoded.error)
                 lease, identity = decoded.unwrap()
-            from ..core.raw_loader import is_raw_file
             try:
                 source = self._engine.to_contract_source(
                     lease.value, file_hash=identity.file_hash, is_raw=is_raw_file(normalized)
@@ -829,7 +828,7 @@ class CoreAPI:
             return CoreResult.from_exception(exc)
         except Exception as exc:  # noqa: BLE001
             code = ErrorCode.DECODE_FAILED
-            if type(exc).__name__ == "RawSupportUnavailableError":
+            if isinstance(exc, RawSupportUnavailableError):
                 code = ErrorCode.UNSUPPORTED_FORMAT
             return CoreResult.fail(
                 code,
@@ -2138,7 +2137,7 @@ class CoreAPI:
             return CoreResult.fail(ErrorCode.DECODE_FAILED, memory_error_key(memory_error))
         except Exception as exc:
             code = ErrorCode.DECODE_FAILED
-            if type(exc).__name__ == "RawSupportUnavailableError":
+            if isinstance(exc, RawSupportUnavailableError):
                 code = ErrorCode.UNSUPPORTED_FORMAT
             return CoreResult.from_exception(
                 exc, code=code, message_key="error.source.decode_failed"

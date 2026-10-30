@@ -13,375 +13,315 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/Original_source-MIT-yellow.svg" alt="Original source licensed under MIT"></a>
 </p>
 
-**Cull, develop RAW photos, and export batches in one window.**
+**Begin with light. Give every inspiration a chance to become a finished work.**
 
-OpenPictureStudio is an open-source photo workspace for Windows, bringing photo browsing and selection, color editing, local adjustments, and batch export together. Save edits as projects and use AI tools and the photo assistant when needed. The interface supports 简体中文, English, and Français.
+OpenPictureStudio (OPS) is an open-source AI image creation platform built on professional image processing. It connects the reality a camera records with the picture in the creator's mind. RAW color grading, local masks, non-destructive editing, an AI retouching assistant, and batch processing come together in one creative workflow. The platform keeps growing toward automated workflows, generative editing, and an open plugin ecosystem.
 
-**[Download for Windows](https://github.com/KpTanl/OpenPictureStudio/releases/latest)** · [Installation](#installation-and-running) · [Quick Start](#quick-start) · [Features](#features) · [FAQ](#frequently-asked-questions) · [Report an Issue](https://github.com/KpTanl/OpenPictureStudio/issues)
+**For everyday users, creating starts with an easy first step.** From adjusting the exposure and color of everyday photos to exploring a look with the AI assistant, OPS aims to make it easier to turn what you have in mind into concrete actions. Fixing one photo can also be the start of learning about light and finding your own voice.
 
-> Beta · Windows 10/11 (64-bit) · 8 GB of RAM or more recommended. Core viewing and editing work offline.
+**For professional creators, every detail deserves care.** Draw out color and tonal depth from RAW files, shape light with local masks, refine your decisions through non-destructive editing and history, then apply a finished look to a whole series. OPS values controllable parameters, a traceable process, and consistent results, so that technique carries your judgment and the tool follows your creative lead.
 
-## Installation and Running
+**For developers, being open means being able to extend the tools yourself.** Following the long-term direction of "Everything is Plugin", OPS will gradually refine the extension contracts for image operations, workflows, and the project model, so that algorithms, models, and creative tools can plug into one platform. A solution to one specific need of your own, or a new creative method you share, can become someone else's starting point.
 
-### Download the Windows Installer
+**For AI agents, image creation needs tools that can be called, orchestrated, and inspected.** The existing AI retouching assistant is where this collaboration begins. Later work will connect tool calls, workflow execution, and project context. An external agent will be able to organize processing, previews, and exports around a creative goal without opening the desktop interface, and hand the results back to the creator for review. Human intent, professional tools, and AI execution will meet in the same work.
 
-1. Open the [latest release](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Under **Assets**, download `OpenPictureStudio-<version>-beta-setup.exe` and its matching `.exe.sha256` file.
-2. Verify the installer's SHA256, run the EXE, and follow the installation wizard.
-3. Launch OpenPictureStudio and open a photo or folder. The installer requires no separate Python or Rust installation; download AI models as needed.
+**[Download the Windows installer](https://github.com/KpTanl/OpenPictureStudio/releases/latest)** · [Quick Start](#quick-start) · [Key Features](#key-features) · [Benchmarks](#system-requirements-and-performance-benchmarks) · [Roadmap](#roadmap) · [Documentation](open-docs/README.en.md)
 
-<details>
-<summary>How do I verify SHA256?</summary>
+> Beta · Windows 10/11 (64-bit) · The interface supports Simplified Chinese, English, and French. Core viewing and editing work offline.
+> 
+> For the features and installers of each version, see the [release notes](https://github.com/KpTanl/OpenPictureStudio/releases/latest).
 
-Open PowerShell in the download folder and run these commands, replacing `<version>` with the downloaded version:
-
-```powershell
-Get-FileHash -LiteralPath '.\OpenPictureStudio-<version>-beta-setup.exe' -Algorithm SHA256
-Get-Content -LiteralPath '.\OpenPictureStudio-<version>-beta-setup.exe.sha256'
-```
-
-The hash from the first command should match the 64-character value at the start of the second command's output. The checksum verifies that the download is intact and matches the release asset. Get both files from this repository's Release.
-
-</details>
-
-### “Windows protected your PC” on First Launch
-
-The Windows installer is currently unsigned. When you first run it by double-clicking, Windows SmartScreen may display “Windows protected your PC” and “Unknown publisher.”
-
-Confirm that the file came from [this repository's Release](https://github.com/KpTanl/OpenPictureStudio/releases/latest) and verify its matching SHA256. Then select **More info → Run anyway** to continue installation.
-
-<details>
-<summary>View an example of the Windows prompt (Chinese)</summary>
-
-<img src=".github/assets/readme/windows-smartscreen.zh-CN.png" width="480" alt="Windows SmartScreen in Chinese, with Run anyway and Don't run buttons">
-
-This example shows the 0.16.0 installer with More info already expanded. The filename changes with each release. If Run anyway is unavailable, follow your device's security guidance or organization policy.
-
-</details>
-
-### Download and Install with PowerShell
-
-Open a regular PowerShell window, expand the commands below, and **copy and run the entire block**. It supports Windows PowerShell 5.1 and PowerShell 7, downloads the latest regular release from this repository, verifies SHA256, and opens the installation wizard directly.
-
-Exit OPS normally before upgrading. Downloads stay in the temporary folder printed by the command; installation does not restart your computer automatically. Windows protection and organization policies remain active.
-
-<details>
-<summary>Show PowerShell installation commands</summary>
-
-```powershell
-& {
-    $ErrorActionPreference = 'Stop'
-    $releasePage = 'https://github.com/KpTanl/OpenPictureStudio/releases/latest'
-    try {
-        $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/KpTanl/OpenPictureStudio/releases/latest' -Headers @{ 'User-Agent' = 'OpenPictureStudio-Install' } -TimeoutSec 30
-        $name = 'OpenPictureStudio-{0}-beta-setup.exe' -f ($release.tag_name -replace '^v', '')
-        $installer = @($release.assets | Where-Object { $_.name -ceq $name })
-        $checksum = @($release.assets | Where-Object { $_.name -ceq "$name.sha256" })
-        if ($installer.Count -ne 1 -or $checksum.Count -ne 1) { throw 'The release does not contain one matching installer and checksum.' }
-
-        $folder = Join-Path ([IO.Path]::GetTempPath()) ('OpenPictureStudio-' + [Guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Path $folder | Out-Null
-        Write-Host ('Download folder: ' + $folder)
-        $exe = Join-Path $folder $name
-        $sha = Join-Path $folder "$name.sha256"
-        Invoke-WebRequest -UseBasicParsing -Uri $installer[0].browser_download_url -OutFile $exe -TimeoutSec 600
-        Invoke-WebRequest -UseBasicParsing -Uri $checksum[0].browser_download_url -OutFile $sha -TimeoutSec 30
-
-        $line = (Get-Content -LiteralPath $sha -Raw).Trim()
-        if ($line -notmatch '^(?<hash>[a-fA-F0-9]{64})[ \t]+\*?(?<file>[^\r\n]+)$') { throw 'The checksum file is invalid or names a different installer.' }
-        $expected = $Matches['hash']
-        if ($Matches['file'] -cne $name) { throw 'The checksum file is invalid or names a different installer.' }
-        if ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -ine $expected) { throw 'SHA256 mismatch. The installer has not been started.' }
-
-        Write-Host 'SHA256 verified. Opening the installation wizard...'
-        $start = New-Object System.Diagnostics.ProcessStartInfo
-        $start.FileName = $exe
-        $start.WorkingDirectory = $folder
-        $start.UseShellExecute = $false
-        $start.Arguments = '/NORESTART'
-        $process = [System.Diagnostics.Process]::Start($start)
-        $process.WaitForExit()
-        switch ($process.ExitCode) {
-            0 { Write-Host 'Installation completed.' }
-            { $_ -in 2, 5 } { Write-Host 'Installation canceled or aborted.' }
-            default { throw ('Installation did not complete. Exit code: ' + $process.ExitCode) }
-        }
-    } catch {
-        throw ("Unable to complete installation. Releases: $releasePage`n" + $_.Exception.Message)
-    }
-}
-```
-
-</details>
-
-### Upgrading and Version Checks
-
-By default, the installed application checks GitHub for the latest regular release, with at least 24 hours between automatic checks for each user. Disable automatic checks in Settings → General, or check manually on the About page. Requests include the application version and necessary HTTP information; GitHub can see the network IP address and request time. The application opens a fixed download page for you to download and run the installer. Running from source does not trigger automatic checks; update the source with git.
-
-<details>
-<summary>Upgrades, repairs, and early test builds</summary>
-
-Exit all running instances normally before upgrading, then close the installer before launching the application. The installer checks program files against its file manifest and preserves settings, custom data directories, models, and projects. If unknown files, user-replaced components, or directory conflicts are found, follow the prompts to back up and move the conflicting content. After an interrupted installation, rerun the full installer for the same version. Back up and resolve any truncated or modified files before continuing the repair.
-
-Early test builds may not have an installation manifest. If their program files remain, back up your data and uninstall the old build first. If the original installation directory has been removed or is completely empty, rerun the installer directly. When replacement is blocked, the installer shows the original directory.
-
-</details>
-
-## Quick Start
-
-1. **Open and select**: Open a photo or folder, browse the filmstrip or grid, and filter using ratings and Keep/Reject flags.
-2. **Edit**: Enter the editing workspace to adjust exposure, color, and composition. Add local masks when needed. History lets you undo, redo, and compare with the original.
-3. **Save and deliver**: Save a copy or queue selected photos for batch export. Save an `.opsproj` project to keep the processing steps and history for later editing.
-
-```mermaid
-flowchart LR
-    A[Open photos or a folder] --> B[Rate and select]
-    B --> C[Adjust color and local areas]
-    C --> D[Export batches]
-    C --> E[Save an .opsproj project]
-    E --> C
-```
-
-## Features
+## Key Features
 
 | Workflow | Features |
 | --- | --- |
-| Browse and select | Common images and camera RAW, filmstrip/grid views, ratings and flags, linked comparison, keywords and smart collections |
-| RAW and color | Camera preview, Original Color and OPS Look; exposure and white balance, curves, eight-channel color mixing, and 11 built-in presets |
-| Local editing | Gradient, brush, eraser, subject and facial-region masks; cropping, rotation, and shape crops |
-| AI tools | Super-resolution, denoising and deblurring, background removal, portrait retouching, ID photos, and an assistant whose adjustments enter edit history |
-| Group processing | Sync selected adjustments, shift exposure across a group, suggest groups from capture details, match exposure, and align RAW white balance |
-| Projects and export | Automatic drafts, `.opsproj` projects, batch queues, format and size conversion, transparent PNG/16-bit TIFF, and multi-image PDF |
+| Viewing and culling | Common image formats and camera RAW, filmstrip/grid, star ratings and flags, linked comparison, keywords and smart collections |
+| RAW and color | Camera preview / Original Color / OPS Look, exposure and white balance, curves, 8-channel color mixer, 11 built-in presets |
+| Local editing | Gradient, brush, and eraser masks, plus subject and face-region masks; cropping, rotation, and shape crop |
+| AI tools | Super resolution, denoise and deblur, cutout, portrait retouching, ID photos, and a retouching assistant whose adjustments are written to history |
+| Group processing | Sync selected adjustments, shift exposure across a group, suggested groups from shooting details, exposure matching and RAW white balance alignment |
+| Projects and export | Automatic drafts, `.opsproj` projects, batch queue, format and size conversion, transparent PNG / 16-bit TIFF, multi-image PDF |
 
 ### Viewing and Editing
 
-**View**: Browse photos, adjust the zoom, and assign star ratings.
+**Viewing**: Browse photos, adjust the zoom, and give star ratings.
 
-[![OpenPictureStudio View mode](.github/assets/readme/viewer.png)](.github/assets/readme/viewer.png)
+[![OpenPictureStudio viewer mode (English interface)](.github/assets/readme/viewer.png)](.github/assets/readme/viewer.png)
 
-**Edit**: Switch to the editing workspace in the same window to adjust exposure, white balance, and color.
+**Editing**: Switch to the editing workspace in the same window and adjust exposure, white balance, and color.
 
-[![OpenPictureStudio editing workspace](.github/assets/readme/workspace.png)](.github/assets/readme/workspace.png)
+[![OpenPictureStudio editing workspace (English interface)](.github/assets/readme/workspace.png)](.github/assets/readme/workspace.png)
 
 ### Portrait Retouching
 
-Adjust skin, eye, and face-shape settings, then zoom in to inspect the details.
+Adjust skin, eye, and face-shape settings, and zoom in to check the details.
 
 **Initial settings · 84% zoom**
 
-[![Beauty panel with initial settings at 84% zoom](.github/assets/readme/beauty-default.png)](.github/assets/readme/beauty-default.png)
+[![Retouching panel with initial settings, 84% zoom (English interface)](.github/assets/readme/beauty-default.png)](.github/assets/readme/beauty-default.png)
 
-**After adjustments · 131% zoom**
+**After adjusting · 131% zoom**
 
-[![Beauty adjustments viewed at 131% zoom](.github/assets/readme/beauty-adjusted.png)](.github/assets/readme/beauty-adjusted.png)
+[![Retouching settings adjusted and viewed at 131% zoom (English interface)](.github/assets/readme/beauty-adjusted.png)](.github/assets/readme/beauty-adjusted.png)
 
 <details>
 <summary>Complete feature list</summary>
 
-### Browsing and Culling
+### Viewing and Culling
 
-- **Common formats and camera RAW**: Open JPEG, PNG, BMP, GIF, WebP, TIFF, ICO, and PPM/PGM/PBM directly. Camera RAW support includes CR2, CR3, NEF, NRW, ARW, RAF, DNG, ORF, PEF, and RW2 from Canon, Nikon, Sony, Fujifilm, Olympus, Pentax, Panasonic, and other brands.
-- **RAW previews first**: Opening a RAW file shows its embedded camera preview before replacing it with the decoded image. RAW display modes include Camera preview, Original Color, and OPS Look. Other formats offer Original Color and OPS Look, with preferences saved separately for RAW and other formats.
-- **Filtering and comparison**: Browse in a filmstrip or grid. Add star ratings and Keep/Reject flags; filter by rating, flag, file type, editing status, and delivery status. Compare two photos side by side at their original resolution with linked navigation.
-- **Photo library**: Add keywords and organize photos into regular collections or smart collections that update automatically based on rules.
-- **Photo information**: View shooting settings, camera and lens details, source file information, and histograms, including for RAW files.
-- **Everyday tools**: Rotate, flip, set wallpapers, and associate file types. Choose Dark, Light, or Beige themes and switch the interface between 简体中文, English, and Français.
+- **Common formats and camera RAW**: JPEG, PNG, BMP, GIF, WebP, TIFF, ICO, and PPM/PGM/PBM open directly. Camera RAW support covers CR2, CR3, NEF, NRW, ARW, RAF, DNG, ORF, PEF, and RW2, from Canon, Nikon, Sony, Fujifilm, Olympus, Pentax, Panasonic, and other brands.
+- **RAW previews first**: When you open a RAW file, the embedded camera preview shows first and is replaced once decoding finishes. For RAW you can display Camera preview, Original Color, or OPS Look. Other formats offer Original Color or OPS Look. The two settings are saved separately.
+- **Filtering and comparison**: Two ways to browse, filmstrip and grid. Star ratings and Keep/Reject flags. Filter by rating, flag, file type, editing status, and delivery status. Two photos can be compared side by side at original size with linked navigation.
+- **Library**: Add keywords to photos, and organize them with regular collections and smart collections that update automatically by rules.
+- **Photo information**: Shooting settings, camera, source file details, and a histogram. This works for RAW too.
+- **Everyday tools**: Rotate and flip, set as wallpaper, file association. Dark, Light, and Beige themes. The interface supports Simplified Chinese, English, and French.
 
 ### Editing
 
-- **Color adjustments**:
+- **Color panel**:
   - Temperature, tint, exposure, contrast, highlights, shadows, whites, and blacks.
   - Texture, clarity, dehaze, vibrance, and saturation.
-  - RGB and individual channel tone curves, an eight-channel color mixer with an on-image eyedropper, a live histogram, and one-click auto adjustment.
+  - RGB and single-channel tone curves, an 8-channel color mixer (pick colors on the image with the eyedropper), a live histogram, and one-click auto adjustment.
   - 11 built-in presets: Monochrome, Retro, Fresh, Warm, Cool, Soft Light, Vivid, Dramatic, HDR, Film, and Skin Beauty.
-- **Local masks**: Linear and radial gradients, brush and eraser, subject selection, facial skin, eyes, lips, background, and the whole photo. Combine multiple regions by adding or subtracting them within a mask, with separate adjustments for each mask.
-- **OPS Look**: Choose Original Color or OPS Look for RAW, JPG, PNG, and other formats.
-- **Composition**: Free cropping and rotation, grid cropping, shape cropping, and lasso selection.
-- **History and projects**: Multi-step undo and redo, a history panel for returning to any step, and an edit stack showing the current processing steps. Press and hold to compare with the original. Save edits as `.opsproj` projects.
+- **Local masks**: Linear gradient, radial gradient, brush and eraser, select subject, facial skin, eyes, lips, background, and the entire photo. A single mask can combine several regions by adding or subtracting them, and each mask has its own adjustments.
+- **OPS Look**: A look defined by OPS itself. It reflects an aesthetic taste for color, light and shadow, and tonal depth, and gives RAW, JPG, PNG, and other photos a starting point with the OPS style. You can switch back to Original Color, or keep adjusting exposure, curves, and local masks.
+- **Composition**: Free crop and rotation, grid crop, shape crop, and lasso.
+- **History and projects**: Multi-level undo and redo. The history panel can return to any step, and the edit stack lists the current processing steps. Press and hold to compare with the original. Edits can be saved as `.opsproj` projects.
 
-### Groups of Photos
+### Photo Groups
 
-- **Group adjustments**: Use one photo as a reference and sync selected adjustments to selected photos or all filtered results, or increase or decrease exposure across the group. Undo or redo each batch, or retry photos that did not complete successfully.
-- **Photo groups and calibration**: Get grouping suggestions based on capture time, camera, and lens, along with exposure-matching and RAW white-balance alignment suggestions for each group. Preview the changes before applying them together.
+- **Group adjustments**: Use one photo as the sample and sync selected adjustments to the selected photos or to all filtered results. You can also shift exposure across the group. Every batch can be undone, redone, or retried for the photos that did not succeed.
+- **Photo groups and calibration**: Groups are suggested by capture time, camera model, and lens. For photos in the same group, OPS suggests exposure matching and RAW white balance alignment, which you preview and then apply together.
 
 ### AI Tools
 
-- **Image enhancement**: Real-ESRGAN super-resolution (2×, 4×, and 4K), NAFNet denoising and deblurring, and restoration at the original dimensions. Adjust luminance and color noise separately.
-- **Background removal**: U2Net subject detection, color-based removal, and lasso cutouts. Refine edges and export with a transparent or solid-color background.
-- **Portrait retouching**: Facial landmarks drive four groups of adjustments: skin (smoothing, brightening, rosy tone, and sharpening), face shape (face and nose slimming), eyes (enlargement and spacing), and detail retouching (teeth whitening, blemish removal, and under-eye bag reduction).
-- **ID photos**: Presets for Chinese one-inch and two-inch ID photos, passports, visas, social security documents, and custom dimensions. Change the background color, frame automatically based on face position, and arrange photos on a print sheet.
-- **AI photo assistant**: Multiple chats with Chat, Plan, Adjust, and Agent modes. Adjustments enter the same editing history as manual edits, so you can undo, redo, or refine them. Request two alternatives to generate A/B candidates, compare them in the assistant panel, and add one to history by clicking Apply. Attach a reference image or save named styles and preferences for future use.
-- **Models and GPU**: Models are downloaded separately from the installer. Download, import, uninstall, and set defaults in Settings → Tools and Models. If you have a dedicated GPU, install the GPU runtime (DirectML) in Settings → Runtimes and restart the application to activate it.
+- **Image enhancement**: Real-ESRGAN super resolution (2×, 4×, 4K) and NAFNet denoise and deblur, which can also restore at the original size. Luminance noise and color noise are adjusted separately.
+- **Cutout**: U2Net finds the subject. There are also cutout by color and lasso cutout. You can refine edges and output a transparent or solid-color background.
+- **Portrait retouching**: Based on face landmarks, with four groups of adjustments: skin (smoothing, brightening, rosy tone, sharpening), face shape (face slim, nose slim), eyes (eye enlarge, eye distance), and detail retouching (teeth whiten, spot remove, eye bag remove).
+- **ID photos**: Size presets for one-inch, two-inch, passport, visa, and social security photos, plus custom sizes. You can change the background color, compose automatically around the face position, and lay out sheets.
+- **AI retouching assistant**: Multiple chats, with Chat, Plan, Adjust, and Agent modes. The assistant's adjustments are written straight into the edit history, so like manual adjustments you can undo, redo, or keep refining them. When you want two options, it generates A/B candidates that you compare in the assistant panel, and nothing is written until you click Adopt. You can attach a reference image, and you can save named styles and preferences for later use.
+- **Models and GPU**: Models are not shipped with the installer. In Settings → Tools and Models you can download, import, uninstall, and set defaults as needed. With a dedicated GPU, you can install the GPU runtime (DirectML) in Settings → Runtimes, which takes effect after a restart.
 
 </details>
 
 <details>
 <summary>Projects, drafts, and output details</summary>
 
-- **Projects and drafts**: Edits are saved automatically as drafts so you can continue when you reopen the same photo. Saving an `.opsproj` project preserves processing steps and history.
-- **Saving results**: Choose whether to overwrite the original or save a copy. Output is written to a temporary file and validated before replacing the destination, preserving existing files if saving fails or is canceled.
-- **Batch export**: Select photos and an output preset, then add them to the export queue. Edits are frozen when queued, so later changes to a photo do not affect queued items. Pause or cancel the queue, retry failed items, and review completion records.
-- **Format handling**: Convert between JPG, PNG, WebP, BMP, and TIFF. Set a target file size in KB for JPG. Resize with aspect-ratio preservation, crop-to-fill, padded fit, or stretching.
-- **High bit depth and PDF**: Export 16-bit TIFF with transparency, or combine multiple images into a single PDF in order.
+- **Projects and drafts**: Edits are saved automatically as drafts, and you continue from them the next time you open the same photo. Saving as an `.opsproj` project also saves the processing steps and history.
+- **Saving results**: You decide whether to overwrite the original or save a copy. Output is first written to a temporary file and verified before it replaces the target. A failure or cancellation never damages an existing file.
+- **Batch export**: Choose photos and an output preset, then add them to the export queue. The edits are fixed at the moment of queuing, so later changes to a photo do not affect items already queued. The queue can be paused and canceled, failed items can be retried, and completed records can be searched.
+- **Format handling**: Convert between JPG, PNG, WebP, BMP, and TIFF. JPG can target a file size (KB). Resizing supports keeping proportions, crop to fill, fit with padding, and stretching directly.
+- **High bit depth and PDF**: 16-bit TIFF with transparency is supported. Multiple images can be merged into one PDF in order.
 
 </details>
 
-## Frequently Asked Questions
+## Installation and Running
 
-### Do I need a dedicated GPU?
+### Download the Windows Installer
 
-Viewing and basic editing can run on the CPU. For GPU inference, install the DirectML runtime in Settings → Runtimes and restart the application. Models and runtimes are managed separately.
+1. Open the [latest release](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Under **Assets**, download `OpenPictureStudio-<version>-beta-setup.exe` and the `.exe.sha256` file with the same name.
+2. Verify the installer's SHA256, then double-click the EXE and follow the setup wizard.
+3. Start OpenPictureStudio and open a photo or folder. The installed version needs no separate Python or Rust. AI models are downloaded as needed.
 
-### Why do some AI tools ask for a model?
+The installed version includes its runtime dependencies, and AI models are downloaded as needed. The current installer is not code-signed. If SmartScreen shows a warning, check the source and the SHA256, then follow the system prompts. The [installation and upgrade guide](open-docs/installation.en.md) covers the verification commands, first-run prompts, the PowerShell download and install method, and upgrade notes.
 
-Download or import the models you need in Settings → Tools and Models, then select them in the relevant tool panel. AI background removal and AI background replacement for ID photos use U2Net. Keeping the original background, cropping, resizing, and arranging ID photos require no model. The installed application stores models in `%APPDATA%\OpenPictureStudio\OpenPictureStudio\models` by default. Saved projects restore the exact model versions they reference.
+### Upgrades and Version Checks
 
-### Can I continue editing after closing the app?
+By default, the installed version checks for a stable release automatically, at most once every 24 hours. You can turn this off in Settings → General, or check manually in About. The app opens the download page, and you download and install the update yourself. The check sends the app version and the necessary HTTP information, and GitHub can see the IP address and request time.
 
-Edits are automatically saved as drafts for each photo. Reopen the same photo to continue. Save an `.opsproj` project to explicitly preserve processing steps and history; create finished images with Save or Export.
+Before upgrading, quit OpenPictureStudio, then run the new installer over the existing installation. Your existing settings, custom data folder, models, and projects are kept. If there is a folder conflict or a repair is needed, follow the installer's prompts. See [Installation and Upgrades](open-docs/installation.en.md) for details.
 
-### Does the AI assistant send my photos?
+### Quick Start
 
-After you configure a service, the first message includes a preview by default. Select No photo below the input box to disable photo sharing. See AI Services and Privacy below for the full rules. Local AI tools use models downloaded to your computer.
+1. **Open and cull**: Open a photo or a folder, browse with the filmstrip or grid, and filter by star rating and Keep/Reject.
+2. **Edit**: Go to the editing workspace and adjust exposure, color, and composition. Add local masks when needed. The processing steps stay in history, so you can undo, redo, and compare with the original.
+3. **Save and deliver**: Save a finished copy, or add the selected photos to the batch export queue. Saving an `.opsproj` project keeps the processing steps and history, so you can keep editing later.
 
-### Does a version check install updates automatically?
+```mermaid
+flowchart LR
+    A[Open photos or a folder] --> B[Rate and cull]
+    B --> C[Color and local adjustments]
+    C --> D[Batch export]
+    C --> E[Save an .opsproj project]
+    E --> C
+```
 
-A version check offers a link to the download page. You download and install the update. The PowerShell commands above also run only when you choose to execute them.
+## Editing Workflow and AI Agents
 
-## AI Services and Privacy
+Non-destructive color grading, local masks, history, and `.opsproj` projects together preserve the editing process. Finished images are produced by saving or exporting. The built-in assistant supports Chat, Plan, Adjust, and Agent modes. Adjustments from applicable tools go into the same edit history, and A/B candidates are written only after you click Adopt.
 
-The AI photo assistant uses services you configure yourself. Add connections and models in Settings → AI Services. The assistant sends no requests until a service is configured. API keys are encrypted with Windows DPAPI and stored locally.
+The assistant already covers color grading, retouching, culling, group processing, and export. For broader tool coverage, an external agent interface, and complete offscreen workflows, see the [roadmap](open-docs/roadmap.en.md). Professional pixel layers, destructive editing, and generative editing are later directions.
 
-Content sent to the service:
+### AI Services and Privacy
 
-- **Text and parameters**: Your messages, current adjustment parameters, and locally computed photo analysis describing brightness, color casts, and faces in text, without image pixels.
-- **Photos**: By default, the first message includes a preview of the current image with edits applied, with a maximum long edge of 1536 pixels. The photo selector below the input box can switch to the original image without edits, with a maximum long edge of 2048 pixels, or No photo. Smaller photos are sent at their original dimensions without upscaling. When photo sharing is enabled, the assistant can also request original, task-start, and current previews, plus high-resolution crops allowed by the model settings. All images are JPEGs without shooting metadata. Selecting No photo prevents photos from being sent in any request; photos are also omitted when image input is disabled for the model.
-- **Reference images**: Sent only when you attach one.
+The AI retouching assistant uses the connections and models you configure in Settings → AI Services. It sends no requests until they are configured. API keys are encrypted with Windows DPAPI and stored on your computer.
 
-The top of the assistant panel shows what will be sent for the current request. Chats, attachments, and styles are stored locally.
+By default, the first message includes a preview of the current photo. You can change this to the original image or to "Don't send the photo". Text, parameters, and photo analysis are sent according to the context you choose. Chats, attachments, and styles are stored on your computer. For setup steps, the complete sending rules, and common connection problems, see the [AI Services and Privacy guide](open-docs/ai-services.en.md).
 
-## Reporting Issues
+## Architecture and Native Acceleration
 
-Include the app version, Windows version, steps to reproduce, and relevant screenshots or logs in [GitHub Issues](https://github.com/KpTanl/OpenPictureStudio/issues). Check attachments for personal information and service keys before posting publicly.
+The desktop interface uses **Python/PySide6**. Application services coordinate the core tools, projects, and workflows. Image computation is shared between Python/NumPy and a **Rust native module**.
 
-Both the installed application and source runs write logs to `%APPDATA%\OpenPictureStudio\OpenPictureStudio\logs\openpicturestudio.log` by default. Change the location, size per log file (about 2 MB by default), and number of rotated files to keep (3 by default) in Settings → Storage. You can also open the log folder there. Attach the log when reporting an issue to help with diagnosis.
+- **Rust + Rayon**: Covers hotspots in global and local color grading, filtering, RAW matrix conversion, and display output, and coordinates multithreaded execution.
+- **AVX2 SIMD**: Seven kernel groups are wired in: color grading, color conversion, curves, local adjustments, RAW, filtering, and display. The CPU is detected automatically. If it supports AVX2 the acceleration is enabled, and otherwise portable Rust is used.
+- **Fast RAW preview**: The embedded JPEG preview is implemented for NEF and other suitable RAW formats. Full decoding and post-processing keep being optimized.
+- **GPU**: DirectML is currently used for optional AI inference. General GPU image computation is planned, and wgpu is a candidate.
 
-## Documentation
+The Image Engine, Workflow Engine, and Project Model carry image operations, flow orchestration, and project state respectively. The CPU backend and the planned GPU backend develop along one image-operation contract, and tool extension follows the long-term direction of Everything is Plugin. See [Architecture and Native Acceleration](open-docs/architecture.en.md) for details.
 
-| Document | Links |
+## System Requirements and Performance Benchmarks
+
+| Item | Suggested for basic use | Recommended | Better |
+| --- | --- | --- | --- |
+| OS | Windows 10/11, 64-bit | Windows 10/11, 64-bit | Windows 10/11, 64-bit |
+| CPU | x64, modern multicore CPU | 7th-gen Intel i5 or 1st-gen Ryzen, or better | 12th-gen Intel or 5th-gen Ryzen, or better |
+| RAM | 8 GB, for browsing and light editing | 16 GB, for RAW and multi-tool editing | 32 GB or more, for high-resolution photos, many masks, and batch jobs |
+| GPU | Integrated graphics | GTX 950 or better | RTX 2060 or better |
+| Storage | 3 GB free | 6 GB free, SSD recommended | 12 GB free, SSD recommended |
+
+Use these specs as a reference when choosing a computer. See [System Requirements and Performance](open-docs/performance.en.md) for configuration suggestions and measured image processing results.
+
+## Roadmap
+
+Starting from professional photo processing, OPS will gradually bring together AI collaboration, automated workflows, and multi-mode image editing, to build an open AI image creation platform that creators control and developers extend together.
+
+| Stage | Main direction |
 | --- | --- |
-| User guide | [简体中文](README.md) · [English](README.en.md) · [Français](README.fr.md) |
-| Installation | [简体中文](README.md#安装与运行) · [English](#installation-and-running) · [Français](README.fr.md#installation-et-exécution) |
-| Run from source | [简体中文](README.md#源码运行) · [English](#run-from-source) · [Français](README.fr.md#exécution-depuis-les-sources) |
-| Installer builds | [简体中文](README.md#构建) · [English](#building) · [Français](README.fr.md#compilation) |
-| Tests | [简体中文](tests/README.md) · [English](tests/README.en.md) |
-| CI and release workflows | [CI](.github/workflows/ci.yml) · [Release](.github/workflows/release.yml) · [Shared environment](.github/actions/setup-build/action.yml) |
-| Project license | [MIT License](LICENSE) |
+| 1 · Deepen AI creative collaboration | Expand the assistant's tool abilities, reference image analysis, and style memory, to support a fuller and more controllable editing process |
+| 2 · Build automated workflows | Save processing steps and creative experience as reusable flows, and connect batch tasks and external AI agents |
+| 3 · Broaden all-round image creation | On top of non-destructive editing, gradually add layers, professional selections, pixel-level editing, and generative editing |
+| 4 · Build an open extension ecosystem | Provide a public API and plugin SDK, with support for third-party tools and models, and for sharing styles and workflows |
+
+Performance, stability, and compatibility continue through every stage. See the [full roadmap](open-docs/roadmap.en.md) for the project vision, the stages, and the technical evolution.
 
 <details>
-<summary>Resources, dependencies, and third-party licenses</summary>
+<summary><strong>FAQ</strong></summary>
 
-- Model catalog: [catalog.json](resources/models/catalog.json).
-- Runtime catalog: [catalog.json](resources/runtimes/catalog.json).
-- License supplements and corresponding source: [manifest.json](packaging/licenses/manifest.json).
-- Bundled notices: [FlatBuffers](packaging/licenses/flatbuffers/LICENSE) · [MediaPipe](packaging/licenses/mediapipe/MEDIAPIPE_THIRD_PARTY_NOTICES.txt) · [Qt](packaging/licenses/qt/QT_THIRD_PARTY_NOTICES.txt) · [MSVC runtime](packaging/licenses/msvc-runtime/NOTICE.txt).
-- Model licenses: [MediaPipe](resources/models/licenses/MEDIAPIPE.txt) · [NAFNet](resources/models/licenses/NAFNET.txt) · [Real-ESRGAN](resources/models/licenses/REAL_ESRGAN.txt) · [U2Net](resources/models/licenses/U2NET.txt) · [YuNet](resources/models/licenses/YUNET.txt).
-- Interface icons: [Source](resources/icons/ui/SOURCE.txt) · [License](resources/icons/ui/LICENSE.txt).
-- Dependency lists: [requirements.txt](requirements.txt) · [requirements-ai.txt](requirements-ai.txt) · [requirements-beauty.txt](requirements-beauty.txt) · [requirements-dev.txt](requirements-dev.txt) · [requirements-build.txt](requirements-build.txt) · [requirements-build.lock.txt](requirements-build.lock.txt).
+<details>
+<summary><strong>Do I still need to install Python or Rust after installing?</strong></summary>
+
+The Windows installer includes the dependencies needed to run, so you can use the app right after installation. AI models and the optional GPU runtime are installed in Settings as needed.
 
 </details>
 
-### Run from Source
-
 <details>
-<summary>Python environment, optional dependencies, and Rust acceleration</summary>
+<summary><strong>Can I use it offline?</strong></summary>
 
-Requires Python 3.12 or later; development and release builds use 3.13. Dependencies are grouped by feature, so you can install only what you need.
-
-```powershell
-# 1. Get the source
-git clone https://github.com/KpTanl/OpenPictureStudio.git
-cd OpenPictureStudio
-python -m venv .venv
-.\.venv\Scripts\activate
-
-# 2. Install the base dependencies (viewing, color editing, format handling, and output)
-pip install -r requirements.txt
-
-# 3. (Optional) Install AI and portrait retouching dependencies
-pip install -r requirements-ai.txt
-pip install -r requirements-beauty.txt
-
-# 4. Launch the application
-python main.py
-```
-
-The Rust acceleration module is optional. To use it, install the Rust toolchain, build the module, and copy the result to the repository root:
-
-```powershell
-cd native\ops_accel
-cargo build --release
-copy target\release\ops_accel.dll ..\..\ops_accel.pyd
-cd ..\..
-```
+Photo browsing, color grading, cropping, project saving, and export work offline. Local AI tools also work offline once their models and runtimes are ready. Downloading models, checking for updates, and using the online AI retouching assistant need a network connection.
 
 </details>
 
-## Building
-
 <details>
-<summary>Installer builds, CI/releases, tests, and code structure</summary>
+<summary><strong>Do I need a dedicated GPU?</strong></summary>
 
-### Build the Installer
-
-Requires Inno Setup, the Rust toolchain, and the full application, AI, portrait retouching, and packaging dependencies. `requirements-build.lock.txt` pins tested versions for release builds; `requirements-build.txt` is its source. Before building, the script checks the Python version, required dependencies, and that exactly one OpenCV distribution is installed.
-
-```powershell
-pip install -r requirements-build.lock.txt
-powershell -ExecutionPolicy Bypass -File build.ps1
-```
-
-### CI and Releases
-
-CI runs code checks and Python compilation, builds the native module, runs the test suite, and packages the installer as separate jobs. Pull requests run through testing; pushes to `dev`/`main` and manual runs also package the installer.
-
-Release tags run the same stages, verify that the commit belongs to `main` and that the tag matches `APP_VERSION`, then create a draft Release. A maintainer publishes the Release manually.
-
-The native build uploads `ops_accel.pyd`. Testing and packaging download the same artifact; packaging uses `build.ps1 -SkipNativeBuild` and prepares Cargo dependency sources for license collection. Each downstream job selects the producer's artifact ID.
-
-### Run Tests
-
-See the [test instructions](tests/README.en.md).
-
-### Code Structure
-
-The application follows a one-way dependency structure: UI → application → core → native acceleration. Each layer depends only on the public contracts of the layer below it.
-
-- **`src/ui`**: Interface and interactions, including browsing and editing workspaces, tool panels, themes, and localization.
-- **`src/application`**: Workflow coordination, including task scheduling, caches, model and runtime management, output, and persistence.
-- **`src/core`**: Algorithms and data models, including the imaging engine, tool contracts, workflows, and `.opsproj` projects.
-- **`native/ops_accel`**: Native acceleration module written in Rust.
-- **`resources`**: Themes, translations, and model and runtime catalogs.
+Viewing and basic editing can use the CPU. When you need GPU inference, you can install the DirectML runtime in Settings → Runtimes, and it takes effect after a restart. Models and runtimes are managed separately.
 
 </details>
 
-## License and Third-Party Dependencies
+<details>
+<summary><strong>Why do the colors or brightness change right after a RAW file opens?</strong></summary>
 
-The original code of OpenPictureStudio is released under the [MIT License](LICENSE). Third-party dependencies, models, and assets follow their own licenses. Interface icons come from [Tabler Icons](https://github.com/tabler/tabler-icons) under the MIT License, with the license text stored alongside them in [resources/icons/ui/LICENSE.txt](resources/icons/ui/LICENSE.txt).
+When you open a RAW file, the embedded camera preview shows first. After full decoding, the image updates according to the display mode you chose. In Settings → Image display, you can choose Camera preview, Original Color, or OPS Look for RAW. The display mode for other formats is set separately.
 
-Installer and portable distributions include the following materials in the program directory, generated from the actual bundle contents by [tools/collect_licenses.py](tools/collect_licenses.py) during the build:
+</details>
 
-- `THIRD_PARTY_NOTICES.txt`: Component names, versions, licenses, and homepages, including models and runtimes available for download;
-- `licenses/`: License texts and copyright notices for each component;
-- `SOURCE.txt`: The application commit and source URL, plus corresponding source URLs and checksums for GPL, LGPL, and MPL components;
-- `components.json`: The mapping between components and distributed files;
-- `LICENSE` (MIT) and `GPL-3.0.txt`.
+<details>
+<summary><strong>What is the OPS style?</strong></summary>
 
-License texts missing from upstream packages and components requiring corresponding source are registered in [packaging/licenses](packaging/licenses). The build stops if a distributed file cannot be assigned to a component, a component is missing its license text, or a GPL, LGPL, or MPL component has no corresponding source registration.
+The OPS style is called "OPS Look" in the interface. It is a look that OPS defines itself, with an aesthetic taste for color, light and shadow, contrast, and tonal depth. Choose it to start from the overall OPS style, then add your own creative judgment.
 
-This project uses PyQt6, whose open-source edition is licensed under GPLv3; commercial licensing is also available. A combined application built and distributed with GPL-licensed PyQt6 must be distributed under GPLv3. The MIT license for the project's original code remains in effect: MIT applies when reusing that code on its own, while reusing and distributing the combined application with GPL-licensed PyQt6 also requires compliance with GPLv3.
+OPS Look works with RAW, JPG, PNG, and other formats.
 
-When distributing such installers or portable packages, retain the applicable copyright notices and license texts, and provide the complete corresponding source for the release, including source for GPL-covered dependencies and the necessary build scripts. Access to the corresponding source should be provided alongside the binary download.
+| Option | What it does |
+| --- | --- |
+| Original Color | Starts from the colors as the file is decoded, and keeps the color settings you already made |
+| OPS Look | Uses the color and tonal look that OPS defines itself, giving an overall result with the OPS aesthetic |
+| Color presets | Apply a set of parameters such as Retro, Film, or HDR, which can be used together with the chosen look |
 
-For detailed terms, see the [official PyQt licensing information](https://www.riverbankcomputing.com/software/pyqt/intro), [PyQt licensing FAQ](https://www.riverbankcomputing.com/commercial/license-faq), and [GPLv3 terms](https://www.gnu.org/licenses/gpl-3.0.html). Distributions using a commercial PyQt license follow its commercial terms and the licenses of other dependencies.
+In the Color panel of the editing workspace, choose Original Color or OPS Look under Look. In Settings → Image display, you can set the display mode for RAW and for other formats separately. The look you pick while editing is saved with the project and applied to exported results. This processing runs on your computer and needs no AI model download.
 
-For logo, screenshot, diagram, and icon credits used in this README, see [Asset Sources](.github/assets/readme/SOURCES.en.md).
+</details>
+
+<details>
+<summary><strong>Does adjusting a photo overwrite the original?</strong></summary>
+
+Browsing, adjusting parameters, and saving edit drafts never overwrite the original. When you produce a finished image, you can save a copy or save to the original path. To keep the original file, save under a new file name or to a different output folder.
+
+</details>
+
+<details>
+<summary><strong>Can I keep editing after I close it?</strong></summary>
+
+Edits are saved automatically as a draft for that photo, and you can continue by reopening the same photo. Saving as an `.opsproj` project explicitly keeps the processing steps and history. To share or deliver a finished image, save or export it as JPG, PNG, TIFF, or another image format.
+
+</details>
+
+<details>
+<summary><strong>Why do some AI tools say a model is missing?</strong></summary>
+
+In Settings → Tools and Models, download or import the model you need, then choose it in the tool panel. AI cutout and the AI background replacement for ID photos use U2Net. For ID photos, keeping the original background, cropping, resizing, and layout need no model. In the installed version, models are saved to `%APPDATA%\OpenPictureStudio\OpenPictureStudio\models` by default. A saved project is restored with the exact model version it used.
+
+</details>
+
+<details>
+<summary><strong>How do I set up the AI retouching assistant?</strong></summary>
+
+In Settings → AI Services, add a connection, fill in the service address, the API key if one is needed, and the model, then choose the configured model in the assistant. Reference image analysis needs a model that supports image input, and Agent tools need tool calling to be turned on. Local tools such as super resolution, denoise, and cutout use separately downloaded models. For detailed steps, see the [AI Services and Privacy guide](open-docs/ai-services.en.md).
+
+</details>
+
+<details>
+<summary><strong>Does the AI assistant send my photos?</strong></summary>
+
+Once a service is configured, the first message includes a preview of the current photo by default. You can choose "Don't send the photo" below the input box. For the complete sending rules, see [AI Services and Privacy](open-docs/ai-services.en.md). Local AI tools use models downloaded to your computer.
+
+</details>
+
+<details>
+<summary><strong>What if editing a large image is slow or I get an out-of-memory message?</strong></summary>
+
+In Settings → Performance & memory, you can set the canvas preview mode to "Always 1600 preview", reduce the preload range, and pause other batch tasks. The preview mode affects what you see while editing. The size of the finished image is set by the export settings. Full-size decoding, AI processing, and export still need memory in proportion to the image size. For configuration suggestions, see [System Requirements and Performance](open-docs/performance.en.md).
+
+</details>
+
+<details>
+<summary><strong>Models and caches take up space. Can I clear them or move them?</strong></summary>
+
+In Settings → Storage, you can see usage, clear caches, and change the data location. Cleanup and migration run at the next startup, following the prompts. Uninstall models in Settings → Tools and Models. If a project uses that model again, the matching version has to be installed.
+
+</details>
+
+<details>
+<summary><strong>Will a new version be installed automatically?</strong></summary>
+
+The version check shows a prompt and opens the download page, and you download and install the update yourself. The PowerShell commands in the [installation guide](open-docs/installation.en.md) also download the installer only when you run them yourself.
+
+</details>
+
+</details>
+
+## Contributing, Licensing, and Third-Party Notices
+
+### Reporting Issues
+
+Please open an issue in [GitHub Issues](https://github.com/KpTanl/OpenPictureStudio/issues) and include the app version, the Windows version, the steps to reproduce, and relevant screenshots or logs. Before posting publicly, check attachments for personal information and service keys.
+
+By default, logs are written to `%APPDATA%\OpenPictureStudio\OpenPictureStudio\logs\openpicturestudio.log`, for both the installed version and source runs. You can change the log location, the size of each log (about 2 MB by default), and the number of old logs to keep (3 by default) in Settings → Storage, where you can also open the log folder directly. Attach the log when you report a problem, so it is easier to track down.
+
+### License and Third-Party Dependencies
+
+Original code uses the [MIT License](LICENSE). Third-party dependencies, models, and assets follow their own licenses. The current build uses PySide6 Essentials, Shiboken, and Qt. Releases include `THIRD_PARTY_NOTICES.txt`, `licenses/`, `SOURCE.txt`, `components.json`, and the applicable license texts.
+
+Starting with 0.17.0, the UI components changed from PyQt6 to PySide6, and the installer is no longer distributed as a whole under GPLv3. For 0.16.1 and earlier, the license follows the files shipped with that version. See [Licensing and Third-Party Components](open-docs/licensing.en.md#migrating-from-pyqt6-to-pyside6) for details. The sources of the logo and the real product screenshots are listed in [Asset sources](.github/assets/readme/SOURCES.en.md).
+
+### Documentation
+
+| Document | Contents |
+| --- | --- |
+| [Installation and Upgrades](open-docs/installation.en.md) | Verification, SmartScreen, upgrading in place, and repair |
+| [AI Services and Privacy](open-docs/ai-services.en.md) | Connection and model setup, using the assistant, photo sending, and data storage |
+| [Development and Building](open-docs/building.en.md) | Running from source, the native module, installer, and CI |
+| [Architecture and Native Acceleration](open-docs/architecture.en.md) | Current layers, CPU compatibility, and GPU direction |
+| [System Requirements and Performance](open-docs/performance.en.md) | Configuration suggestions and image processing performance |
+| [Roadmap](open-docs/roadmap.en.md) | Product vision, stages, and technical evolution |
+| [Licensing and Third-Party Components](open-docs/licensing.en.md) | MIT, Qt, models, and corresponding sources |

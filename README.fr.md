@@ -8,382 +8,320 @@
 
 <p align="center">
   <a href="https://github.com/KpTanl/OpenPictureStudio/releases/latest"><img src="https://img.shields.io/github/v/release/KpTanl/OpenPictureStudio?label=Download" alt="Télécharger la dernière version"></a>
-  <img src="https://img.shields.io/badge/Windows-10%20%2F%2011%20%C2%B7%2064--bit-0078D6" alt="Windows 10/11 64 bits">
+  <img src="https://img.shields.io/badge/Windows-10%20%2F%2011%20%C2%B7%2064--bit-0078D6" alt="Windows 10/11, 64 bits">
   <a href="https://github.com/KpTanl/OpenPictureStudio/actions/workflows/ci.yml"><img src="https://github.com/KpTanl/OpenPictureStudio/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/Original_source-MIT-yellow.svg" alt="Code source original sous licence MIT"></a>
 </p>
 
-**Triez, développez vos photos RAW et exportez par lots dans une seule fenêtre.**
+**Partir de la lumière et des ombres, pour que chaque inspiration puisse devenir une œuvre.**
 
-OpenPictureStudio est un espace de travail photo open source pour Windows qui réunit la navigation et la sélection des photos, les réglages colorimétriques, les retouches locales et l’exportation par lots. Enregistrez vos modifications sous forme de projets et utilisez les outils IA et l’assistant photo selon vos besoins. L’interface est disponible en 简体中文, English et Français.
+OpenPictureStudio (OPS) est une plateforme libre de création d’images avec l’IA, construite sur un traitement d’image professionnel. Elle relie ce que l’appareil photo a enregistré à l’image que le créateur a en tête. Développement RAW, masques locaux, retouche non destructive, assistant de retouche IA et traitement par lots s’y retrouvent dans un même parcours de création. La plateforme continue d’évoluer vers les flux de travail automatisés, la retouche générative et un écosystème de plug-ins ouvert.
 
-**[Télécharger pour Windows](https://github.com/KpTanl/OpenPictureStudio/releases/latest)** · [Installation](#installation-et-exécution) · [Prise en main](#prise-en-main) · [Fonctionnalités](#fonctionnalités) · [FAQ](#questions-fréquentes) · [Signaler un problème](https://github.com/KpTanl/OpenPictureStudio/issues)
+**Pour le grand public, créer commence par une prise en main facile.** Régler l’exposition et les couleurs d’une photo de tous les jours, ou explorer un style d’image avec l’assistant IA : OPS veut transformer plus facilement une intention en gestes concrets. Retoucher une photo peut aussi devenir une première façon de comprendre la lumière et de trouver son propre regard.
 
-> Bêta · Windows 10/11 (64 bits) · 8 Go de RAM ou plus recommandés. La visualisation et les fonctions principales de retouche fonctionnent hors ligne.
+**Pour les créateurs professionnels, chaque détail mérite toute l’attention.** Retrouver les couleurs et les nuances d’un RAW, sculpter la lumière avec des masques locaux, affiner ses choix grâce à la retouche non destructive et à l’historique, puis appliquer un réglage abouti à toute une série. OPS privilégie des réglages maîtrisables, un processus traçable et des résultats cohérents : la technique porte le jugement, l’outil suit la création.
 
-## Installation et exécution
+**Pour les développeurs, l’ouverture permet d’étendre soi-même les limites de l’outil.** Dans la direction à long terme « Everything is Plugin », OPS précisera peu à peu les contrats d’extension pour les opérations d’image, les flux de travail et le modèle de projet. Algorithmes, modèles et outils de création pourront ainsi rejoindre la même plateforme. Répondre à un besoin précis, ou partager une nouvelle méthode de création : chaque extension peut devenir le point de départ d’un autre.
 
-### Télécharger le programme d’installation Windows
+**Pour les agents IA, la création d’images demande des outils appelables, composables et vérifiables.** L’assistant de retouche IA actuel est le point de départ de cette collaboration. OPS le reliera ensuite à l’appel d’outils, à l’exécution des flux de travail et au contexte du projet. Un agent externe pourra alors organiser traitements, aperçus et exports autour d’un objectif de création sans ouvrir l’interface de bureau, puis remettre le résultat au créateur pour relecture. L’intention humaine, les outils professionnels et la capacité d’exécution de l’IA se retrouveront dans une même œuvre.
 
-1. Ouvrez la [dernière version](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Dans **Assets**, téléchargez `OpenPictureStudio-<version>-beta-setup.exe` et le fichier `.exe.sha256` correspondant.
-2. Vérifiez le SHA256 du programme d’installation, exécutez le fichier EXE et suivez l’assistant d’installation.
-3. Lancez OpenPictureStudio et ouvrez une photo ou un dossier. Python et Rust n’ont pas besoin d’être installés séparément ; téléchargez les modèles IA selon vos besoins.
+**[Télécharger l’installateur Windows](https://github.com/KpTanl/OpenPictureStudio/releases/latest)** · [Prise en main](#prise-en-main-rapide) · [Fonctionnalités](#fonctionnalités-principales) · [Performances](#configuration-requise-et-mesures-de-performances) · [Feuille de route](#feuille-de-route) · [Documentation](open-docs/README.fr.md)
 
-<details>
-<summary>Comment vérifier le SHA256 ?</summary>
+> Bêta · Windows 10/11 (64 bits) · Interface en chinois simplifié, anglais et français. La visualisation et la retouche de base fonctionnent hors ligne.
+> 
+> Les fonctionnalités et les installateurs de chaque version figurent dans les [notes de version](https://github.com/KpTanl/OpenPictureStudio/releases/latest).
 
-Ouvrez PowerShell dans le dossier de téléchargement et exécutez ces commandes en remplaçant `<version>` par la version téléchargée :
+## Fonctionnalités principales
 
-```powershell
-Get-FileHash -LiteralPath '.\OpenPictureStudio-<version>-beta-setup.exe' -Algorithm SHA256
-Get-Content -LiteralPath '.\OpenPictureStudio-<version>-beta-setup.exe.sha256'
-```
-
-L’empreinte de la première commande doit correspondre à la valeur de 64 caractères au début du résultat de la seconde. Elle permet de vérifier que le téléchargement est intact et correspond au fichier de la version publiée. Téléchargez les deux fichiers depuis la page Release de ce dépôt.
-
-</details>
-
-### « Windows a protégé votre ordinateur » au premier lancement
-
-Le programme d’installation Windows n’est actuellement pas signé. Lors du premier lancement par double-clic, Windows SmartScreen peut afficher « Windows a protégé votre ordinateur » et indiquer un éditeur inconnu.
-
-Vérifiez que le fichier provient de la [page Release de ce dépôt](https://github.com/KpTanl/OpenPictureStudio/releases/latest) et vérifiez son SHA256. Sélectionnez ensuite **Informations complémentaires → Exécuter quand même** pour poursuivre l’installation.
-
-<details>
-<summary>Voir un exemple de message Windows (en chinois)</summary>
-
-<img src=".github/assets/readme/windows-smartscreen.zh-CN.png" width="480" alt="Message Windows SmartScreen en chinois avec les boutons Exécuter quand même et Ne pas exécuter">
-
-Cet exemple montre le programme d’installation 0.16.0 après l’ouverture des informations complémentaires. Le nom du fichier change à chaque version. Si l’option permettant de continuer n’est pas disponible, suivez les consignes de sécurité de votre appareil ou la politique de votre organisation.
-
-</details>
-
-### Télécharger et installer avec PowerShell
-
-Ouvrez une fenêtre PowerShell ordinaire, dépliez les commandes ci-dessous, puis **copiez et exécutez tout le bloc**. Compatible avec Windows PowerShell 5.1 et PowerShell 7, il télécharge la dernière version stable de ce dépôt, vérifie son SHA256 et ouvre directement l’assistant d’installation.
-
-Quittez OPS normalement avant une mise à niveau. Les téléchargements restent dans le dossier temporaire indiqué par la commande ; l’installation ne redémarre pas automatiquement l’ordinateur. Les protections Windows et les politiques de l’organisation restent actives.
-
-<details>
-<summary>Afficher les commandes d’installation PowerShell</summary>
-
-```powershell
-& {
-    $ErrorActionPreference = 'Stop'
-    $releasePage = 'https://github.com/KpTanl/OpenPictureStudio/releases/latest'
-    try {
-        $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/KpTanl/OpenPictureStudio/releases/latest' -Headers @{ 'User-Agent' = 'OpenPictureStudio-Install' } -TimeoutSec 30
-        $name = 'OpenPictureStudio-{0}-beta-setup.exe' -f ($release.tag_name -replace '^v', '')
-        $installer = @($release.assets | Where-Object { $_.name -ceq $name })
-        $checksum = @($release.assets | Where-Object { $_.name -ceq "$name.sha256" })
-        if ($installer.Count -ne 1 -or $checksum.Count -ne 1) { throw 'La version ne contient pas exactement un programme de configuration et son fichier de contrôle.' }
-
-        $folder = Join-Path ([IO.Path]::GetTempPath()) ('OpenPictureStudio-' + [Guid]::NewGuid().ToString('N'))
-        New-Item -ItemType Directory -Path $folder | Out-Null
-        Write-Host ('Dossier de téléchargement : ' + $folder)
-        $exe = Join-Path $folder $name
-        $sha = Join-Path $folder "$name.sha256"
-        Invoke-WebRequest -UseBasicParsing -Uri $installer[0].browser_download_url -OutFile $exe -TimeoutSec 600
-        Invoke-WebRequest -UseBasicParsing -Uri $checksum[0].browser_download_url -OutFile $sha -TimeoutSec 30
-
-        $line = (Get-Content -LiteralPath $sha -Raw).Trim()
-        if ($line -notmatch '^(?<hash>[a-fA-F0-9]{64})[ \t]+\*?(?<file>[^\r\n]+)$') { throw 'Le fichier de contrôle est invalide ou désigne un autre programme de configuration.' }
-        $expected = $Matches['hash']
-        if ($Matches['file'] -cne $name) { throw 'Le fichier de contrôle est invalide ou désigne un autre programme de configuration.' }
-        if ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -ine $expected) { throw 'SHA256 différent. Le programme de configuration reste fermé.' }
-
-        Write-Host 'SHA256 vérifié. Ouverture du programme de configuration…'
-        $start = New-Object System.Diagnostics.ProcessStartInfo
-        $start.FileName = $exe
-        $start.WorkingDirectory = $folder
-        $start.UseShellExecute = $false
-        $start.Arguments = '/NORESTART'
-        $process = [System.Diagnostics.Process]::Start($start)
-        $process.WaitForExit()
-        switch ($process.ExitCode) {
-            0 { Write-Host 'Installation terminée.' }
-            { $_ -in 2, 5 } { Write-Host 'Installation annulée ou interrompue.' }
-            default { throw ('Installation inachevée. Code de sortie : ' + $process.ExitCode) }
-        }
-    } catch {
-        throw ("Impossible de terminer la configuration. Versions : $releasePage`n" + $_.Exception.Message)
-    }
-}
-```
-
-</details>
-
-### Mises à niveau et recherche de versions
-
-Par défaut, l’application installée recherche sur GitHub la dernière version stable, avec un intervalle d’au moins 24 heures entre les recherches automatiques pour chaque utilisateur. Désactivez cette recherche dans Paramètres → Général ou lancez-la manuellement depuis la page À propos. La requête comprend la version de l’application et les informations HTTP nécessaires ; GitHub peut voir l’adresse IP et l’heure de la requête. L’application ouvre une page de téléchargement fixe depuis laquelle vous téléchargez et exécutez le programme d’installation. L’exécution depuis les sources ne lance pas de recherche automatique ; mettez les sources à jour avec git.
-
-<details>
-<summary>Mises à niveau, réparations et anciennes versions de test</summary>
-
-Quittez normalement toutes les instances avant une mise à niveau, puis fermez le programme d’installation avant de lancer l’application. Le programme d’installation vérifie les fichiers du programme à l’aide de son manifeste et conserve les paramètres, dossiers de données personnalisés, modèles et projets. En cas de fichiers inconnus, de composants remplacés par l’utilisateur ou de conflits de dossiers, suivez les indications pour sauvegarder et déplacer les éléments concernés. Après une installation interrompue, relancez le programme d’installation complet de la même version. Sauvegardez et traitez les fichiers tronqués ou modifiés avant de poursuivre la réparation.
-
-Les premières versions de test peuvent ne pas avoir de manifeste d’installation. Si leurs fichiers sont encore présents, sauvegardez vos données et désinstallez d’abord l’ancienne version. Si le dossier d’installation d’origine a été supprimé ou est entièrement vide, relancez directement le programme d’installation. Si le remplacement est bloqué, le programme d’installation indique le dossier d’origine.
-
-</details>
-
-## Prise en main
-
-1. **Ouvrir et sélectionner** : ouvrez une photo ou un dossier, parcourez la pellicule ou la grille et filtrez à l’aide des notes et des marqueurs Conserver/Écarter.
-2. **Retoucher** : ouvrez l’espace de retouche pour ajuster l’exposition, les couleurs et la composition. Ajoutez des masques locaux si nécessaire. L’historique permet d’annuler, de rétablir et de comparer avec l’original.
-3. **Enregistrer et livrer** : enregistrez une copie ou ajoutez les photos sélectionnées à la file d’exportation par lots. Enregistrez un projet `.opsproj` pour conserver les étapes et l’historique en vue de retouches ultérieures.
-
-```mermaid
-flowchart LR
-    A[Ouvrir des photos ou un dossier] --> B[Noter et sélectionner]
-    B --> C[Ajuster les couleurs et les zones locales]
-    C --> D[Exporter par lots]
-    C --> E[Enregistrer un projet .opsproj]
-    E --> C
-```
-
-## Fonctionnalités
-
-| Étape | Fonctionnalités |
+| Étape de travail | Fonctionnalités |
 | --- | --- |
-| Parcourir et sélectionner | Images courantes et RAW d’appareil photo, pellicule et grille, notes et marqueurs, comparaison synchronisée, mots-clés et collections intelligentes |
-| RAW et couleur | Aperçu de l’appareil, couleurs d’origine et rendu OPS ; exposition et balance des blancs, courbes, mélangeur de huit couleurs et 11 préréglages intégrés |
-| Retouches locales | Dégradés, pinceau, gomme, masques du sujet et des zones du visage ; recadrage, rotation et découpe par forme |
-| Outils IA | Super-résolution, réduction du bruit et du flou, détourage, retouche de portrait, photos d’identité et assistant dont les réglages sont ajoutés à l’historique |
-| Traitement groupé | Synchronisation des réglages, correction de l’exposition d’un groupe, suggestions de regroupement, harmonisation de l’exposition et de la balance des blancs RAW |
-| Projets et exportation | Brouillons automatiques, projets `.opsproj`, files d’exportation, conversion de format et de taille, PNG transparent, TIFF 16 bits et PDF multi-images |
+| Visualisation et sélection | Images courantes et RAW d’appareil photo, pellicule et grille, notes par étoiles et marques, comparaison synchronisée, mots-clés et collections intelligentes |
+| RAW et couleur | Aperçu de l’appareil, couleurs d’origine ou rendu OPS, exposition et balance des blancs, courbes, mélangeur de couleurs à 8 canaux, 11 préréglages intégrés |
+| Retouche locale | Dégradés, pinceau, gomme, masques du sujet et des zones du visage ; recadrage, rotation et recadrage en forme |
+| Outils IA | Super-résolution, réduction du bruit et suppression du flou, détourage, retouche de portrait, photos d’identité, et assistant dont les réglages s’écrivent dans l’historique |
+| Traitement par lots | Synchronisation des réglages choisis, hausse ou baisse commune de l’exposition, suggestions de groupes d’après les données de prise de vue, correspondance d’exposition et de balance des blancs RAW |
+| Projets et export | Brouillons automatiques, projets `.opsproj`, file d’export par lot, conversion de format et de taille, PNG transparent et TIFF 16 bits, PDF multi-images |
 
 ### Visualisation et retouche
 
-Les captures présentent l’interface en anglais.
+**Visualisation** : parcourez les photos, réglez le zoom et attribuez des notes par étoiles.
 
-**Visualiser** : parcourez les photos, ajustez le zoom et attribuez des notes par étoiles.
+[![Mode de visualisation d’OpenPictureStudio (interface en anglais)](.github/assets/readme/viewer.png)](.github/assets/readme/viewer.png)
 
-[![Mode de visualisation d’OpenPictureStudio, interface en anglais](.github/assets/readme/viewer.png)](.github/assets/readme/viewer.png)
+**Retouche** : passez à l’espace de retouche dans la même fenêtre pour régler l’exposition, la balance des blancs et les couleurs.
 
-**Retoucher** : passez à l’espace de retouche dans la même fenêtre pour ajuster l’exposition, la balance des blancs et les couleurs.
-
-[![Espace de retouche d’OpenPictureStudio, interface en anglais](.github/assets/readme/workspace.png)](.github/assets/readme/workspace.png)
+[![Espace de retouche d’OpenPictureStudio (interface en anglais)](.github/assets/readme/workspace.png)](.github/assets/readme/workspace.png)
 
 ### Retouche de portrait
 
-Ajustez les paramètres de peau, des yeux et de la forme du visage, puis zoomez pour examiner les détails. Les captures présentent l’interface en anglais.
+Réglez les paramètres de la peau, des yeux et de la forme du visage, puis zoomez pour vérifier les détails.
 
-**Paramètres initiaux · zoom à 84 %**
+**Paramètres initiaux · zoom à 84 %**
 
-[![Panneau de retouche de portrait avec les paramètres initiaux, zoom à 84 %, interface en anglais](.github/assets/readme/beauty-default.png)](.github/assets/readme/beauty-default.png)
+[![Panneau Beauté avec les paramètres initiaux, zoom à 84 % (interface en anglais)](.github/assets/readme/beauty-default.png)](.github/assets/readme/beauty-default.png)
 
-**Après réglages · zoom à 131 %**
+**Après réglages · zoom à 131 %**
 
-[![Retouche de portrait après réglages, zoom à 131 %, interface en anglais](.github/assets/readme/beauty-adjusted.png)](.github/assets/readme/beauty-adjusted.png)
+[![Panneau Beauté après réglages, vu à un zoom de 131 % (interface en anglais)](.github/assets/readme/beauty-adjusted.png)](.github/assets/readme/beauty-adjusted.png)
 
 <details>
 <summary>Liste complète des fonctionnalités</summary>
 
-### Navigation et sélection
+### Visualisation et sélection
 
-- **Formats courants et RAW d’appareil photo** : ouvrez directement JPEG, PNG, BMP, GIF, WebP, TIFF, ICO et PPM/PGM/PBM. Les formats RAW pris en charge comprennent CR2, CR3, NEF, NRW, ARW, RAF, DNG, ORF, PEF et RW2, notamment pour Canon, Nikon, Sony, Fujifilm, Olympus, Pentax et Panasonic.
-- **Aperçu RAW prioritaire** : à l’ouverture d’un fichier RAW, l’aperçu intégré de l’appareil s’affiche avant d’être remplacé par l’image décodée. Les modes RAW proposent l’aperçu de l’appareil, les couleurs d’origine et le rendu OPS. Les autres formats proposent les couleurs d’origine et le rendu OPS ; les préférences des deux catégories sont enregistrées séparément.
-- **Filtres et comparaison** : parcourez les photos dans une pellicule ou une grille. Attribuez des étoiles et les marqueurs Conserver/Écarter ; filtrez par note, marqueur, type de fichier, état de retouche et état de livraison. Comparez deux photos côte à côte à leur résolution d’origine avec une navigation synchronisée.
-- **Photothèque** : ajoutez des mots-clés et organisez vos photos dans des collections ordinaires ou des collections intelligentes mises à jour automatiquement selon des règles.
-- **Informations photo** : consultez les paramètres de prise de vue, les détails de l’appareil et de l’objectif, les informations du fichier source et les histogrammes, y compris pour les fichiers RAW.
-- **Outils courants** : rotation, retournement, définition comme fond d’écran et association de types de fichiers. Choisissez un thème sombre, clair ou beige et une interface en 简体中文, English ou Français.
+- **Formats courants et RAW d’appareil photo** : JPEG, PNG, BMP, GIF, WebP, TIFF, ICO et PPM/PGM/PBM s’ouvrent directement. Les RAW pris en charge sont CR2, CR3, NEF, NRW, ARW, RAF, DNG, ORF, PEF et RW2, ce qui couvre Canon, Nikon, Sony, Fujifilm, Olympus, Pentax, Panasonic et d’autres marques.
+- **Aperçu RAW d’abord** : à l’ouverture d’un RAW, l’aperçu intégré par l’appareil s’affiche en premier, puis il est remplacé une fois le décodage terminé. Pour un RAW, vous pouvez afficher l’aperçu de l’appareil, les couleurs d’origine ou le rendu OPS. Pour les autres formats, vous choisissez entre les couleurs d’origine et le rendu OPS. Les deux réglages sont enregistrés séparément.
+- **Filtres et comparaison** : deux modes d’affichage, pellicule et grille ; notes par étoiles et marques Conserver/Écarter ; filtres par note, marque, type de fichier, état de retouche et état de livraison. Deux photos peuvent être comparées côte à côte, à leur taille d’origine, avec une navigation synchronisée.
+- **Photothèque** : attribuez des mots-clés à vos photos et classez-les dans des collections ordinaires ou dans des collections intelligentes, mises à jour automatiquement selon des critères.
+- **Informations sur la photo** : paramètres de prise de vue, appareil, détails du fichier source et histogramme, y compris pour les RAW.
+- **Petites fonctions utiles** : rotation et retournement, définition comme fond d’écran, association de fichiers ; trois thèmes (sombre, clair et beige) ; interface en chinois simplifié, anglais et français.
 
 ### Retouche
 
-- **Réglages colorimétriques** :
+- **Panneau de couleur** :
   - Température, teinte, exposition, contraste, hautes lumières, ombres, blancs et noirs.
   - Texture, clarté, correction du voile, vibrance et saturation.
-  - Courbes RVB et par canal, mélangeur de huit couleurs avec pipette sur l’image, histogramme en direct et réglage automatique en un clic.
-  - 11 préréglages intégrés : monochrome, rétro, frais, chaud, froid, lumière douce, vif, dramatique, HDR, film et beauté de la peau.
-- **Masques locaux** : dégradés linéaire et radial, pinceau et gomme, sélection du sujet, peau du visage, yeux, lèvres, arrière-plan et photo entière. Combinez plusieurs zones par ajout ou soustraction dans un masque et ajustez chaque masque séparément.
-- **Rendu OPS** : choisissez les couleurs d’origine ou le rendu OPS pour les fichiers RAW, JPG, PNG et autres formats.
-- **Composition** : recadrage et rotation libres, recadrage avec grille, découpe par forme et sélection au lasso.
-- **Historique et projets** : annulation et rétablissement sur plusieurs étapes, retour à une étape dans l’historique et pile des traitements en cours. Maintenez la commande enfoncée pour comparer avec l’original. Enregistrez les retouches dans un projet `.opsproj`.
+  - Courbes de tonalité RVB et par canal, mélangeur de couleurs à 8 canaux (la pipette permet de choisir une couleur sur l’image), histogramme en direct et réglage automatique en un clic.
+  - 11 préréglages intégrés : monochrome, rétro, frais, chaud, froid, lumière douce, éclatant, dramatique, HDR, argentique et beauté de la peau.
+- **Masques locaux** : dégradé linéaire, dégradé radial, pinceau et gomme, sélection du sujet, peau du visage, yeux, lèvres, arrière-plan et photo entière. Un même masque peut combiner plusieurs zones, ajoutées ou soustraites, et chaque masque se règle séparément.
+- **Rendu OPS** : une saveur d’image définie par OPS, qui traduit son goût pour la couleur, la lumière et les nuances. Elle offre aux photos RAW, JPG, PNG et autres un point de départ créatif dans le style d’OPS. Vous pouvez revenir aux couleurs d’origine, ou continuer avec l’exposition, les courbes et les masques locaux.
+- **Composition** : recadrage libre et rotation, recadrage avec grille, recadrage en forme et lasso.
+- **Historique et projets** : annulation et rétablissement sur plusieurs niveaux ; le panneau Historique permet de revenir à n’importe quelle étape, et la pile d’édition liste les traitements en cours. Maintenez la touche pour comparer avec l’original. Les retouches s’enregistrent dans un projet `.opsproj`.
 
-### Groupes de photos
+### Photos par lot
 
-- **Réglages groupés** : utilisez une photo comme référence et synchronisez les réglages choisis avec les photos sélectionnées ou tous les résultats filtrés, ou augmentez ou réduisez l’exposition du groupe. Annulez ou rétablissez chaque lot et relancez les photos dont le traitement a échoué.
-- **Groupes et calibration** : recevez des suggestions de regroupement selon l’heure de prise de vue, l’appareil et l’objectif, ainsi que des suggestions d’harmonisation de l’exposition et de la balance des blancs RAW. Prévisualisez les changements avant de les appliquer ensemble.
+- **Réglages par lot** : prenez une photo comme modèle et synchronisez les réglages choisis vers les photos sélectionnées ou vers tous les résultats filtrés. Vous pouvez aussi augmenter ou réduire l’exposition de tout le lot. Chaque lot peut être annulé, rétabli, ou relancé pour les photos qui n’ont pas abouti.
+- **Groupes et étalonnage** : suggestions de groupes d’après l’heure de prise de vue, le boîtier et l’objectif ; pour les photos d’un même groupe, propositions de correspondance d’exposition et de balance des blancs RAW, à prévisualiser puis à appliquer ensemble.
 
 ### Outils IA
 
-- **Amélioration de l’image** : super-résolution Real-ESRGAN (2×, 4× et 4K), réduction du bruit et du flou NAFNet et restauration aux dimensions d’origine. Réglez séparément le bruit de luminance et le bruit de couleur.
-- **Détourage** : détection du sujet avec U2Net, détourage par couleur et découpe au lasso. Affinez les contours et exportez sur fond transparent ou uni.
-- **Retouche de portrait** : les points de repère du visage permettent quatre groupes de réglages : peau (lissage, éclaircissement, teint rosé et netteté), forme du visage (affinement du visage et du nez), yeux (agrandissement et espacement) et retouches de détail (blanchiment des dents, correction des imperfections et réduction des poches sous les yeux).
-- **Photos d’identité** : préréglages pour les photos d’identité chinoises d’un et deux pouces, les passeports, visas et documents de sécurité sociale, ainsi que dimensions personnalisées. Modifiez la couleur du fond, cadrez automatiquement selon la position du visage et disposez les photos sur une planche d’impression.
-- **Assistant photo IA** : plusieurs conversations avec les modes Discussion, Planification, Réglage et Agent. Les réglages rejoignent le même historique que les retouches manuelles et peuvent être annulés, rétablis ou affinés. Demandez deux variantes A/B, comparez-les dans le panneau de l’assistant et ajoutez-en une à l’historique avec Appliquer. Ajoutez une image de référence ou enregistrez des styles nommés et des préférences pour plus tard.
-- **Modèles et GPU** : les modèles sont téléchargés séparément du programme d’installation. Téléchargez-les, importez-les, désinstallez-les et définissez les valeurs par défaut dans Paramètres → Outils et modèles. Si vous disposez d’un GPU dédié, installez le moteur GPU (DirectML) dans Paramètres → Moteurs d’exécution, puis redémarrez l’application pour l’activer.
+- **Amélioration de l’image** : super-résolution Real-ESRGAN (2×, 4×, 4K), réduction du bruit et suppression du flou avec NAFNet, ou restauration à la taille d’origine. Le bruit de luminance et le bruit de couleur se règlent séparément.
+- **Détourage** : U2Net repère le sujet ; il existe aussi un détourage par couleur et un détourage au lasso. Vous pouvez affiner les bords et obtenir un fond transparent ou uni.
+- **Retouche de portrait** : à partir des points de repère du visage, quatre groupes de réglages : peau (lissage, éclaircissement, teint rosé, netteté), forme du visage (affinage du visage et du nez), yeux (agrandissement, écart) et retouche des détails (blanchiment des dents, suppression des taches, suppression des cernes).
+- **Photos d’identité** : préréglages de formats (1 pouce, 2 pouces, passeport, visa, sécurité sociale) et dimensions personnalisées ; changement de couleur de fond, cadrage automatique d’après la position du visage et mise en page de planche.
+- **Assistant de retouche IA** : plusieurs discussions, avec les modes Discussion, Planification, Réglage et Agent. Les réglages de l’assistant s’écrivent directement dans l’historique : comme les réglages manuels, vous pouvez les annuler, les rétablir ou les poursuivre. Pour comparer deux propositions, l’assistant génère des variantes A/B, que vous comparez dans son panneau ; rien n’est écrit avant de cliquer sur « Adopter ». Vous pouvez joindre une image de référence, et enregistrer des styles nommés et des préférences pour plus tard.
+- **Modèles et GPU** : les modèles ne sont pas livrés avec l’installateur. Dans « Paramètres → Outils et modèles », vous les téléchargez, les importez, les désinstallez et choisissez celui par défaut. Avec une carte graphique dédiée, installez le moteur GPU (DirectML) dans « Paramètres → Moteurs d’exécution » ; il s’active après un redémarrage.
 
 </details>
 
 <details>
-<summary>Détails des projets, brouillons et sorties</summary>
+<summary>Projets, brouillons et sorties en détail</summary>
 
-- **Projets et brouillons** : les retouches sont automatiquement enregistrées comme brouillons pour pouvoir reprendre à l’ouverture de la même photo. Un projet `.opsproj` conserve les étapes de traitement et l’historique.
-- **Enregistrement** : choisissez d’écraser l’original ou d’enregistrer une copie. Le résultat est écrit dans un fichier temporaire et vérifié avant de remplacer la destination, ce qui préserve les fichiers existants en cas d’échec ou d’annulation.
-- **Exportation par lots** : sélectionnez les photos et un préréglage de sortie, puis ajoutez-les à la file d’exportation. Les retouches sont figées à l’ajout ; les modifications ultérieures de la photo ne changent pas les éléments en attente. Mettez la file en pause ou annulez-la, relancez les éléments en échec et consultez les résultats.
-- **Formats** : convertissez entre JPG, PNG, WebP, BMP et TIFF. Définissez une taille cible en Ko pour les JPG. Redimensionnez en conservant les proportions, en recadrant pour remplir, en ajoutant des bordures ou en étirant l’image.
-- **Profondeur élevée et PDF** : exportez en TIFF 16 bits avec transparence ou réunissez plusieurs images dans un PDF en conservant leur ordre.
+- **Projets et brouillons** : vos retouches sont enregistrées automatiquement comme brouillon, et vous les retrouvez en rouvrant la même photo. Un projet `.opsproj` conserve aussi les étapes de traitement et l’historique.
+- **Enregistrement du résultat** : vous décidez d’écraser l’original ou d’enregistrer une copie. Le résultat est d’abord écrit dans un fichier temporaire et vérifié, puis il remplace la destination. Un échec ou une annulation n’abîme donc aucun fichier existant.
+- **Export par lot** : choisissez des photos et un préréglage de sortie, puis ajoutez-les à la file d’export. Les retouches sont figées à l’ajout : modifier ensuite la photo ne change pas les éléments déjà en file. Vous pouvez mettre la file en pause, l’annuler et relancer les éléments en échec ; les enregistrements terminés restent consultables.
+- **Traitement des formats** : conversion entre JPG, PNG, WebP, BMP et TIFF. Pour un JPG, vous pouvez fixer une taille de fichier cible (en Ko). Pour les dimensions : proportions conservées, recadrage pour remplir, ajout de bordures ou étirement direct.
+- **Haute profondeur et PDF** : TIFF 16 bits avec transparence conservée ; plusieurs images peuvent être réunies, dans l’ordre, en un seul PDF.
 
 </details>
 
-## Questions fréquentes
+## Installation et lancement
 
-### Faut-il un GPU dédié ?
+### Télécharger l’installateur Windows
 
-La visualisation et les retouches de base fonctionnent sur le processeur. Pour l’inférence sur GPU, installez le moteur DirectML dans Paramètres → Moteurs d’exécution et redémarrez l’application. Les modèles et les moteurs sont gérés séparément.
+1. Ouvrez la [dernière version](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Dans **Assets**, téléchargez `OpenPictureStudio-<version>-beta-setup.exe` et le fichier `.exe.sha256` du même nom.
+2. Vérifiez le SHA256 de l’installateur, double-cliquez sur le fichier EXE et suivez l’assistant d’installation.
+3. Lancez OpenPictureStudio, puis ouvrez une photo ou un dossier. La version installée n’exige ni Python ni Rust ; les modèles IA se téléchargent à la demande.
 
-### Pourquoi certains outils IA demandent-ils un modèle ?
+La version installée embarque ses dépendances d’exécution, et les modèles IA se téléchargent à la demande. L’installateur actuel n’est pas signé numériquement. Si SmartScreen affiche un avertissement, vérifiez la source et le SHA256, puis suivez les indications de Windows. Le [guide d’installation et de mise à niveau](open-docs/installation.fr.md) donne les commandes de vérification, le message du premier lancement, l’installation par PowerShell et la procédure de mise à niveau.
 
-Téléchargez ou importez les modèles nécessaires dans Paramètres → Outils et modèles, puis sélectionnez-les dans le panneau de l’outil concerné. Le détourage IA et le remplacement de fond IA des photos d’identité utilisent U2Net. Conserver le fond d’origine, recadrer, redimensionner et disposer les photos d’identité ne nécessitent pas de modèle. Par défaut, l’application installée stocke les modèles dans `%APPDATA%\OpenPictureStudio\OpenPictureStudio\models`. Les projets enregistrés rétablissent les versions exactes des modèles auxquels ils font référence.
+### Mises à niveau et recherche de versions
 
-### Puis-je reprendre les retouches après avoir fermé l’application ?
+La version installée recherche une version stable automatiquement, au plus une fois toutes les 24 heures. Vous pouvez désactiver cette recherche dans « Paramètres → Général », ou la lancer à la main dans « À propos ». Le programme ouvre la page de téléchargement, et c’est vous qui téléchargez et installez. La requête envoie la version de l’application et les informations HTTP nécessaires ; GitHub voit votre adresse IP et l’heure de la requête.
 
-Les retouches sont automatiquement enregistrées comme brouillons pour chaque photo. Rouvrez la même photo pour continuer. Enregistrez un projet `.opsproj` pour conserver explicitement les étapes et l’historique ; créez les images finales avec Enregistrer ou Exporter.
+Avant une mise à niveau, quittez OpenPictureStudio, puis lancez le nouvel installateur pour installer par-dessus. Vos paramètres, vos dossiers de données personnalisés, vos modèles et vos projets sont conservés. En cas de conflit de dossier ou de réparation, suivez les indications de l’installateur ; voir [Installation et mises à niveau](open-docs/installation.fr.md).
 
-### L’assistant IA envoie-t-il mes photos ?
+### Prise en main rapide
 
-Après configuration d’un service, le premier message inclut par défaut un aperçu. Sélectionnez Sans photo sous le champ de saisie pour désactiver l’envoi de photos. La section Services IA et confidentialité ci-dessous détaille les règles. Les outils IA locaux utilisent des modèles téléchargés sur votre ordinateur.
+1. **Ouvrir et trier** : ouvrez une photo ou un dossier, parcourez-le en pellicule ou en grille, puis filtrez par note et par marque Conserver/Écarter.
+2. **Retoucher** : passez dans l’espace de retouche et réglez l’exposition, les couleurs et la composition ; ajoutez des masques locaux si besoin. Les étapes restent dans l’historique : vous pouvez les annuler, les rétablir et comparer avec l’original.
+3. **Enregistrer et livrer** : enregistrez le résultat sous un autre nom, ou ajoutez les photos choisies à la file d’export par lot. Un projet `.opsproj` conserve les étapes et l’historique, pour reprendre la retouche plus tard.
 
-### La recherche de versions installe-t-elle automatiquement les mises à jour ?
+```mermaid
+flowchart LR
+    A[Ouvrir des photos ou un dossier] --> B[Noter et trier]
+    B --> C[Régler les couleurs et les zones locales]
+    C --> D[Export par lot]
+    C --> E[Enregistrer un projet .opsproj]
+    E --> C
+```
 
-La recherche de versions propose un lien vers la page de téléchargement. Vous téléchargez et installez la mise à jour. Les commandes PowerShell ci-dessus ne s’exécutent que lorsque vous choisissez de les lancer.
+## Flux de retouche et agents IA
 
-## Services IA et confidentialité
+La retouche non destructive des couleurs, les masques locaux, l’historique et les projets `.opsproj` conservent ensemble le déroulement de la retouche ; les images finales sont produites par l’enregistrement ou l’export. L’assistant intégré propose les modes Discussion, Planification, Réglage et Agent. Les réglages faits avec les outils concernés entrent dans le même historique, et les variantes A/B n’y sont écrites qu’après avoir cliqué sur « Adopter ».
 
-L’assistant photo IA utilise les services que vous configurez. Ajoutez des connexions et des modèles dans Paramètres → Services IA. L’assistant n’envoie aucune requête tant qu’un service n’est pas configuré. Les clés API sont chiffrées avec Windows DPAPI et stockées localement.
+L’assistant couvre déjà la couleur, la retouche de portrait, la sélection, le traitement par lots et l’export. Pour la prise en charge de davantage d’outils, l’interface pour agents externes et les flux complets hors écran, voir la [feuille de route](open-docs/roadmap.fr.md). Les calques de pixels professionnels, la retouche destructive et la retouche générative sont des directions pour la suite.
 
-Contenu envoyé au service :
+### Services IA et confidentialité
 
-- **Texte et paramètres** : vos messages, les paramètres de réglage actuels et une analyse photo calculée localement, décrivant sous forme de texte la luminosité, les dominantes de couleur et les visages, sans pixels de l’image.
-- **Photos** : par défaut, le premier message inclut un aperçu de l’image actuelle avec les retouches appliquées, dont le grand côté mesure au maximum 1536 pixels. Le sélecteur sous le champ de saisie permet de choisir l’image d’origine sans retouches, avec un grand côté de 2048 pixels au maximum, ou Sans photo. Les photos plus petites sont envoyées à leur taille d’origine sans agrandissement. Lorsque le partage est activé, l’assistant peut aussi demander des aperçus de l’image d’origine, de l’image au début de la tâche et de l’image actuelle, ainsi que des recadrages haute résolution autorisés par les paramètres du modèle. Toutes les images sont des JPEG sans métadonnées de prise de vue. Sans photo empêche l’envoi de photos dans toutes les requêtes ; aucune photo n’est envoyée si l’entrée image est désactivée pour le modèle.
-- **Images de référence** : envoyées uniquement lorsque vous en ajoutez une.
+L’assistant de retouche IA utilise la connexion et le modèle que vous configurez dans « Paramètres → Services IA » ; tant que rien n’est configuré, il n’envoie aucune requête. Les clés sont chiffrées avec Windows DPAPI puis enregistrées sur votre ordinateur.
 
-Le haut du panneau de l’assistant indique ce qui sera envoyé pour la requête en cours. Les conversations, pièces jointes et styles sont stockés localement.
+Par défaut, le premier message joint un aperçu de la photo en cours ; vous pouvez passer à l’image d’origine ou à « Ne pas envoyer la photo ». Le texte, les paramètres et l’analyse de la photo sont envoyés selon le contexte choisi ; les discussions, les pièces jointes et les styles restent sur votre ordinateur. Le [guide Services IA et confidentialité](open-docs/ai-services.fr.md) décrit la configuration, toutes les règles d’envoi et les problèmes de connexion courants.
 
-## Signaler un problème
+## Architecture et accélération native
 
-Dans [GitHub Issues](https://github.com/KpTanl/OpenPictureStudio/issues), indiquez la version de l’application, la version de Windows, les étapes pour reproduire le problème et les captures ou journaux utiles. Vérifiez que les pièces jointes ne contiennent pas de données personnelles ou de clés de service avant leur publication.
+L’interface de bureau repose sur **Python/PySide6**. Les services d’application coordonnent les outils de base, les projets et les flux de travail ; le calcul d’image est assuré par Python/NumPy et par un **module natif Rust**.
 
-Par défaut, l’application installée et l’application lancée depuis les sources écrivent leurs journaux dans `%APPDATA%\OpenPictureStudio\OpenPictureStudio\logs\openpicturestudio.log`. Modifiez l’emplacement, la taille par fichier (environ 2 Mo par défaut) et le nombre d’anciens fichiers conservés (3 par défaut) dans Paramètres → Stockage. Vous pouvez également y ouvrir le dossier des journaux. Joignez le journal au signalement pour faciliter le diagnostic.
+- **Rust + Rayon** : couvre les points chauds comme les réglages de couleur globaux et locaux, les filtres, la conversion matricielle RAW et la sortie d’affichage, et coordonne l’exécution multithread.
+- **AVX2 SIMD** : sept groupes de noyaux sont branchés (couleur, conversion colorimétrique, courbes, réglages locaux, RAW, filtres et affichage). Le CPU est détecté automatiquement : l’accélération est activée si AVX2 est pris en charge, sinon le Rust générique est utilisé.
+- **Aperçu RAW rapide** : l’aperçu JPEG intégré aux RAW concernés, comme les NEF, est déjà en place ; le décodage complet et le post-traitement continuent d’être optimisés.
+- **GPU** : DirectML sert pour l’instant à l’inférence IA facultative. Le calcul d’image générique sur GPU est prévu, avec wgpu comme candidat.
 
-## Documentation
+Image Engine, Workflow Engine et Project Model portent respectivement les opérations d’image, l’orchestration des flux et l’état du projet. Le moteur CPU et le futur moteur GPU évolueront autour d’un même contrat d’opérations d’image, et l’extension des outils suit la direction à long terme Everything is Plugin. Détails dans [Architecture et accélération native](open-docs/architecture.fr.md).
 
-| Document | Liens |
+## Configuration requise et mesures de performances
+
+| Élément | Usage de base | Configuration recommandée | Pour aller plus loin |
+| --- | --- | --- | --- |
+| Système | Windows 10/11, 64 bits | Windows 10/11, 64 bits | Windows 10/11, 64 bits |
+| CPU | x64, CPU multicœur récent | Intel Core i5 de 7e génération ou AMD Ryzen de 1re génération, ou mieux | Processeur Intel de 12e génération ou AMD Ryzen de 5e génération, ou mieux |
+| Mémoire | 8 Go, pour parcourir et retoucher légèrement | 16 Go, pour les RAW et la retouche avec plusieurs outils | 32 Go ou plus, pour les images haute résolution, les masques nombreux et les traitements par lots |
+| GPU | Carte graphique intégrée | GTX 950 ou mieux | RTX 2060 ou mieux |
+| Stockage | 3 Go d’espace libre | 6 Go d’espace libre, SSD conseillé | 12 Go d’espace libre, SSD conseillé |
+
+Ces configurations servent de repère pour choisir un ordinateur. Consultez [Configuration requise et performances](open-docs/performance.fr.md) pour les recommandations de configuration et les mesures réelles du traitement d’image.
+
+## Feuille de route
+
+À partir du traitement photo professionnel, OPS fusionne peu à peu collaboration avec l’IA, flux de travail automatisés et retouche multimode, pour bâtir une plateforme ouverte de création d’images avec l’IA, maîtrisée par les créateurs et étendue ensemble avec les développeurs.
+
+| Étape | Axes principaux |
 | --- | --- |
-| Guide d’utilisation | [简体中文](README.md) · [English](README.en.md) · [Français](README.fr.md) |
-| Installation | [简体中文](README.md#安装与运行) · [English](README.en.md#installation-and-running) · [Français](#installation-et-exécution) |
-| Exécution depuis les sources | [简体中文](README.md#源码运行) · [English](README.en.md#run-from-source) · [Français](#exécution-depuis-les-sources) |
-| Création du programme d’installation | [简体中文](README.md#构建) · [English](README.en.md#building) · [Français](#compilation) |
-| Tests | [简体中文](tests/README.md) · [English](tests/README.en.md) |
-| Flux CI et publication | [CI](.github/workflows/ci.yml) · [Release](.github/workflows/release.yml) · [Environnement partagé](.github/actions/setup-build/action.yml) |
-| Licence du projet | [MIT License](LICENSE) |
+| 1 · Approfondir la collaboration créative avec l’IA | Étendre les outils de l’assistant, l’analyse des images de référence et la mémoire des styles, pour une retouche plus complète et mieux maîtrisée |
+| 2 · Mettre en place des flux de travail automatisés | Enregistrer les étapes de traitement et l’expérience créative sous forme de flux réutilisables, et les relier aux tâches par lot et aux agents IA externes |
+| 3 · Élargir à la création d’images complète | Sur la base de la retouche non destructive, introduire progressivement calques, sélections professionnelles, retouche au pixel et retouche générative |
+| 4 · Construire un écosystème d’extensions ouvert | Fournir une API publique et un SDK de plug-ins, prendre en charge outils et modèles tiers, et le partage de styles et de flux de travail |
+
+Performance, stabilité et compatibilité accompagnent toutes les étapes. La vision du projet, la planification par étapes et l’évolution technique sont détaillées dans la [feuille de route complète](open-docs/roadmap.fr.md).
 
 <details>
-<summary>Ressources, dépendances et licences tierces</summary>
+<summary><strong>Questions fréquentes</strong></summary>
 
-- Catalogue des modèles : [catalog.json](resources/models/catalog.json).
-- Catalogue des moteurs d’exécution : [catalog.json](resources/runtimes/catalog.json).
-- Compléments de licence et code source correspondant : [manifest.json](packaging/licenses/manifest.json).
-- Mentions incluses : [FlatBuffers](packaging/licenses/flatbuffers/LICENSE) · [MediaPipe](packaging/licenses/mediapipe/MEDIAPIPE_THIRD_PARTY_NOTICES.txt) · [Qt](packaging/licenses/qt/QT_THIRD_PARTY_NOTICES.txt) · [moteur MSVC](packaging/licenses/msvc-runtime/NOTICE.txt).
-- Licences des modèles : [MediaPipe](resources/models/licenses/MEDIAPIPE.txt) · [NAFNet](resources/models/licenses/NAFNET.txt) · [Real-ESRGAN](resources/models/licenses/REAL_ESRGAN.txt) · [U2Net](resources/models/licenses/U2NET.txt) · [YuNet](resources/models/licenses/YUNET.txt).
-- Icônes de l’interface : [Source](resources/icons/ui/SOURCE.txt) · [Licence](resources/icons/ui/LICENSE.txt).
-- Listes des dépendances : [requirements.txt](requirements.txt) · [requirements-ai.txt](requirements-ai.txt) · [requirements-beauty.txt](requirements-beauty.txt) · [requirements-dev.txt](requirements-dev.txt) · [requirements-build.txt](requirements-build.txt) · [requirements-build.lock.txt](requirements-build.lock.txt).
+<details>
+<summary><strong>Faut-il installer Python ou Rust après l’installation ?</strong></summary>
+
+L’installateur Windows embarque les dépendances nécessaires : le programme est utilisable dès la fin de l’installation. Les modèles IA et le moteur GPU facultatif s’installent à la demande dans les paramètres.
 
 </details>
 
-### Exécution depuis les sources
-
 <details>
-<summary>Environnement Python, dépendances facultatives et accélération Rust</summary>
+<summary><strong>Peut-on l’utiliser hors ligne ?</strong></summary>
 
-Python 3.12 ou une version ultérieure est nécessaire ; le développement et les versions distribuées utilisent Python 3.13. Les dépendances sont regroupées par fonction afin de n’installer que celles dont vous avez besoin.
-
-```powershell
-# 1. Récupérer les sources
-git clone https://github.com/KpTanl/OpenPictureStudio.git
-cd OpenPictureStudio
-python -m venv .venv
-.\.venv\Scripts\activate
-
-# 2. Installer les dépendances de base (visualisation, couleur, formats et sortie)
-pip install -r requirements.txt
-
-# 3. (Facultatif) Installer les dépendances IA et de retouche de portrait
-pip install -r requirements-ai.txt
-pip install -r requirements-beauty.txt
-
-# 4. Lancer l’application
-python main.py
-```
-
-Le module d’accélération Rust est facultatif. Pour l’utiliser, installez la chaîne d’outils Rust, compilez le module et copiez le résultat à la racine du dépôt :
-
-```powershell
-cd native\ops_accel
-cargo build --release
-copy target\release\ops_accel.dll ..\..\ops_accel.pyd
-cd ..\..
-```
+La visualisation, les réglages de couleur, le recadrage, l’enregistrement des projets et l’export fonctionnent hors ligne. Les outils IA locaux fonctionnent aussi hors ligne une fois leurs modèles et leur moteur prêts. Le téléchargement des modèles, la recherche de mises à jour et l’assistant de retouche IA en ligne ont besoin d’un accès réseau.
 
 </details>
 
-## Compilation
-
 <details>
-<summary>Programme d’installation, CI et publications, tests et structure du code</summary>
+<summary><strong>Faut-il une carte graphique dédiée ?</strong></summary>
 
-### Créer le programme d’installation
-
-Inno Setup, la chaîne d’outils Rust et toutes les dépendances de l’application, de l’IA, de la retouche de portrait et de l’empaquetage sont nécessaires. `requirements-build.lock.txt` fixe les versions testées pour les versions distribuées ; `requirements-build.txt` en est la source. Avant la compilation, le script vérifie la version de Python, les dépendances nécessaires et la présence d’une seule distribution OpenCV.
-
-```powershell
-pip install -r requirements-build.lock.txt
-powershell -ExecutionPolicy Bypass -File build.ps1
-```
-
-### CI et publications
-
-La CI exécute les vérifications du code et la compilation Python, compile le module natif, lance les tests et crée le programme d’installation dans des jobs distincts. Les pull requests vont jusqu’aux tests ; les pushs vers `dev`/`main` et les exécutions manuelles créent également le programme d’installation.
-
-Les tags de version exécutent les mêmes étapes, vérifient que le commit appartient à `main` et que le tag correspond à `APP_VERSION`, puis créent un brouillon de Release. Une personne chargée de la maintenance publie ensuite la Release manuellement.
-
-La compilation native envoie `ops_accel.pyd`. Les tests et l’empaquetage téléchargent le même artefact ; l’empaquetage utilise `build.ps1 -SkipNativeBuild` et prépare les sources des dépendances Cargo pour la collecte des licences. Chaque job en aval sélectionne l’identifiant de l’artefact produit.
-
-### Exécuter les tests
-
-Consultez les [instructions de test](tests/README.en.md) en anglais.
-
-### Structure du code
-
-Les dépendances suivent une seule direction : interface → application → cœur → accélération native. Chaque couche dépend uniquement des contrats publics de la couche inférieure.
-
-- **`src/ui`** : interface et interactions, notamment espaces de visualisation et de retouche, panneaux d’outils, thèmes et traductions.
-- **`src/application`** : coordination des traitements, notamment planification des tâches, caches, gestion des modèles et moteurs, sorties et persistance.
-- **`src/core`** : algorithmes et modèles de données, notamment moteur d’image, contrats des outils, flux de travail et projets `.opsproj`.
-- **`native/ops_accel`** : module d’accélération native écrit en Rust.
-- **`resources`** : thèmes, traductions et catalogues des modèles et moteurs.
+La visualisation et la retouche de base utilisent le CPU. Pour l’inférence sur GPU, installez le moteur DirectML dans « Paramètres → Moteurs d’exécution » ; il s’active après un redémarrage. Les modèles et les moteurs se gèrent séparément.
 
 </details>
 
-## Licence et dépendances tierces
+<details>
+<summary><strong>Pourquoi les couleurs ou la luminosité d’un RAW changent-elles juste après l’ouverture ?</strong></summary>
 
-Le code original d’OpenPictureStudio est publié sous [licence MIT](LICENSE). Les dépendances, modèles et ressources tiers suivent leurs propres licences. Les icônes de l’interface proviennent de [Tabler Icons](https://github.com/tabler/tabler-icons), sous licence MIT ; le texte de la licence est disponible avec les icônes dans [resources/icons/ui/LICENSE.txt](resources/icons/ui/LICENSE.txt).
+À l’ouverture d’un RAW, l’aperçu intégré par l’appareil s’affiche d’abord ; une fois le décodage terminé, l’image est mise à jour selon le mode d’affichage choisi. Dans « Paramètres → Affichage des images », vous pouvez choisir pour les RAW « Aperçu de l’appareil », « Couleurs d’origine » ou « Rendu OPS » ; le mode d’affichage des autres formats se règle séparément.
 
-Les distributions installables et portables contiennent les éléments suivants dans le dossier du programme, générés à partir du contenu effectivement empaqueté par [tools/collect_licenses.py](tools/collect_licenses.py) lors de la compilation :
+</details>
 
-- `THIRD_PARTY_NOTICES.txt` : noms, versions, licences et sites des composants, y compris les modèles et moteurs téléchargeables ;
-- `licenses/` : textes de licence et mentions de copyright de chaque composant ;
-- `SOURCE.txt` : commit et adresse des sources de l’application, ainsi qu’adresses et sommes de contrôle des sources correspondantes des composants GPL, LGPL et MPL ;
-- `components.json` : correspondance entre les composants et les fichiers distribués ;
-- `LICENSE` (MIT) et `GPL-3.0.txt`.
+<details>
+<summary><strong>Qu’est-ce que le style OPS ?</strong></summary>
 
-Les textes de licence absents des paquets d’origine et les composants nécessitant la fourniture des sources correspondantes sont enregistrés dans [packaging/licenses](packaging/licenses). La compilation s’arrête si un fichier distribué ne peut pas être associé à un composant, si le texte de licence d’un composant manque ou si les sources correspondantes d’un composant GPL, LGPL ou MPL ne sont pas enregistrées.
+Dans l’interface, le style OPS s’appelle « Rendu OPS » : une saveur d’image définie par OPS, avec ses choix de couleur, de luminosité, de contraste et de nuances. En le choisissant, vous partez du style d’ensemble d’OPS, puis vous y ajoutez votre propre jugement créatif.
 
-Ce projet utilise PyQt6, dont l’édition open source est sous licence GPLv3 ; une licence commerciale est également disponible. Une application combinée compilée et distribuée avec PyQt6 sous GPL doit être distribuée sous GPLv3. La licence MIT du code original du projet reste applicable : MIT s’applique à la réutilisation de ce code seul ; la réutilisation et la distribution de l’application combinée avec PyQt6 sous GPL doivent aussi respecter la GPLv3.
+Le rendu OPS fonctionne avec les RAW, JPG, PNG et autres formats.
 
-Lors de la distribution de tels programmes d’installation ou paquets portables, conservez les mentions de copyright et les textes de licence applicables et fournissez les sources correspondantes complètes de la version, notamment celles des dépendances couvertes par la GPL et les scripts de compilation nécessaires. L’accès aux sources correspondantes doit être proposé avec le téléchargement des binaires.
+| Option | Rôle |
+| --- | --- |
+| Couleurs d’origine | Part des couleurs du fichier décodé et conserve les réglages de couleur déjà faits |
+| Rendu OPS | Applique la saveur de couleur et de tonalité définie par OPS, pour un rendu d’ensemble dans le goût d’OPS |
+| Préréglages | Appliquent une combinaison de réglages (rétro, argentique, HDR, etc.), utilisable avec le rendu choisi |
 
-Pour les conditions détaillées, consultez les [informations officielles sur les licences PyQt](https://www.riverbankcomputing.com/software/pyqt/intro), la [FAQ sur les licences PyQt](https://www.riverbankcomputing.com/commercial/license-faq) et les [termes de la GPLv3](https://www.gnu.org/licenses/gpl-3.0.html). Les distributions utilisant une licence commerciale PyQt suivent ses conditions commerciales et les licences des autres dépendances.
+Dans le panneau de couleur de l’espace de retouche, choisissez « Couleurs d’origine » ou « Rendu OPS » avec « Rendu ». Dans « Paramètres → Affichage des images », vous réglez séparément l’affichage des RAW et celui des autres formats. Le rendu choisi pendant la retouche est enregistré avec le projet et s’applique au résultat exporté. Ce traitement se fait sur votre ordinateur et ne demande aucun modèle IA.
 
-Pour les crédits du logo, des captures, du diagramme et des icônes utilisés dans ce README, consultez les [sources des ressources](.github/assets/readme/SOURCES.en.md) en anglais.
+</details>
+
+<details>
+<summary><strong>Retoucher une photo écrase-t-il l’original ?</strong></summary>
+
+Parcourir, régler et enregistrer un brouillon de retouche n’écrasent pas l’original. Pour produire le résultat, vous pouvez enregistrer une copie ou enregistrer à l’emplacement d’origine. Pour garder le fichier d’origine, enregistrez sous un nouveau nom ou dans un autre dossier de sortie.
+
+</details>
+
+<details>
+<summary><strong>Peut-on reprendre la retouche après la fermeture ?</strong></summary>
+
+La retouche est enregistrée automatiquement comme brouillon de cette photo : rouvrez la même photo pour continuer. Enregistrer en projet `.opsproj` conserve explicitement les étapes et l’historique. Pour partager ou livrer le résultat, enregistrez ou exportez-le en JPG, PNG, TIFF ou autre format d’image.
+
+</details>
+
+<details>
+<summary><strong>Pourquoi certains outils IA signalent-ils un modèle manquant ?</strong></summary>
+
+Téléchargez ou importez le modèle nécessaire dans « Paramètres → Outils et modèles », puis choisissez-le dans le panneau de l’outil. Le détourage IA et le remplacement de fond IA des photos d’identité utilisent U2Net ; conserver le fond d’origine, recadrer, changer les dimensions et la mise en page des photos d’identité n’exigent aucun modèle. Pour la version installée, les modèles sont enregistrés par défaut dans `%APPDATA%\OpenPictureStudio\OpenPictureStudio\models` ; un projet enregistré retrouve la version exacte des modèles qu’il utilise.
+
+</details>
+
+<details>
+<summary><strong>Comment configurer l’assistant de retouche IA ?</strong></summary>
+
+Dans « Paramètres → Services IA », ajoutez une connexion et renseignez l’adresse du service, la clé d’API nécessaire et le modèle, puis choisissez dans l’assistant un modèle déjà configuré. L’analyse d’une image de référence demande un modèle qui accepte les images, et les outils de l’Agent demandent d’activer l’appel d’outils. Les outils locaux de super-résolution, de réduction du bruit, de détourage et autres utilisent des modèles téléchargés séparément. Les étapes détaillées sont dans le [guide Services IA et confidentialité](open-docs/ai-services.fr.md).
+
+</details>
+
+<details>
+<summary><strong>L’assistant IA envoie-t-il mes photos ?</strong></summary>
+
+Une fois un service configuré, le premier message joint par défaut un aperçu de la photo en cours ; sous le champ de saisie, vous pouvez choisir « Ne pas envoyer la photo ». Toutes les règles d’envoi sont dans [Services IA et confidentialité](open-docs/ai-services.fr.md). Les outils IA locaux utilisent des modèles téléchargés sur votre ordinateur.
+
+</details>
+
+<details>
+<summary><strong>Que faire si la retouche d’une grande image saccade ou si la mémoire manque ?</strong></summary>
+
+Dans « Paramètres → Performances et mémoire », réglez le mode d’aperçu du canevas sur « Toujours un aperçu de 1600 px », réduisez la plage de préchargement et mettez en pause les autres tâches par lot. Le mode d’aperçu agit sur l’image affichée pendant la retouche ; la taille du résultat est fixée par les réglages d’export. Le décodage en taille réelle, le traitement IA et l’export demandent toujours une mémoire adaptée à la taille de l’image ; les recommandations de configuration sont dans [Configuration requise et performances](open-docs/performance.fr.md).
+
+</details>
+
+<details>
+<summary><strong>Les modèles et les caches prennent de la place : peut-on les nettoyer ou les déplacer ?</strong></summary>
+
+Dans « Paramètres → Stockage », vous voyez l’espace occupé, vous videz les caches et vous changez l’emplacement des données ; le nettoyage et le déplacement s’effectuent au prochain démarrage, selon les invites. Les modèles se désinstallent dans « Paramètres → Outils et modèles ». Si un projet utilise de nouveau ce modèle pour un calcul, la version correspondante doit être installée.
+
+</details>
+
+<details>
+<summary><strong>Une nouvelle version s’installe-t-elle automatiquement ?</strong></summary>
+
+La recherche de version affiche un avis et ouvre la page de téléchargement ; c’est vous qui téléchargez et installez. Les commandes PowerShell du [guide d’installation](open-docs/installation.fr.md) ne téléchargent l’installateur que si vous les exécutez vous-même.
+
+</details>
+
+</details>
+
+## Contribuer, licence et mentions tierces
+
+### Signaler un problème
+
+Dans [GitHub Issues](https://github.com/KpTanl/OpenPictureStudio/issues), indiquez la version de l’application, la version de Windows, les étapes pour reproduire le problème, ainsi que les captures d’écran ou les journaux utiles. Avant de publier, vérifiez que les pièces jointes ne contiennent ni données personnelles ni clés de service.
+
+Par défaut, le journal d’exécution est écrit dans `%APPDATA%\OpenPictureStudio\OpenPictureStudio\logs\openpicturestudio.log`, que l’application soit installée ou lancée depuis les sources. Dans « Paramètres → Stockage », vous pouvez changer l’emplacement des journaux, la taille d’un fichier (environ 2 Mo par défaut) et le nombre d’anciens journaux conservés (3 par défaut) ; vous y ouvrez aussi directement le dossier des journaux. Joindre le journal à votre signalement aide à localiser le problème.
+
+### Licence et dépendances tierces
+
+Le code original est sous [licence MIT](LICENSE). Les dépendances tierces, les modèles et les ressources suivent chacun leur propre licence. L’application utilise actuellement PySide6 Essentials, Shiboken et Qt ; les distributions incluent `THIRD_PARTY_NOTICES.txt`, `licenses/`, `SOURCE.txt`, `components.json` et les textes de licence applicables.
+
+Depuis la version 0.17.0, les composants d’interface sont passés de PyQt6 à PySide6, et l’installateur n’est plus distribué dans son ensemble sous GPLv3. Pour la version 0.16.1 et les versions antérieures, la licence est celle des fichiers fournis avec cette version. Détails dans [Licences et composants tiers](open-docs/licensing.fr.md#migration-de-pyqt6-vers-pyside6). L’origine du logo et des captures du produit est indiquée dans les [sources des ressources](.github/assets/readme/SOURCES.en.md).
+
+### Index de la documentation
+
+| Document | Contenu |
+| --- | --- |
+| [Installation et mises à niveau](open-docs/installation.fr.md) | Vérification, SmartScreen, installation par-dessus et réparation |
+| [Services IA et confidentialité](open-docs/ai-services.fr.md) | Configuration des connexions et des modèles, utilisation de l’assistant, envoi des photos et stockage des données |
+| [Développement et compilation](open-docs/building.fr.md) | Exécution depuis les sources, module natif, installateur et CI |
+| [Architecture et accélération native](open-docs/architecture.fr.md) | Couches actuelles, compatibilité CPU et évolution du GPU |
+| [Configuration requise et performances](open-docs/performance.fr.md) | Recommandations de configuration et performances du traitement d’image |
+| [Feuille de route](open-docs/roadmap.fr.md) | Vision du produit, étapes de développement et évolution technique |
+| [Licences et composants tiers](open-docs/licensing.fr.md) | MIT, Qt, modèles et sources correspondantes |

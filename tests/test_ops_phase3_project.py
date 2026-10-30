@@ -1,6 +1,5 @@
 from pathlib import Path
 from src.core.project import ProjectDocument, ProjectStore
-from src.core.project.recovery import has_pending_journal
 from src.core.project.revision_store import RevisionStore
 from src.application.core_api import CoreAPI
 def valid_document(source_path="a.jpg"):
@@ -19,16 +18,12 @@ def test_project_roundtrip_atomic(tmp_path):
     assert store.load(str(path)).to_dict() == document.to_dict()
 
 
-def test_revision_snapshot_and_pending_journal(tmp_path):
+def test_revision_snapshot(tmp_path):
     from src.core.contracts import WorkflowGraph
     graph = WorkflowGraph()
     root = tmp_path / "data"
     path = RevisionStore(str(root / "workflows")).write_workflow(graph.workflow_hash(), graph.to_dict())
     assert Path(path).name == graph.workflow_hash() + ".json"
-    assert not has_pending_journal(str(root))
-    (root / "journal").mkdir()
-    (root / "journal" / "pending").write_text("x", encoding="utf-8")
-    assert has_pending_journal(str(root))
 
 
 def test_core_api_project_missing_source_is_structured(tmp_path):

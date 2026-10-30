@@ -171,8 +171,7 @@ def test_older_pairs_do_not_block_new_tasks_and_saving_a_style_ends_the_wait(qap
         # 保存风格：确认卡出现，确认后风格写入，等它的任务随之结束
         _say(panel, "记住这个风格")
         wait_until(lambda: (runner.state.get("style_pending") or {}).get("status") == "ready", "确认卡", timeout=30)
-        _pump(30)
-        assert _run(runner).get("phase") == "waiting_user"
+        wait_until(lambda: _run(runner).get("phase") == "waiting_user", "等待风格确认", timeout=30)
         panel.style_confirmation._confirm()
         wait_until(lambda: any(style["name"] == "暖调" for style in runner.state.get("styles", ())), "风格写入", timeout=60)
         wait_until(lambda: _run(runner).get("reason") == "completed" and not panel._agent_active(), "任务收尾", timeout=30)

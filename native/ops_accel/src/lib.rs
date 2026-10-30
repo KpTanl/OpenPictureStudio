@@ -12,6 +12,7 @@ mod pipeline;
 mod raw_source;
 mod thread_pools;
 mod local_color;
+mod simd;
 
 use color_mixer::{ChannelAdjust, MixerSettings};
 use pipeline::{render_pipeline, render_pipeline_with_mixer_input, RenderParams};
@@ -309,6 +310,9 @@ fn raw_xyz_to_linear_srgb<'py>(
 
 #[pymodule]
 fn ops_accel(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("_CPU_KERNEL", simd::initialize()?)?;
+    m.add("_AVX2_AVAILABLE", simd::available())?;
+    m.add("_AVX2_OPERATORS", simd::operators())?;
     m.add("SUPPORTED_PROCESS_VERSIONS", (1u8, 2u8, 3u8, 4u8))?;
     m.add_function(wrap_pyfunction!(local_color::render_local_pipeline, m)?)?;
     m.add_function(wrap_pyfunction!(local_color::render_component_pipeline, m)?)?;

@@ -259,7 +259,7 @@ def working_memory(source, params, *, threads=1):
             + (height * width * 4 * len(masks) if params.get("process_version") == 4 else 0))
 
 
-def render(source, params, *, backend="python", threads=1, reference_size=None,
+def render(source, params, *, backend="native", threads=1, reference_size=None,
            cancelled=lambda: False, sampling=None, prepared_masks=None):
     check_cancelled(cancelled)
     if backend not in ("python", "native") or type(threads) is not int or threads < 1:

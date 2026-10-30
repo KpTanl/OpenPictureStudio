@@ -1,4 +1,5 @@
 use rayon::prelude::*;
+pub(crate) mod kernels;
 
 /// 一维水平方向滑动窗口均值滤波（O(1) 滑动窗口，按行并行）
 fn box_filter_horizontal(src: &[f32], dst: &mut [f32], width: usize, r: usize) {
@@ -58,9 +59,7 @@ fn box_filter_vertical(src: &[f32], dst: &mut [f32], width: usize, height: usize
         let r1 = (r_i + 1).min(h_i) as usize;
         for y in r0..r1 {
             let row_offset = y * width;
-            for (i, c) in (col_start..col_end).enumerate() {
-                col_sums[i] += src[row_offset + c] as f64;
-            }
+            kernels::accumulate(&mut col_sums, &src[row_offset + col_start..row_offset + col_end], false);
         }
 
         let area0 = (r1 - r0) as f64;
@@ -68,9 +67,7 @@ fn box_filter_vertical(src: &[f32], dst: &mut [f32], width: usize, height: usize
 
         unsafe {
             let dst_raw = dst_ptr as *mut f32;
-            for (i, c) in (col_start..col_end).enumerate() {
-                *dst_raw.add(c) = (col_sums[i] / area0) as f32;
-            }
+            kernels::divide(&col_sums, area0, std::slice::from_raw_parts_mut(dst_raw.add(col_start), block_w));
 
             for y in 1..height {
                 let y_i = y as isize;
@@ -79,16 +76,12 @@ fn box_filter_vertical(src: &[f32], dst: &mut [f32], width: usize, height: usize
 
                 if add_y < h_i {
                     let add_offset = add_y as usize * width;
-                    for (i, c) in (col_start..col_end).enumerate() {
-                        col_sums[i] += src[add_offset + c] as f64;
-                    }
+                    kernels::accumulate(&mut col_sums, &src[add_offset + col_start..add_offset + col_end], false);
                 }
 
                 if rem_y >= 0 {
                     let rem_offset = rem_y as usize * width;
-                    for (i, c) in (col_start..col_end).enumerate() {
-                        col_sums[i] -= src[rem_offset + c] as f64;
-                    }
+                    kernels::accumulate(&mut col_sums, &src[rem_offset + col_start..rem_offset + col_end], true);
                 }
 
                 let cur_r0 = 0.max(y_i - r_i) as usize;
@@ -96,9 +89,8 @@ fn box_filter_vertical(src: &[f32], dst: &mut [f32], width: usize, height: usize
                 let cur_area = (cur_r1 - cur_r0) as f64;
 
                 let row_offset = y * width;
-                for (i, c) in (col_start..col_end).enumerate() {
-                    *dst_raw.add(row_offset + c) = (col_sums[i] / cur_area) as f32;
-                }
+                kernels::divide(&col_sums, cur_area,
+                    std::slice::from_raw_parts_mut(dst_raw.add(row_offset + col_start), block_w));
             }
         }
     });
@@ -145,23 +137,8 @@ pub fn resize_bilinear_1channel(
             let y1 = (y0 + 1).min(in_h - 1);
             let wy = ys_clamped - y0 as f32;
 
-            for x_out in 0..out_w {
-                let xs = (x_out as f32 + 0.5) * (in_w_f / out_w_f) - 0.5;
-                let xs_clamped = xs.clamp(0.0, in_w_f - 1.0);
-                let x0 = xs_clamped.floor() as usize;
-                let x1 = (x0 + 1).min(in_w - 1);
-                let wx = xs_clamped - x0 as f32;
-
-                let ia = src[y0 * in_w + x0];
-                let ib = src[y0 * in_w + x1];
-                let ic = src[y1 * in_w + x0];
-                let id = src[y1 * in_w + x1];
-
-                let top = ia * (1.0 - wx) + ib * wx;
-                let bot = ic * (1.0 - wx) + id * wx;
-
-                row[x_out] = top * (1.0 - wy) + bot * wy;
-            }
+            kernels::resize_row(&src[y0 * in_w..(y0 + 1) * in_w],
+                &src[y1 * in_w..(y1 + 1) * in_w], in_w_f / out_w_f, wy, row);
         });
 
     dst
@@ -183,43 +160,18 @@ pub fn fast_guided_filter(
         let mean_g = box_filter_2d(guide, width, height, radius);
         let mean_s = box_filter_2d(src, width, height, radius);
 
-        let g_sq: Vec<f32> = guide.par_iter().map(|&g| g * g).collect();
-        let g_src: Vec<f32> = guide.par_iter().zip(src.par_iter()).map(|(&g, &p)| g * p).collect();
+        let g_sq = kernels::products(guide, guide);
+        let g_src = kernels::products(guide, src);
 
         let corr_g = box_filter_2d(&g_sq, width, height, radius);
         let corr_gs = box_filter_2d(&g_src, width, height, radius);
 
-        let mut a = vec![0.0f32; width * height];
-        let mut b = vec![0.0f32; width * height];
-
-        a.par_iter_mut()
-            .zip(b.par_iter_mut())
-            .zip(mean_g.par_iter())
-            .zip(mean_s.par_iter())
-            .zip(corr_g.par_iter())
-            .zip(corr_gs.par_iter())
-            .for_each(|(((((out_a, out_b), &mg), &ms), &cg), &cgs)| {
-                let var_g = cg - mg * mg;
-                let cov_gs = cgs - mg * ms;
-                let a_val = cov_gs / (var_g + eps);
-                let b_val = ms - a_val * mg;
-                *out_a = a_val;
-                *out_b = b_val;
-            });
+        let (a, b) = kernels::coefficient_fields(&mean_g, &mean_s, &corr_g, &corr_gs, eps);
 
         let mean_a = box_filter_2d(&a, width, height, radius);
         let mean_b = box_filter_2d(&b, width, height, radius);
 
-        let mut out = vec![0.0f32; width * height];
-        out.par_iter_mut()
-            .zip(guide.par_iter())
-            .zip(mean_a.par_iter())
-            .zip(mean_b.par_iter())
-            .for_each(|(((o, &g), &ma), &mb)| {
-                *o = ma * g + mb;
-            });
-
-        return out;
+        return kernels::combine(guide, &mean_a, &mean_b);
     }
 
     let sw = (width / s).max(1);
@@ -232,31 +184,13 @@ pub fn fast_guided_filter(
     let mean_g = box_filter_2d(&g_sub, sw, sh, r_sub);
     let mean_s = box_filter_2d(&s_sub, sw, sh, r_sub);
 
-    let g_sq: Vec<f32> = g_sub.par_iter().map(|&g| g * g).collect();
-    let g_src: Vec<f32> = g_sub.par_iter().zip(s_sub.par_iter()).map(|(&g, &p)| g * p).collect();
+    let g_sq = kernels::products(&g_sub, &g_sub);
+    let g_src = kernels::products(&g_sub, &s_sub);
 
     let corr_g = box_filter_2d(&g_sq, sw, sh, r_sub);
     let corr_gs = box_filter_2d(&g_src, sw, sh, r_sub);
 
-    let sub_len = sw * sh;
-    let mut a_sub = vec![0.0f32; sub_len];
-    let mut b_sub = vec![0.0f32; sub_len];
-
-    a_sub
-        .par_iter_mut()
-        .zip(b_sub.par_iter_mut())
-        .zip(mean_g.par_iter())
-        .zip(mean_s.par_iter())
-        .zip(corr_g.par_iter())
-        .zip(corr_gs.par_iter())
-        .for_each(|(((((out_a, out_b), &mg), &ms), &cg), &cgs)| {
-            let var_g = cg - mg * mg;
-            let cov_gs = cgs - mg * ms;
-            let a_val = cov_gs / (var_g + eps);
-            let b_val = ms - a_val * mg;
-            *out_a = a_val;
-            *out_b = b_val;
-        });
+    let (a_sub, b_sub) = kernels::coefficient_fields(&mean_g, &mean_s, &corr_g, &corr_gs, eps);
 
     let mean_a_sub = box_filter_2d(&a_sub, sw, sh, r_sub);
     let mean_b_sub = box_filter_2d(&b_sub, sw, sh, r_sub);
@@ -264,14 +198,5 @@ pub fn fast_guided_filter(
     let mean_a = resize_bilinear_1channel(&mean_a_sub, sw, sh, width, height);
     let mean_b = resize_bilinear_1channel(&mean_b_sub, sw, sh, width, height);
 
-    let mut out = vec![0.0f32; width * height];
-    out.par_iter_mut()
-        .zip(guide.par_iter())
-        .zip(mean_a.par_iter())
-        .zip(mean_b.par_iter())
-        .for_each(|(((o, &g), &ma), &mb)| {
-            *o = ma * g + mb;
-        });
-
-    out
+    kernels::combine(guide, &mean_a, &mean_b)
 }

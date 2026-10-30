@@ -81,13 +81,8 @@ _RENDER_BACKENDS_REPORTED = set()
 # ---------------------------------------------------------------------------
 
 def is_avx2_available() -> bool:
-    """探测 CPU 是否支持并启用了 AVX2 / SIMD 硬件优化。"""
-    if not _HAS_CV2 or cv2 is None:
-        return False
-    try:
-        return bool(cv2.useOptimized())
-    except Exception:
-        return False
+    """返回 Rust 模块检测到的 CPU AVX2 支持状态。"""
+    return _HAS_RUST_ACCEL and bool(getattr(ops_accel, "_AVX2_AVAILABLE", False))
 
 
 def configure_hardware_acceleration(thread_count: int | None = None) -> int:

@@ -11,8 +11,9 @@ use std::time::Instant;
 use crate::color_space::{calc_rec709_luma, linear_to_srgb_buffer, srgb_to_linear_buffer,
                   gamut_compress_buffer, get_lin_to_srgb_lut, get_srgb_to_lin_lut};
 use crate::color_mixer::{ChannelAdjust, MixerSettings, apply_color_mixer};
-use crate::guided_filter::{box_filter_2d, resize_bilinear_1channel};
-use crate::tone::{LookStage, apply_look_stage, apply_curves};
+use crate::guided_filter::{box_filter_2d, resize_bilinear_1channel, kernels};
+use crate::tone::{LookStage, apply_look_stage, apply_curves, local_saturation, white_balance, exposure_v2, contrast};
+use crate::simd::{self, Operator};
 
 use crate::thread_pools;
 
@@ -66,31 +67,124 @@ struct Fields {
     reference: (f32, f32),
 }
 
+#[derive(Default)]
+struct FieldScratch {
+    values: Vec<Vec<f32>>,
+    weights: Vec<f32>,
+}
+
 impl Fields {
     fn active(&self, keys: &[usize]) -> bool {
         keys.iter().any(|&key| self.globals[key] != if key == 3 || key == 12 { 1. } else { 0. }
             || self.masks.iter().any(|mask| mask.delta[key] != 0.))
     }
 
-    fn band(&self, keys: &[usize], start: usize, count: usize) -> Vec<Vec<f32>> {
-        let mut values = vec![vec![0.; count]; keys.len()];
+    fn band<'a>(&self, keys: &[usize], extra: &[usize], start: usize, count: usize,
+                scratch: &'a mut FieldScratch) -> &'a [Vec<f32>] {
+        scratch.values.resize_with(keys.len() + extra.len(), Vec::new);
+        for values in &mut scratch.values {
+            values.resize(count, 0.0);
+            values.fill(0.0);
+        }
         for mask in &self.masks {
-            if !keys.iter().any(|&key| mask.delta[key] != 0.) { continue; }
-            for row in (0..count).step_by(self.width) {
-                let y = (((start + row) / self.width) as f32 + 0.5) * (self.reference.1 / self.height as f32);
-                for column in 0..self.width.min(count - row) {
-                    let x = (column as f32 + 0.5) * (self.reference.0 / self.width as f32);
-                    let weight = if mask.kind == 2 { mask.raster[start + row + column] } else { mask.weight(x, y) };
-                    for (target, &key) in values.iter_mut().zip(keys) {
-                        target[row + column] += weight * mask.delta[key];
+            let first = keys.iter().any(|&key| mask.delta[key] != 0.);
+            let second = extra.iter().any(|&key| mask.delta[key] != 0.);
+            if !first && !second { continue; }
+            let weights = if mask.kind == 2 {
+                &mask.raster[start..start + count]
+            } else {
+                scratch.weights.resize(count, 0.0);
+                for row in (0..count).step_by(self.width) {
+                    let y = (((start + row) / self.width) as f32 + 0.5) * (self.reference.1 / self.height as f32);
+                    for column in 0..self.width.min(count - row) {
+                        let x = (column as f32 + 0.5) * (self.reference.0 / self.width as f32);
+                        scratch.weights[row + column] = mask.weight(x, y);
                     }
+                }
+                &scratch.weights
+            };
+            if first {
+                for (target, &key) in scratch.values[..keys.len()].iter_mut().zip(keys) {
+                    add_field(target, weights, mask.delta[key]);
+                }
+            }
+            if second {
+                for (target, &key) in scratch.values[keys.len()..].iter_mut().zip(extra) {
+                    add_field(target, weights, mask.delta[key]);
                 }
             }
         }
-        for (target, &key) in values.iter_mut().zip(keys) {
+        for (target, &key) in scratch.values.iter_mut().zip(keys.iter().chain(extra)) {
             target.iter_mut().for_each(|v| *v = (*v + self.globals[key]).clamp(LOW[key], HIGH[key]));
         }
-        values
+        &scratch.values
+    }
+}
+
+fn add_field(target: &mut [f32], weights: &[f32], delta: f32) {
+    #[cfg(target_arch = "x86_64")]
+    if simd::enabled(Operator::Local) {
+        return unsafe { add_field_avx2(target, weights, delta) };
+    }
+    for (value, weight) in target.iter_mut().zip(weights) { *value += weight * delta; }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn add_field_avx2(target: &mut [f32], weights: &[f32], delta: f32) {
+    use std::arch::x86_64::*;
+    let end = target.len() / 8 * 8;
+    let d = _mm256_set1_ps(delta);
+    for offset in (0..end).step_by(8) {
+        let ptr = target.as_mut_ptr().add(offset);
+        _mm256_storeu_ps(ptr, _mm256_add_ps(_mm256_loadu_ps(ptr),
+            _mm256_mul_ps(_mm256_loadu_ps(weights.as_ptr().add(offset)), d)));
+    }
+    for i in end..target.len() { target[i] += weights[i] * delta; }
+}
+
+fn uniform(values: &[f32]) -> Option<f32> {
+    values.first().copied().filter(|first| values.iter().all(|value| value == first))
+}
+
+fn local_gains(temperature: f32, tint: f32) -> [f32; 3] {
+    let red = (temperature / 100. * 1.35).exp2();
+    let green = (-tint / 100. * 0.80).exp2();
+    let blue = (-temperature / 100. * 1.35).exp2();
+    let luma = calc_rec709_luma(red, green, blue).max(1e-4);
+    [red / luma, green / luma, blue / luma]
+}
+
+fn initialize_color(output: &mut [f32], values: &[Vec<f32>]) {
+    if let (Some(temperature), Some(tint)) = (uniform(&values[0]), uniform(&values[1])) {
+        white_balance(output, local_gains(temperature, tint));
+    } else {
+        for (i, pixel) in output.chunks_exact_mut(3).enumerate() {
+            let gains = local_gains(values[0][i], values[1][i]);
+            for c in 0..3 { pixel[c] *= gains[c]; }
+        }
+    }
+    if let Some(ev) = uniform(&values[2]) {
+        if ev != 0. { exposure_v2(output, (ev as f64).exp2() as f32); }
+    } else {
+        for (i, pixel) in output.chunks_exact_mut(3).enumerate() { exposure(pixel, values[2][i]); }
+    }
+}
+
+fn local_contrast(output: &mut [f32], values: &[f32]) {
+    if let Some(factor) = uniform(values) {
+        if (factor - 1.).abs() >= 1e-4 { contrast(output, factor.max(1e-3)); }
+    } else {
+        for (i, pixel) in output.chunks_exact_mut(3).enumerate() {
+            if (values[i] - 1.).abs() >= 1e-4 {
+                let exponent = values[i].max(1e-3);
+                pixel.iter_mut().for_each(|v| {
+                    let d = v.clamp(0., 1.);
+                    let da = d.powf(exponent);
+                    *v = da / (da + (1. - d).powf(exponent) + 1e-12);
+                });
+            }
+        }
     }
 }
 
@@ -166,19 +260,15 @@ fn self_guided(luma: &[f32], width: usize, height: usize, radius: usize, eps: f3
     let r = if s == 1 { radius } else { (radius / s).max(1) };
     let small = resize_bilinear_1channel(luma, width, height, sw, sh);
     let mean = box_filter_2d(&small, sw, sh, r);
-    let square: Vec<f32> = small.par_iter().map(|v| v * v).collect();
+    let square = kernels::products(&small, &small);
     let correlation = box_filter_2d(&square, sw, sh, r);
     check(cancelled)?;
-    let a: Vec<f32> = correlation.par_iter().zip(&mean).map(|(corr, m)| {
-        let variance = corr - m * m;
-        variance / (variance + eps)
-    }).collect();
-    let b: Vec<f32> = mean.par_iter().zip(&a).map(|(m, a)| m - a * m).collect();
+    let (a, b) = kernels::coefficient_fields(&mean, &mean, &correlation, &correlation, eps);
     let (ma, mb) = rayon::join(|| box_filter_2d(&a, sw, sh, r), || box_filter_2d(&b, sw, sh, r));
     check(cancelled)?;
     let (ma, mb) = rayon::join(|| resize_bilinear_1channel(&ma, sw, sh, width, height),
                               || resize_bilinear_1channel(&mb, sw, sh, width, height));
-    Ok(ma.par_iter().zip(&mb).zip(luma).map(|((a, b), y)| a * y + b).collect())
+    Ok(kernels::combine(luma, &ma, &mb))
 }
 
 fn tone(buffer: &mut [f32], fields: &Fields, cancelled: &Cancellation) -> PyResult<()> {
@@ -192,10 +282,10 @@ fn tone(buffer: &mut [f32], fields: &Fields, cancelled: &Cancellation) -> PyResu
     } else { None };
     check(cancelled)?;
     let band_size = fields.width * BAND_ROWS;
-    buffer.par_chunks_mut(band_size * 3).enumerate().try_for_each(|(band, pixels)| -> PyResult<()> {
+    buffer.par_chunks_mut(band_size * 3).enumerate().try_for_each_init(FieldScratch::default, |scratch, (band, pixels)| -> PyResult<()> {
         check(cancelled)?;
         let start = band * band_size;
-        let values = fields.band(&[5, 4, 7, 6], start, pixels.len() / 3);
+        let values = fields.band(&[5, 4, 7, 6], &[], start, pixels.len() / 3, scratch);
         for (i, pixel) in pixels.chunks_exact_mut(3).enumerate() {
             let original = luma[start + i];
             let mut current = original;
@@ -225,10 +315,10 @@ fn details(buffer: &mut [f32], fields: &Fields, cancelled: &Cancellation) -> PyR
     let mid = base(fields.active(&[9]), 4.max(size / 24), 0.14 * 0.14, (size as f32 / 200.).clamp(2., 6.) as usize)?;
     let coarse = base(fields.active(&[10]), 8.max(size / 8), 0.20 * 0.20, (size as f32 / 128.).clamp(4., 12.) as usize)?;
     let band_size = fields.width * BAND_ROWS;
-    buffer.par_chunks_mut(band_size * 3).enumerate().try_for_each(|(band, pixels)| -> PyResult<()> {
+    buffer.par_chunks_mut(band_size * 3).enumerate().try_for_each_init(FieldScratch::default, |scratch, (band, pixels)| -> PyResult<()> {
         check(cancelled)?;
         let start = band * band_size;
-        let amounts = fields.band(&[8, 9, 10], start, pixels.len() / 3);
+        let amounts = fields.band(&[8, 9, 10], &[], start, pixels.len() / 3, scratch);
         for (i, pixel) in pixels.chunks_exact_mut(3).enumerate() {
             let index = start + i;
             let mut target = luma[index];
@@ -351,69 +441,64 @@ fn render_internal<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>, par
         let band_size = width * BAND_ROWS;
         let oetf = get_lin_to_srgb_lut();
         let eotf = get_srgb_to_lin_lut();
-        buffer.par_chunks_mut(band_size * 3).enumerate().try_for_each(|(band, output)| -> PyResult<()> {
+        let has_tone = fields.active(&[4, 5, 6, 7]);
+        let has_detail = fields.active(&[8, 9, 10]);
+        let finish = |output: &mut [f32]| {
+            gamut_compress_buffer(output);
+            srgb_to_linear_buffer(output, eotf);
+        };
+        let middle = |output: &mut [f32], values: &[Vec<f32>], sample: Option<&mut [f32]>| -> PyResult<()> {
             check(&cancelled)?;
-            let start = band * band_size;
-            output.copy_from_slice(&input[start * 3..start * 3 + output.len()]);
-            let values = fields.band(&[0, 1, 2], start, output.len() / 3);
-            for (i, pixel) in output.chunks_exact_mut(3).enumerate() {
-                let red = (values[0][i] / 100. * 1.35).exp2();
-                let green = (-values[1][i] / 100. * 0.80).exp2();
-                let blue = (-values[0][i] / 100. * 1.35).exp2();
-                let luma = calc_rec709_luma(red, green, blue).max(1e-4);
-                pixel[0] *= red / luma;
-                pixel[1] *= green / luma;
-                pixel[2] *= blue / luma;
-                exposure(pixel, values[2][i]);
-            }
-            linear_to_srgb_buffer(output, oetf);
-            for stage in &stages { apply_look_stage(output, stage); }
-            Ok(())
-        })?;
-        tone(&mut buffer, &fields, &cancelled)?;
-        let middle = |band: usize, output: &mut [f32], sample: Option<&mut [f32]>| -> PyResult<()> {
-            check(&cancelled)?;
-            let start = band * band_size;
-            let values = fields.band(&[3, 11, 12], start, output.len() / 3);
-            for (i, pixel) in output.chunks_exact_mut(3).enumerate() {
-                if (values[0][i] - 1.).abs() >= 1e-4 {
-                    let exponent = values[0][i].max(1e-3);
-                    pixel.iter_mut().for_each(|v| {
-                        let d = v.clamp(0., 1.);
-                        let da = d.powf(exponent);
-                        *v = da / (da + (1. - d).powf(exponent) + 1e-12);
-                    });
-                }
-            }
+            local_contrast(output, &values[0]);
             apply_curves(output, luts[0].as_deref(), luts[1].as_deref(), luts[2].as_deref(), luts[3].as_deref());
             if let Some(sample) = sample { sample.copy_from_slice(output); }
             apply_color_mixer(output, &mixer);
-            for (i, pixel) in output.chunks_exact_mut(3).enumerate() {
-                let lum = calc_rec709_luma(pixel[0], pixel[1], pixel[2]);
-                let chroma = (pixel[0].max(pixel[1]).max(pixel[2]) - pixel[0].min(pixel[1]).min(pixel[2])).clamp(0., 1.);
-                let amount = values[1][i] / 100.;
-                let t = ((chroma - 0.03) / (0.12 - 0.03)).clamp(0., 1.);
-                let gain = if amount > 0. { 1. + amount * 0.6 * t * t * (3. - 2. * t) * (1. - chroma) } else { 1. + amount * 0.75 };
-                pixel.iter_mut().for_each(|v| *v = lum + (*v - lum) * gain);
-                let lum = calc_rec709_luma(pixel[0], pixel[1], pixel[2]);
-                pixel.iter_mut().for_each(|v| *v = lum + (*v - lum) * values[2][i]);
-            }
+            local_saturation(output, &values[1], &values[2]);
+            if !has_detail { check(&cancelled)?; finish(output); }
+            Ok(())
+        };
+        let initialize = |scratch: &mut FieldScratch, band: usize, output: &mut [f32], sample: Option<&mut [f32]>| -> PyResult<()> {
+            check(&cancelled)?;
+            let start = band * band_size;
+            output.copy_from_slice(&input[start * 3..start * 3 + output.len()]);
+            let extra: &[usize] = if has_tone { &[] } else { &[3, 11, 12] };
+            let values = fields.band(&[0, 1, 2], extra, start, output.len() / 3, scratch);
+            initialize_color(output, &values[..3]);
+            linear_to_srgb_buffer(output, oetf);
+            for stage in &stages { apply_look_stage(output, stage); }
+            if !has_tone { middle(output, &values[3..], sample)?; }
             Ok(())
         };
         if let Some(sample) = &mut captured {
             buffer.par_chunks_mut(band_size * 3).zip(sample.par_chunks_mut(band_size * 3)).enumerate()
-                .try_for_each(|(band, (output, sample))| middle(band, output, Some(sample)))?;
+                .try_for_each_init(FieldScratch::default, |scratch, (band, (output, sample))| initialize(scratch, band, output, Some(sample)))?;
         } else {
             buffer.par_chunks_mut(band_size * 3).enumerate()
-                .try_for_each(|(band, output)| middle(band, output, None))?;
+                .try_for_each_init(FieldScratch::default, |scratch, (band, output)| initialize(scratch, band, output, None))?;
         }
-        details(&mut buffer, &fields, &cancelled)?;
-        buffer.par_chunks_mut(band_size * 3).try_for_each(|band| -> PyResult<()> {
-            check(&cancelled)?;
-            gamut_compress_buffer(band);
-            srgb_to_linear_buffer(band, eotf);
-            Ok(())
-        })?;
+        if has_tone {
+            tone(&mut buffer, &fields, &cancelled)?;
+            let apply_middle = |scratch: &mut FieldScratch, band: usize, output: &mut [f32], sample: Option<&mut [f32]>| {
+                check(&cancelled)?;
+                let values = fields.band(&[3, 11, 12], &[], band * band_size, output.len() / 3, scratch);
+                middle(output, values, sample)
+            };
+            if let Some(sample) = &mut captured {
+                buffer.par_chunks_mut(band_size * 3).zip(sample.par_chunks_mut(band_size * 3)).enumerate()
+                    .try_for_each_init(FieldScratch::default, |scratch, (band, (output, sample))| apply_middle(scratch, band, output, Some(sample)))?;
+            } else {
+                buffer.par_chunks_mut(band_size * 3).enumerate()
+                    .try_for_each_init(FieldScratch::default, |scratch, (band, output)| apply_middle(scratch, band, output, None))?;
+            }
+        }
+        if has_detail {
+            details(&mut buffer, &fields, &cancelled)?;
+            buffer.par_chunks_mut(band_size * 3).try_for_each(|band| -> PyResult<()> {
+                check(&cancelled)?;
+                finish(band);
+                Ok(())
+            })?;
+        }
         check(&cancelled)
     }))??;
     let output = PyArray1::from_vec_bound(py, buffer).reshape([height, width, 3])?;

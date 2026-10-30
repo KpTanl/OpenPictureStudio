@@ -1,6 +1,10 @@
 use rayon::prelude::*;
 use crate::color_space::{calc_rec709_luma, calc_hue_deg, REC709_R, REC709_G, REC709_B};
 use crate::guided_filter::fast_guided_filter;
+use crate::simd::{self, Operator};
+
+#[cfg(target_arch = "x86_64")]
+mod avx2;
 
 const ZONE_PEAK: f32 = 45.0 / 255.0;
 const GAIN_KNEE: f32 = 16.0 / 255.0;
@@ -25,6 +29,14 @@ pub fn white_balance_gains(temp: i32, tint: i32) -> Option<[f32; 3]> {
 }
 
 pub fn white_balance(buffer: &mut [f32], gains: [f32; 3]) {
+    #[cfg(target_arch = "x86_64")]
+    if simd::enabled(Operator::Tone) {
+        return unsafe { avx2::white_balance(buffer, gains) };
+    }
+    white_balance_portable(buffer, gains);
+}
+
+fn white_balance_portable(buffer: &mut [f32], gains: [f32; 3]) {
     buffer.chunks_exact_mut(3).for_each(|pix| {
         pix[0] *= gains[0];
         pix[1] *= gains[1];
@@ -62,6 +74,14 @@ pub fn exposure_scale_v2(ev: f32) -> Option<f32> {
 }
 
 pub fn exposure_v2(buffer: &mut [f32], scale: f32) {
+    #[cfg(target_arch = "x86_64")]
+    if simd::enabled(Operator::Tone) {
+        return unsafe { avx2::exposure_v2(buffer, scale) };
+    }
+    exposure_v2_portable(buffer, scale);
+}
+
+fn exposure_v2_portable(buffer: &mut [f32], scale: f32) {
     if scale <= 1.0 {
         buffer.iter_mut().for_each(|value| *value *= scale);
         return;
@@ -111,6 +131,14 @@ pub fn vibrance(buffer: &mut [f32], amount: i32) {
     if amount == 0 {
         return;
     }
+    #[cfg(target_arch = "x86_64")]
+    if simd::enabled(Operator::Tone) {
+        return unsafe { avx2::vibrance(buffer, amount) };
+    }
+    vibrance_portable(buffer, amount);
+}
+
+fn vibrance_portable(buffer: &mut [f32], amount: i32) {
     let strength = amount as f32 / 100.0;
     let s0: f32 = 0.03;
     let s1: f32 = 0.12;
@@ -148,6 +176,14 @@ pub fn saturation(buffer: &mut [f32], factor: f32) {
     if (factor - 1.0).abs() < 1e-4 {
         return;
     }
+    #[cfg(target_arch = "x86_64")]
+    if simd::enabled(Operator::Tone) {
+        return unsafe { avx2::saturation(buffer, factor) };
+    }
+    saturation_portable(buffer, factor);
+}
+
+fn saturation_portable(buffer: &mut [f32], factor: f32) {
     buffer.chunks_exact_mut(3).for_each(|pix| {
         let r = pix[0];
         let g = pix[1];
@@ -184,6 +220,17 @@ pub fn apply_curves(
         return;
     }
 
+    #[cfg(target_arch = "x86_64")]
+    if simd::enabled(Operator::Curves)
+        && [rgb_lut, r_lut, g_lut, b_lut].into_iter().flatten().all(|lut| lut.len() <= 1 << 24) {
+        return unsafe { avx2::curves(buffer, [rgb_lut, r_lut, g_lut, b_lut]) };
+    }
+    curves_portable(buffer, rgb_lut, r_lut, g_lut, b_lut);
+}
+
+fn curves_portable(buffer: &mut [f32], rgb_lut: Option<&[f32]>, r_lut: Option<&[f32]>,
+                   g_lut: Option<&[f32]>, b_lut: Option<&[f32]>) {
+
     buffer.chunks_exact_mut(3).for_each(|pix| {
         let mut r = pix[0];
         let mut g = pix[1];
@@ -203,6 +250,27 @@ pub fn apply_curves(
         pix[1] = g;
         pix[2] = b;
     });
+}
+
+pub fn local_saturation(buffer: &mut [f32], vibrance: &[f32], saturation: &[f32]) {
+    #[cfg(target_arch = "x86_64")]
+    if simd::enabled(Operator::Local) {
+        return unsafe { avx2::local_saturation(buffer, vibrance, saturation) };
+    }
+    local_saturation_portable(buffer, vibrance, saturation);
+}
+
+fn local_saturation_portable(buffer: &mut [f32], vibrance: &[f32], saturation: &[f32]) {
+    for (i, pixel) in buffer.chunks_exact_mut(3).enumerate() {
+        let lum = calc_rec709_luma(pixel[0], pixel[1], pixel[2]);
+        let chroma = (pixel[0].max(pixel[1]).max(pixel[2]) - pixel[0].min(pixel[1]).min(pixel[2])).clamp(0., 1.);
+        let amount = vibrance[i] / 100.;
+        let t = ((chroma - 0.03) / (0.12 - 0.03)).clamp(0., 1.);
+        let gain = if amount > 0. { 1. + amount * 0.6 * t * t * (3. - 2. * t) * (1. - chroma) } else { 1. + amount * 0.75 };
+        pixel.iter_mut().for_each(|v| *v = lum + (*v - lum) * gain);
+        let lum = calc_rec709_luma(pixel[0], pixel[1], pixel[2]);
+        pixel.iter_mut().for_each(|v| *v = lum + (*v - lum) * saturation[i]);
+    }
 }
 
 /// 一层 OPS 观感，曲线与饱和表由 Python 侧 core/looks.py 传入（33 点 / 12 段）。

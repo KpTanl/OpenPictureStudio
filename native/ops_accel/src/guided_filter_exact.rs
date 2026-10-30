@@ -4,6 +4,7 @@ use rayon::prelude::*;
 use std::time::{Duration, Instant};
 
 use crate::thread_pools;
+use crate::guided_filter::kernels;
 
 const BAND_ROWS: usize = 64;
 
@@ -59,10 +60,7 @@ fn box_filter(source: &[f32], width: usize, height: usize, radius: usize,
         }
         let (previous, remaining) = integral.split_at_mut(y * width);
         let previous = &previous[(y - 1) * width..];
-        for ((out, &prior), &value) in remaining[..width].iter_mut().zip(previous)
-            .zip(&source[y * width..(y + 1) * width]) {
-            *out = prior + value as f64;
-        }
+        kernels::integral_row(previous, &source[y * width..(y + 1) * width], &mut remaining[..width]);
     }
     let band_size = width * BAND_ROWS;
     for band in integral.chunks_mut(band_size) {
@@ -101,7 +99,10 @@ fn product(left: &[f32], right: &[f32], width: usize, cancelled: &mut Cancellati
     for (index, band) in output.chunks_mut(width * BAND_ROWS).enumerate() {
         cancelled.check()?;
         let start = index * width * BAND_ROWS;
-        band.par_iter_mut().enumerate().for_each(|(i, value)| *value = left[start + i] * right[start + i]);
+        band.par_chunks_mut(4096).enumerate().for_each(|(chunk, out)| {
+            let i = start + chunk * 4096;
+            kernels::product(&left[i..i + out.len()], &right[i..i + out.len()], out);
+        });
     }
     Ok(output)
 }
@@ -127,12 +128,10 @@ fn filter(guide: &[f32], source: Option<&[f32]>, width: usize, height: usize, ra
     for (index, (aa, bb)) in a.chunks_mut(band_size).zip(b.chunks_mut(band_size)).enumerate() {
         cancelled.check()?;
         let start = index * band_size;
-        aa.par_iter_mut().zip(bb.par_iter_mut()).enumerate().for_each(|(offset, (a, b))| {
-            let i = start + offset;
-            let var = corr_g[i] - mean_g[i] * mean_g[i];
-            let cov = cgs[i] - mean_g[i] * ms[i];
-            *a = cov / (var + eps);
-            *b = ms[i] - *a * mean_g[i];
+        aa.par_chunks_mut(4096).zip(bb.par_chunks_mut(4096)).enumerate().for_each(|(chunk, (a, b))| {
+            let i = start + chunk * 4096;
+            let end = i + a.len();
+            kernels::coefficients(&mean_g[i..end], &ms[i..end], &corr_g[i..end], &cgs[i..end], eps, a, b);
         });
     }
     let mean_a = box_filter(&a, width, height, radius, cancelled)?;
@@ -141,9 +140,10 @@ fn filter(guide: &[f32], source: Option<&[f32]>, width: usize, height: usize, ra
     for (index, band) in output.chunks_mut(band_size).enumerate() {
         cancelled.check()?;
         let start = index * band_size;
-        band.par_iter_mut().enumerate().for_each(|(offset, value)| {
-            let i = start + offset;
-            *value = mean_a[i] * guide[i] + mean_b[i];
+        band.par_chunks_mut(4096).enumerate().for_each(|(chunk, out)| {
+            let i = start + chunk * 4096;
+            let end = i + out.len();
+            kernels::output(&guide[i..end], &mean_a[i..end], &mean_b[i..end], out);
         });
     }
     cancelled.check()?;

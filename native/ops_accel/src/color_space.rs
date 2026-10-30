@@ -1,4 +1,8 @@
 use std::sync::OnceLock;
+use crate::simd::{self, Operator};
+
+#[cfg(target_arch = "x86_64")]
+mod avx2;
 
 pub const REC709_R: f32 = 0.2126;
 pub const REC709_G: f32 = 0.7152;
@@ -103,18 +107,34 @@ pub fn calc_hue_deg(r: f32, g: f32, b: f32) -> f32 {
 }
 
 pub fn srgb_to_linear_buffer(buffer: &mut [f32], lut: &[f32; LUT_SIZE]) {
+    #[cfg(target_arch = "x86_64")]
+    if simd::enabled(Operator::ColorSpace) {
+        return unsafe { avx2::transfer(buffer, lut, true) };
+    }
     buffer.iter_mut().for_each(|v| {
         *v = srgb_to_linear_val(*v, lut);
     });
 }
 
 pub fn linear_to_srgb_buffer(buffer: &mut [f32], lut: &[f32; LUT_SIZE]) {
+    #[cfg(target_arch = "x86_64")]
+    if simd::enabled(Operator::ColorSpace) {
+        return unsafe { avx2::transfer(buffer, lut, false) };
+    }
     buffer.iter_mut().for_each(|v| {
         *v = linear_to_srgb_val(*v, lut).clamp(0.0, 1.0);
     });
 }
 
 pub fn gamut_compress_buffer(buffer: &mut [f32]) {
+    #[cfg(target_arch = "x86_64")]
+    if simd::enabled(Operator::ColorSpace) {
+        return unsafe { avx2::gamut(buffer) };
+    }
+    gamut_compress_portable(buffer);
+}
+
+fn gamut_compress_portable(buffer: &mut [f32]) {
     buffer.chunks_exact_mut(3).for_each(|pix| {
         let r = pix[0];
         let g = pix[1];

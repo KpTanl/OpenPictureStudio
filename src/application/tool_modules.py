@@ -78,16 +78,10 @@ MODULES = {
 }
 
 MODULE_VERSIONS = {
-    "color_adjust": (ToolModule(LEGACY_COLOR_PARAMETERS[6], execute_color, ImageCapabilities(),
+    "color_adjust": tuple(ToolModule(LEGACY_COLOR_PARAMETERS[version], execute_color, ImageCapabilities(),
         minimum_threads=minimum_render_threads, uses_thread_limit=True, uses_cancellation=True,
-        working_memory=mask_working_memory, tool_version="6", implementation_version="6",
-        sampling_behavior="capture", uses_sampling=True), ToolModule(LEGACY_COLOR_PARAMETERS[5], execute_color, ImageCapabilities(),
-        minimum_threads=minimum_render_threads, uses_thread_limit=True, uses_cancellation=True,
-        working_memory=mask_working_memory, tool_version="5", implementation_version="5",
-        sampling_behavior="capture", uses_sampling=True), ToolModule(LEGACY_COLOR_PARAMETERS[4], execute_color, ImageCapabilities(),
-        minimum_threads=minimum_render_threads, uses_thread_limit=True, uses_cancellation=True,
-        working_memory=mask_working_memory, tool_version="4", implementation_version="4",
-        sampling_behavior="capture", uses_sampling=True),),
+        working_memory=mask_working_memory, tool_version=str(version), implementation_version=str(version),
+        sampling_behavior="capture", uses_sampling=True) for version in (6, 5, 4)),
 }
 
 

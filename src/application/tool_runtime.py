@@ -23,6 +23,8 @@ from .tool_executor_pool import ToolExecutorPool
 from .image_resources import ComputeBudget
 from .runtime_libraries import environment_library
 
+_NEUTRAL_BEAUTY_VERSIONS = ("4-neutral", "1-neutral", "2-neutral", "3-neutral", "5-neutral")
+
 
 class FunctionExecutor:
     def __init__(self, function, *, close=None, analyze=None, regions=None, uses_thread_limit=False,
@@ -592,7 +594,7 @@ class ToolRuntime:
                             and bool(resources) != (reference.implementation_id == "denoise.ai")):
                         issue = ErrorCode.PARAMETER_INVALID.value
                     if (reference.implementation_id in ("beauty.managed", "beauty.detail")
-                            and resources and reference.implementation_version in ("4-neutral", "1-neutral", "2-neutral", "3-neutral", "5-neutral")):
+                            and resources and reference.implementation_version in _NEUTRAL_BEAUTY_VERSIONS):
                         issue = ErrorCode.PARAMETER_INVALID.value
                 else:
                     issue = checked.error.code
@@ -625,7 +627,7 @@ class ToolRuntime:
                 if reference.tool_id in ("ai_enhance", "bg_remove") and reference.implementation_version != base.descriptor.implementation_version:
                     issue = ErrorCode.TOOL_INCOMPATIBLE.value
             if (reference.tool_id == "beauty" and reference.implementation_id != "beauty" and not issue
-                    and reference.implementation_version not in ("4-neutral", "1-neutral", "2-neutral", "3-neutral", "5-neutral")):
+                    and reference.implementation_version not in _NEUTRAL_BEAUTY_VERSIONS):
                 from ..core.tools.beauty_backend import backend_version
                 try:
                     if reference.implementation_id == "beauty.detail":

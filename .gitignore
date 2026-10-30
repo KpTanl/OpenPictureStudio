@@ -122,7 +122,7 @@ local_settings.py
 /.agents/
 /AGENTS.md
 /CLAUDE.md
-/docs/plans/
+/docs/
 
 # Rust build artifacts
 target/

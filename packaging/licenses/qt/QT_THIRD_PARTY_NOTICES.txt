@@ -1,16 +1,8 @@
-Third-party components in Qt 6.11.0
+Third-party components in Qt 6.11.3
 
-The Qt libraries in this program (_internal/PyQt6/Qt6) are the unmodified Qt 6.11.0
-binaries of the PyQt6-Qt6 6.11.0 wheel. The components below are compiled into the
-shipped Qt libraries and plugins: Qt Core, Qt GUI, Qt Widgets, Qt Network, Qt SVG,
-the Windows platform, style and input plugins, and the image format plugins.
-
-Each entry and its license text are copied from the qt_attribution.json files and
-the license files of qtbase, qtsvg and qtimageformats at tag v6.11.0
-(https://code.qt.io/cgit/qt/<module>.git/tree/?h=v6.11.0). Entries that name no
-license file use the SPDX text from the module's LICENSES folder, printed once at
-the end. Not listed: build tools, Qt Test, Qt SQL, Qt D-Bus and code used only on
-Android, macOS, Linux (X11, Wayland), WebAssembly or ARM.
+These entries describe components used by the Qt libraries and plugins distributed with this program.
+Metadata and license texts are from qtbase, qtsvg and qtimageformats v6.11.3
+(https://code.qt.io/cgit/qt/).
 
 ==============================================================================
 D3D12 Memory Allocator f128d39b7a95b4235bd228d231646278dc6c24b2
@@ -501,10 +493,8 @@ Source: qtbase/src/3rdparty/emoji-segmenter
 
 Copyright 2019 Google LLC
 
-License text: qtbase/LICENSES/Apache-2.0.txt (end of this file)
-
 ==============================================================================
-Freetype 2 2.14.2
+Freetype 2 2.15.0
 ==============================================================================
 
 Qt usage: Optionally used in Qt GUI and platform plugins. Configure with -no-freetype, or -system-freetype to avoid.
@@ -513,34 +503,34 @@ License: FTL OR GPL-2.0-only
 Source: qtbase/src/3rdparty/freetype
 
 Copyright (c) 2007-2014 Adobe Systems Incorporated
-Copyright (c) 2004-2025 Albert Chin-A-Young
-Copyright (c) 2018-2025 Armin Hasitzka, David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2004-2026 Albert Chin-A-Young
+Copyright (c) 2018-2026 Armin Hasitzka, David Turner, Robert Wilhelm, and Werner Lemberg
 Copyright (c) 2000 Computing Research Labs, New Mexico State University
-Copyright (c) 1996-2025 David Turner, Robert Wilhelm, Dominik Röttsches, and Werner Lemberg
-Copyright (c) 2004-2025 David Turner, Robert Wilhelm, Werner Lemberg and George Williams
-Copyright (c) 2022-2025 David Turner, Robert Wilhelm, Werner Lemberg, and Moazin Khatti
-Copyright (c) 2008-2025 David Turner, Robert Wilhelm, Werner Lemberg, and suzuki toshiya
-Copyright (c) 2003-2025 David Turner, Robert Wilhelm, and Werner Lemberg
-Copyright (c) 2005-2025 David Turner
-Copyright (c) 2007-2025 Derek Clegg and Michael Toftdal
+Copyright (c) 1996-2026 David Turner, Robert Wilhelm, Dominik Röttsches, and Werner Lemberg
+Copyright (c) 2004-2026 David Turner, Robert Wilhelm, Werner Lemberg and George Williams
+Copyright (c) 2022-2026 David Turner, Robert Wilhelm, Werner Lemberg, and Moazin Khatti
+Copyright (c) 2008-2026 David Turner, Robert Wilhelm, Werner Lemberg, and suzuki toshiya
+Copyright (c) 2003-2026 David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2005-2026 David Turner
+Copyright (c) 2007-2026 Derek Clegg and Michael Toftdal
 Copyright (c) 2007 Dmitry Timoshkov for Codeweavers
 Copyright (c) 2001-2015 Francesco Zappa Nardelli
 Copyright (c) 2005, 2007, 2008, 2013 George Williams
-Copyright (c) 2013-2025 Google, Inc. Google Author(s) Behdad Esfahbod and Stuart Gill
+Copyright (c) 2013-2026 Google, Inc. Google Author(s) Behdad Esfahbod and Stuart Gill
 Copyright (c) 2013-2022 Google, Inc.
 Copyright (c) 2003 Huw D M Davies for Codeweavers
-Copyright (c) 2010-2025 Joel Klinghed
-Copyright (c) 1996-2025 Just van Rossum, David Turner, Robert Wilhelm, and Werner Lemberg
-Copyright (c) 2003-2025 Masatake YAMATO and Redhat K.K.
-Copyright (c) 2004-2025 Masatake YAMATO, Redhat K.K, David Turner, Robert Wilhelm, and Werner Lemberg
-Copyright (c) 2019-2025 Nikhil Ramakrishnan, David Turner, Robert Wilhelm, and Werner Lemberg
-Copyright (c) 2009-2025 Oran Agra and Mickey Gabel
-Copyright (c) 2007-2025 Rahul Bhalerao <rahul.bhalerao@redhat.com>
-Copyright (c) 2002-2025 Roberto Alameda
-Copyright (c) 2015-2025 Werner Lemberg
-Copyright (c) 2004-2025 suzuki toshiya, Masatake YAMATO, Red Hat K.K., David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2010-2026 Joel Klinghed
+Copyright (c) 1996-2026 Just van Rossum, David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2003-2026 Masatake YAMATO and Redhat K.K.
+Copyright (c) 2004-2026 Masatake YAMATO, Redhat K.K, David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2019-2026 Nikhil Ramakrishnan, David Turner, Robert Wilhelm, and Werner Lemberg
+Copyright (c) 2009-2026 Oran Agra and Mickey Gabel
+Copyright (c) 2007-2026 Rahul Bhalerao <rahul.bhalerao@redhat.com>
+Copyright (c) 2002-2026 Roberto Alameda
+Copyright (c) 2015-2026 Werner Lemberg
+Copyright (c) 2004-2026 suzuki toshiya, Masatake YAMATO, Red Hat K.K., David Turner, Robert Wilhelm, and Werner Lemberg
 Copyright (c) 2019 nyorain
-Copyright (c) 2022-2025 David Turner, Robert Wilhelm, Werner Lemberg, George Williams, and Dominik Röttsches
+Copyright (c) 2022-2026 David Turner, Robert Wilhelm, Werner Lemberg, George Williams, and Dominik Röttsches
 Copyright (C) 2009, 2023  Red Hat, Inc.
 
 --- qtbase/src/3rdparty/freetype/LICENSE.txt ---
@@ -1255,7 +1245,7 @@ used in advertising or otherwise to promote the sale, use or other dealings
 in this Software without prior written authorization from The Open Group.
 
 ==============================================================================
-HarfBuzz-NG 13.0.0
+HarfBuzz-NG 14.6.0
 ==============================================================================
 
 Qt usage: Optionally used in Qt GUI. Configure with -system-harfbuzz to force the use of the system library, or -qt-harfbuzz to link statically to the library that is bundled with your Qt version.
@@ -1351,13 +1341,30 @@ shall not be misrepresented as the original profile.
 (original source location: http://www.color.org/srgbprofiles.xalter)
 
 ==============================================================================
-LibJPEG-turbo 3.1.3
+LibJPEG-turbo 3.2.0
 ==============================================================================
 
 Qt usage: Used in the qjpeg image plugin. Configure with -system-libjpeg or -no-libjpeg to avoid.
 Homepage: http://libjpeg-turbo.virtualgl.org/
 License: IJG AND BSD-3-Clause
 Source: qtbase/src/3rdparty/libjpeg
+
+Copyright (C) 2009-2026 D. R. Commander
+Copyright (C) 1991-1998 Thomas G. Lane
+Copyright (C) 2009 Pierre Ossman for Cendio AB
+Copyright (C) 1999-2006 MIYASAKA Masaru
+Copyright (C) 1999 Ken Murchison
+Copyright (C) 2015-2016, 2018, 2022 Matthieu Darbois
+Copyright (C) 2018 Matthias Räncker
+Copyright (C) 2019-2020 Arm Limited
+Copyright (C) 2022 Felix Hanau
+Copyright (C) 1997-1998 Thomas G. Lane, Todd Newman
+Copyright (C) 2021 Alex Richardson
+Copyright (C) 2015, 2020 Google, Inc.
+Copyright (C) 2013 Linaro Limited
+Copyright (C) 2014 Olle Liljenzin
+Copyright (C) 1991-2020 Thomas G. Lane, Guido Vollbeding
+
 
 --- qtbase/src/3rdparty/libjpeg/LICENSE ---
 
@@ -1371,18 +1378,46 @@ libjpeg-turbo is covered by two compatible BSD-style open source licenses:
 
   This license applies to the libjpeg API library and associated programs,
   including any code inherited from libjpeg and any modifications to that
-  code.  Note that the libjpeg-turbo SIMD source code bears the
-  [zlib License](https://opensource.org/licenses/Zlib), but in the context of
-  the overall libjpeg API library, the terms of the zlib License are subsumed
-  by the terms of the IJG License.
+  code.
 
 - The Modified (3-clause) BSD License, which is listed below
 
-  This license applies to the TurboJPEG API library and associated programs, as
-  well as the build system.  Note that the TurboJPEG API library wraps the
-  libjpeg API library, so in the context of the overall TurboJPEG API library,
-  both the terms of the IJG License and the terms of the Modified (3-clause)
-  BSD License apply.
+  This license applies to the TurboJPEG API library and associated programs,
+  [libspng](https://libspng.org) (which is used by cjpeg and djpeg), and the
+  build/test system.
+
+  * The TurboJPEG API library wraps the libjpeg API library, so in the context
+    of the overall TurboJPEG API library, both the terms of the IJG License and
+    the terms of the Modified (3-clause) BSD License apply.
+  * cjpeg and djpeg use libspng, so in the context of those programs, both the
+    terms of the IJG License and the terms of the Modified (3-clause) BSD
+    License apply.
+
+
+Component Licenses
+==================
+
+Some of libjpeg-turbo's modules and internal dependencies are covered by less
+restrictive licenses, but in the context of libjpeg-turbo as a whole, the terms
+of the less restrictive licenses are subsumed by either the IJG License or the
+Modified BSD License.  (In other words, the terms of the less restrictive
+licenses are satisfied if the terms of the IJG and Modified BSD Licenses are
+satisfied.)
+
+- The libjpeg-turbo SIMD source code and zlib are covered by the
+  [zlib License](https://spdx.org/licenses/Zlib.html), which is subsumed by the
+  IJG License in the context of the cjpeg and djpeg programs and the libjpeg
+  API library.
+
+- Some of the libspng source code is covered by the
+  [PNG Reference Library License v2](https://spdx.org/licenses/libpng-2.0.html),
+  which is subsumed by the IJG License in the context of the cjpeg and djpeg
+  programs and the TurboJPEG API library.
+
+- Most of the libspng source code is covered by the
+  [Simplified (2-clause) BSD License](https://spdx.org/licenses/BSD-2-Clause.html),
+  which is subsumed by the Modified BSD License in the context of the cjpeg and
+  djpeg programs and the TurboJPEG API library.
 
 
 Complying with the libjpeg-turbo Licenses
@@ -1401,7 +1436,6 @@ intended solely for clarification.
         **Origin**
         - Clause 1 of the IJG License
         - Clause 1 of the Modified BSD License
-        - Clauses 1 and 3 of the zlib License
 
     2.  You must add your own copyright notice to the header of each source
         file you modified, so others can tell that you modified that file.  (If
@@ -1410,7 +1444,6 @@ intended solely for clarification.
 
         **Origin**
         - Clause 1 of the IJG License
-        - Clause 2 of the zlib License
 
     3.  You must include the IJG README file, and you must not alter any of the
         copyright or license text in that file.
@@ -1430,9 +1463,9 @@ intended solely for clarification.
         **Origin**
         - Clause 2 of the IJG license
 
-    2.  If your binary distribution includes or uses the TurboJPEG API, then
-        your product documentation must include the text of the Modified BSD
-        License (see below.)
+    2.  If your binary distribution includes or uses the TurboJPEG API or
+        associated programs, cjpeg, or djpeg, then your product documentation
+        must include the text of the Modified BSD License (see below.)
 
         **Origin**
         - Clause 2 of the Modified BSD License
@@ -1444,21 +1477,20 @@ intended solely for clarification.
     - IJG License
     - Clause 3 of the Modified BSD License
 
-4.  The IJG and The libjpeg-turbo Project do not warrant libjpeg-turbo to be
-    free of defects, nor do we accept any liability for undesirable
-    consequences resulting from your use of the software.
+4.  The authors and distributors do not warrant libjpeg-turbo to be free of
+    defects, nor do we accept any liability for undesirable consequences
+    resulting from your use of the software.
 
     **Origin**
     - IJG License
     - Modified BSD License
-    - zlib License
 
 
 The Modified (3-clause) BSD License
 ===================================
 
-Copyright (C)2009-2025 D. R. Commander.  All Rights Reserved.<br>
-Copyright (C)2015 Viktor Szathmáry.  All Rights Reserved.
+Copyright (C) 2009-2026 D. R. Commander<br>
+Copyright (C) 2018-2023 Randy <randy408@protonmail.com>
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
@@ -1483,19 +1515,6 @@ INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
-
-
-Why Two Licenses?
-=================
-
-The zlib License could have been used instead of the Modified (3-clause) BSD
-License, and since the IJG License effectively subsumes the distribution
-conditions of the zlib License, this would have effectively placed
-libjpeg-turbo binary distributions under the IJG License.  However, the IJG
-License specifically refers to the Independent JPEG Group and does not extend
-attribution and endorsement protections to other entities.  Thus, it was
-desirable to choose a license that granted us the same protections for new code
-that were granted to the IJG for code derived from their software.
 
 --- qtbase/src/3rdparty/libjpeg/ijg-license.txt ---
 
@@ -1535,7 +1554,7 @@ commercial products, provided that all warranty or liability claims are
 assumed by the product vendor.
 
 ==============================================================================
-LibPNG 1.6.55
+LibPNG 1.6.59
 ==============================================================================
 
 Qt usage: Used in the qpng image plugin. Configure with -system-libpng or -no-libpng to avoid.
@@ -1704,10 +1723,11 @@ this source code in a product, acknowledgment is not required but would
 be appreciated.
 
 ==============================================================================
-The Public Suffix List 2026-01-16_13-11-47_UTC
+The Public Suffix List 2026-05-14_08-35-31_UTC
 ==============================================================================
 
-Qt usage: Used in Qt Network to avoid setting "supercookies" in the cookie jar supported by Qt (by the QNetworkCookieJar class).
+Qt usage: Used in Qt Network to avoid setting "supercookies" in the cookie jar
+supported by Qt (by the QNetworkCookieJar class).
 Homepage: http://publicsuffix.org/
 License: MPL-2.0
 Source: qtbase/src/3rdparty/libpsl
@@ -2095,7 +2115,8 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 libpsl - C library to handle the Public Suffix List 664f3dc85259ec65e30248a61fa1c45b7b0e4c3f
 ==============================================================================
 
-Qt usage: Used to compress the embedded copy of publicsuffix list and to lookup entries in it.
+Qt usage: Used to compress the embedded copy of publicsuffix list and
+to lookup entries in it.
 Homepage: https://github.com/rockdaboot/libpsl
 License: BSD-3-Clause
 Source: qtbase/src/3rdparty/libpsl
@@ -2140,15 +2161,14 @@ MD4
 ==============================================================================
 
 Qt usage: Used in Qt Core (QCryptographicHash).
+Homepage:
 License: CC0-1.0
 Source: qtbase/src/3rdparty/md4
 
 Written by Alexander Peslyak - better known as Solar Designer <solar@openwall.com> - in 2001, and placed in the public domain. There's absolutely no warranty.
 
-License text: qtbase/LICENSES/CC0-1.0.txt (end of this file)
-
 ==============================================================================
-MD4C 0.5.2
+MD4C 0.6.0
 ==============================================================================
 
 Qt usage: Optionally used in QTextDocument if configured with textmarkdownreader.
@@ -2156,14 +2176,14 @@ Homepage: https://github.com/mity/md4c
 License: MIT
 Source: qtbase/src/3rdparty/md4c
 
-Copyright © 2016-2024 Martin Mitáš
+Copyright © 2016-2026 Martin Mitáš
 
 --- qtbase/src/3rdparty/md4c/LICENSE.md ---
 
 
 # The MIT License (MIT)
 
-Copyright © 2016-2024 Martin Mitáš
+Copyright © 2016-2026 Martin Mitáš
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the “Software”),
@@ -2188,15 +2208,14 @@ MD5
 ==============================================================================
 
 Qt usage: Used in Qt Core (QCryptographicHash).
+Homepage:
 License: CC0-1.0
 Source: qtbase/src/3rdparty/md5
 
 Written by Colin Plumb in 1993, no copyright is claimed. Ian Jackson <ian@chiark.greenend.org.uk>.
 
-License text: qtbase/LICENSES/CC0-1.0.txt (end of this file)
-
 ==============================================================================
-PCRE2 10.47
+PCRE2 10.49
 ==============================================================================
 
 Qt usage: Used in Qt Core (QRegularExpression).
@@ -2316,7 +2335,7 @@ includes package A, the condition is not imposed on package B unless it uses
 PCRE2 independently.
 
 ==============================================================================
-PCRE2 - Stack-less Just-In-Time Compiler 10.47
+PCRE2 - Stack-less Just-In-Time Compiler 10.49
 ==============================================================================
 
 Qt usage: Used in Qt Core (QRegularExpression).
@@ -2359,6 +2378,7 @@ Secure Hash Algorithms SHA-384 and SHA-512
 ==============================================================================
 
 Qt usage: Used in Qt Core (QCryptographicHash and QMessageAuthenticationCode)
+Homepage:
 License: BSD-3-Clause
 Source: qtbase/src/3rdparty/rfc6234
 
@@ -2413,13 +2433,12 @@ Source: qtbase/src/3rdparty/sha1
 Copyright (C) Dominik Reichl <dominik.reichl@t-online.de>
 Copyright (C) 2016 The Qt Company Ltd
 
-License text: qtbase/LICENSES/LicenseRef-SHA1-Public-Domain.txt (end of this file)
-
 ==============================================================================
 Secure Hash Algorithm SHA-3 - brg_endian 1.0.0
 ==============================================================================
 
 Qt usage: Used in Qt Core (QCryptographicHash).
+Homepage:
 License: BSD-2-Clause
 Source: qtbase/src/3rdparty/sha3
 
@@ -2447,6 +2466,7 @@ Secure Hash Algorithm SHA-3 - Keccak 3.2
 ==============================================================================
 
 Qt usage: Used in Qt Core (QCryptographicHash).
+Homepage:
 License: CC0-1.0
 Source: qtbase/src/3rdparty/sha3
 
@@ -2569,8 +2589,6 @@ Copyright (C) 2012-2014 Jean-Philippe Aumasson
 Copyright (C) 2012-2014 Daniel J. Bernstein <djb@cr.yp.to>
 Copyright (C) 2016 Intel Corporation
 
-License text: qtbase/LICENSES/CC0-1.0.txt (end of this file)
-
 ==============================================================================
 TinyCBOR 7.0
 ==============================================================================
@@ -2611,12 +2629,11 @@ Wintab API
 ==============================================================================
 
 Qt usage: Used in the Qt platform plugin for Windows. Configure with -no-feature-tabletevent to avoid.
+Homepage:
 License: LicenseRef-Lcs-Telegraphics
 Source: qtbase/src/3rdparty/wintab
 
 Copyright 1991-1998 by LCS/Telegraphics.
-
-License text: qtbase/LICENSES/LicenseRef-Lcs-Telegraphics.txt (end of this file)
 
 ==============================================================================
 Data Compression Library (zlib) 1.3.2
@@ -2670,10 +2687,8 @@ Source: qtbase/src/corelib/global
 
 To the extent possible under law, Sy Brand has waived all copyright and related or neighboring rights to the expected library. This work is published from: United Kingdom.
 
-License text: qtbase/LICENSES/CC0-1.0.txt (end of this file)
-
 ==============================================================================
-Apache Tika MimeType Definitions 408c26e1e03e018a623e732dff6fb047a2fb8e19
+Apache Tika MimeType Definitions c29724782854bb5a319f4a1940d0828a58ace3f9
 ==============================================================================
 
 Qt usage: Qt Core uses a copy of the Apache Tika MimeType Definitions if shared-mime-info isn't installed on the system.
@@ -2682,8 +2697,6 @@ License: Apache-2.0
 Source: qtbase/src/corelib/mimetypes/3rdparty
 
 Copyright 2026 The Apache Software Foundation
-
-License text: qtbase/LICENSES/Apache-2.0.txt (end of this file)
 
 ==============================================================================
 Unicode Character Database (UCD) 36
@@ -2696,10 +2709,8 @@ Source: qtbase/src/corelib/text
 
 Copyright (C) 1991-2025 Unicode, Inc.
 
-License text: qtbase/LICENSES/Unicode-3.0.txt (end of this file)
-
 ==============================================================================
-Unicode Common Locale Data Repository (CLDR) v48.1
+Unicode Common Locale Data Repository (CLDR) v48.2
 ==============================================================================
 
 Qt usage: Used in Qt Core (QTimeZone, QLocale).
@@ -2708,8 +2719,6 @@ License: Unicode-3.0
 Source: qtbase/src/corelib/text
 
 Copyright (C) 2004-2025 Unicode, Inc.
-
-License text: qtbase/LICENSES/Unicode-3.0.txt (end of this file)
 
 ==============================================================================
 OpenGL Headers Revision 27684
@@ -2790,7 +2799,7 @@ Source: qtbase/src/gui/painting
 
 Copyright 2000-2016 by David Turner, Robert Wilhelm, and Werner Lemberg.
 
---- qtbase/src/3rdparty/freetype/LICENSE.txt ---
+--- qtbase/src/gui/painting/../../3rdparty/freetype/LICENSE.txt ---
 
 FREETYPE LICENSES
 -----------------
@@ -3354,6 +3363,7 @@ Smooth Scaling Algorithm
 ==============================================================================
 
 Qt usage: Used in Qt Gui (QImage::transformed() functions).
+Homepage:
 License: BSD-2-Clause AND Imlib2
 Source: qtbase/src/gui/painting
 
@@ -3521,7 +3531,7 @@ SOFTWARE.
 Adobe Glyph List For New Fonts 1.7
 ==============================================================================
 
-Qt usage: Used by PDF generator to make it easier for reader applications to resolve the original contents of rendered text.
+Qt usage: Used by PDF generator to make it easier for reader applications to resolve  the original contents of rendered text.
 Homepage: https://github.com/adobe-type-tools/agl-aglfn
 License: BSD-3-Clause
 Source: qtbase/src/gui/text
@@ -3694,6 +3704,7 @@ XSVG
 ==============================================================================
 
 Qt usage: Used in the Qt SVG library.
+Homepage:
 License: HPND-sell-variant
 Source: qtsvg/src/svg
 
@@ -3725,7 +3736,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 
 ==============================================================================
-TIFF Software Distribution (libtiff) 4.7.1
+TIFF Software Distribution (libtiff) 4.7.2
 ==============================================================================
 
 Qt usage: Used in the qtiff image plugin if no system libtiff is found.
@@ -3741,7 +3752,7 @@ Copyright (c) 1991-1997 Silicon Graphics, Inc.
 Copyright (c) 1988-1997 Sam Leffler
 Copyright (c) 1991-1997 Silicon Graphics, Inc.
 
-Permission to use, copy, modify, distribute, and sell this software and 
+Permission to use, copy, modify, distribute, and sell this software and
 its documentation for any purpose is hereby granted without fee, provided
 that (i) the above copyright notices and this permission notice appear in
 all copies of the software and related documentation, and (ii) the names of
@@ -3749,15 +3760,15 @@ Sam Leffler and Silicon Graphics may not be used in any advertising or
 publicity relating to the software without the specific, prior written
 permission of Sam Leffler and Silicon Graphics.
 
-THE SOFTWARE IS PROVIDED "AS-IS" AND WITHOUT WARRANTY OF ANY KIND, 
-EXPRESS, IMPLIED OR OTHERWISE, INCLUDING WITHOUT LIMITATION, ANY 
-WARRANTY OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.  
+THE SOFTWARE IS PROVIDED "AS-IS" AND WITHOUT WARRANTY OF ANY KIND,
+EXPRESS, IMPLIED OR OTHERWISE, INCLUDING WITHOUT LIMITATION, ANY
+WARRANTY OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 
 IN NO EVENT SHALL SAM LEFFLER OR SILICON GRAPHICS BE LIABLE FOR
 ANY SPECIAL, INCIDENTAL, INDIRECT OR CONSEQUENTIAL DAMAGES OF ANY KIND,
 OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
-WHETHER OR NOT ADVISED OF THE POSSIBILITY OF DAMAGE, AND ON ANY THEORY OF 
-LIABILITY, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE 
+WHETHER OR NOT ADVISED OF THE POSSIBILITY OF DAMAGE, AND ON ANY THEORY OF
+LIABILITY, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
 OF THIS SOFTWARE.
 
 ==============================================================================
@@ -3804,10 +3815,8 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-SPDX license texts referenced above
+Apache-2.0
 ==============================================================================
-
---- qtbase/LICENSES/Apache-2.0.txt ---
 
 Apache License
 Version 2.0, January 2004
@@ -3871,7 +3880,9 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
---- qtbase/LICENSES/CC0-1.0.txt ---
+==============================================================================
+CC0-1.0
+==============================================================================
 
 Creative Commons Legal Code
 
@@ -3995,18 +4006,24 @@ express Statement of Purpose.
     party to this document and has no duty or obligation with respect to
     this CC0 or use of the Work.
 
---- qtbase/LICENSES/LicenseRef-Lcs-Telegraphics.txt ---
+==============================================================================
+LicenseRef-Lcs-Telegraphics
+==============================================================================
 
 The text and information contained in this file may be freely used,
 copied, or distributed without compensation or licensing restrictions.
 
---- qtbase/LICENSES/LicenseRef-SHA1-Public-Domain.txt ---
+==============================================================================
+LicenseRef-SHA1-Public-Domain
+==============================================================================
 
 100% free public domain implementation of the SHA-1 algorithm
 by Dominik Reichl <dominik.reichl@t-online.de>
 Web: http://www.dominik-reichl.de/
 
---- qtbase/LICENSES/Unicode-3.0.txt ---
+==============================================================================
+Unicode-3.0
+==============================================================================
 
 UNICODE LICENSE V3
 

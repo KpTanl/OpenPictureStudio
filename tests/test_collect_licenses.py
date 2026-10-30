@@ -23,14 +23,14 @@ collect_licenses = _load()
 
 def _bundle(tmp_path, extra_datas=()):
     """A minimal program folder and bundle list made of real files from this environment."""
-    qtcore = Path(metadata.distribution("PyQt6").locate_file("PyQt6/QtCore.pyd"))
+    qtcore = Path(metadata.distribution("PySide6_Essentials").locate_file("PySide6/QtCore.pyd"))
     icons = ROOT / "resources" / "icons" / "ui" / "LICENSE.txt"
     datas = [("resources/icons/ui/LICENSE.txt", str(icons), "DATA"), *extra_datas]
     toc = {
         "pure": [["src.utils.app_info", str(ROOT / "src" / "utils" / "app_info.py"), "PYMODULE"],
                  ["json", str(Path(sys.base_prefix) / "Lib" / "json" / "__init__.py"), "PYMODULE"]],
         "scripts": [],
-        "binaries": [["PyQt6/QtCore.pyd", str(qtcore), "EXTENSION"]],
+        "binaries": [["PySide6/QtCore.pyd", str(qtcore), "EXTENSION"]],
         "datas": [list(entry) for entry in datas],
     }
     program = tmp_path / "program"
@@ -62,12 +62,12 @@ def test_writes_notices_source_and_components(tmp_path):
     collector.write()
 
     notices = (program / "THIRD_PARTY_NOTICES.txt").read_text(encoding="utf-8")
-    assert "PyQt6 | " in notices and "CPython | " in notices and "Tabler Icons | " in notices
+    assert "PySide6_Essentials | " in notices and "CPython | " in notices and "Tabler Icons | " in notices
     source = (program / "SOURCE.txt").read_text(encoding="utf-8")
-    assert SHA in source and "pyqt6-" in source.lower()
+    assert SHA in source and "pyside-setup-everywhere-src-6.11.3" in source.lower()
     assert "GNU GENERAL PUBLIC LICENSE" in (program / "GPL-3.0.txt").read_text(encoding="utf-8")[:400].upper()
     components = {c["name"]: c for c in json.loads((program / "components.json").read_text(encoding="utf-8"))["components"]}
-    assert components["PyQt6"]["files"][0]["path"] == "_internal/PyQt6/QtCore.pyd"
+    assert components["PySide6_Essentials"]["files"][0]["path"] == "_internal/PySide6/QtCore.pyd"
     assert components["OpenPictureStudio"]["python_modules"] == 1
     written = (program / "components.json").read_text(encoding="utf-8")
     for local in (ROOT, Path(sys.base_prefix), tmp_path):
@@ -126,7 +126,25 @@ def test_microsoft_runtime_names(name, expected):
 def test_copyleft_component_without_source_entry_stops_the_build(tmp_path):
     program, toc = _bundle(tmp_path)
     collector = collect_licenses.Collector(program, toc, "0.0.1", SHA)
-    del collector.manifest["sources"]["PyQt6"]
+    del collector.manifest["sources"]["PySide6_Essentials"]
     collector.attribute()
     collector.check()
-    assert any(p.startswith("PyQt6 ") and "no corresponding-source entry" in p for p in collector.problems)
+    assert any(p.startswith("PySide6_Essentials ") and "no corresponding-source entry" in p for p in collector.problems)
+
+
+def test_shiboken_license_and_replaceable_sources_are_included(tmp_path):
+    shiboken = metadata.distribution("shiboken6")
+    native = Path(shiboken.locate_file("shiboken6/Shiboken.pyd"))
+    program, toc = _bundle(tmp_path, [("shiboken6/Shiboken.pyd", str(native), "DATA")])
+    collector = _collector(program, toc)
+    assert collector.problems == []
+    collector.write()
+    components = {c["name"]: c for c in json.loads((program / "components.json").read_text(encoding="utf-8"))["components"]}
+    assert components["shiboken6"]["files"][0]["path"] == "_internal/shiboken6/Shiboken.pyd"
+    licenses = program / components["shiboken6"]["license_texts"]
+    assert (licenses / "LGPL-3.0.txt").is_file()
+    assert (licenses / "PYTHON-3.7-LICENSE.txt").is_file()
+    assert "GNU LESSER GENERAL PUBLIC LICENSE" in (program / "LGPL-3.0.txt").read_text(encoding="utf-8")[:400].upper()
+    source = (program / "SOURCE.txt").read_text(encoding="utf-8")
+    assert "shiboken6 6.11.3" in source and "qt-everywhere-src-6.11.3" in source
+    assert "Compatible replacement builds" in source

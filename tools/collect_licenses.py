@@ -3,7 +3,7 @@
 Runs after PyInstaller and before the installation manifest. Every delivered file
 is attributed to a component using build/bundle_toc.json (written by the spec)
 and the build environment's package records. The script copies license texts to
-``licenses/`` and writes LICENSE, GPL-3.0.txt, THIRD_PARTY_NOTICES.txt,
+``licenses/`` and writes LICENSE, GPL-3.0.txt, LGPL-3.0.txt, THIRD_PARTY_NOTICES.txt,
 SOURCE.txt and components.json at the program root.
 
 Any delivered file without an owner, any component without license text, and any
@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SUPPLEMENTS = ROOT / "packaging" / "licenses"
 REPOSITORY = "https://github.com/KpTanl/OpenPictureStudio"
 CONTENTS = "_internal"
-OUTPUTS = ("LICENSE", "GPL-3.0.txt", "THIRD_PARTY_NOTICES.txt", "SOURCE.txt", "components.json", "licenses")
+OUTPUTS = ("LICENSE", "GPL-3.0.txt", "LGPL-3.0.txt", "THIRD_PARTY_NOTICES.txt", "SOURCE.txt", "components.json", "licenses")
 NOTICE_NAME = re.compile(r"^(licen[cs]e|copying|notice|authors|copyright|thirdpartynotices|third_party_notices|patents)",
                          re.I)
 COPYLEFT = re.compile(r"\b(A?L?GPL|GNU|MPL|Mozilla|CDDL|EUPL)", re.I)
@@ -317,13 +317,6 @@ class Collector:
                 elif entry is not None and entry["version"] != component.version:
                     self.problems.append(f"{component.name}: source entry is for {entry['version']}, "
                                          f"bundled {component.version}")
-        gpl = self.components.get("python:PyQt6")
-        head = ""
-        if gpl is not None and "LICENSE" in gpl.notices:
-            head = gpl.notices["LICENSE"].read_text(encoding="utf-8", errors="replace")[:400]
-        if "GNU GENERAL PUBLIC LICENSE" not in head.upper() or "Version 3" not in head:
-            self.problems.append("GPL-3.0 text not found in the PyQt6 distribution")
-
     # -- output -------------------------------------------------------------------------------
     def write(self):
         for name in OUTPUTS:
@@ -340,7 +333,8 @@ class Collector:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, target)
         shutil.copyfile(ROOT / "LICENSE", self.program / "LICENSE")
-        shutil.copyfile(self.components["python:PyQt6"].notices["LICENSE"], self.program / "GPL-3.0.txt")
+        for name in ("GPL-3.0.txt", "LGPL-3.0.txt"):
+            shutil.copyfile(SUPPLEMENTS / "pyside" / name, self.program / name)
         self._write_notices(ordered)
         self._write_source()
         self._write_components(ordered)
@@ -350,13 +344,12 @@ class Collector:
             f"OpenPictureStudio {self.version} - third-party components",
             "",
             "The original code of OpenPictureStudio is licensed under the MIT License (LICENSE).",
-            "This program includes PyQt6, which is licensed under the GNU GPL v3, so the program",
-            "as distributed here is licensed as a whole under the GNU GPL v3 (GPL-3.0.txt).",
-            "SOURCE.txt describes how to obtain the corresponding source. The license texts of",
-            "each component are in the licenses folder.",
+            "PySide6, Shiboken and Qt are distributed under their applicable open-source licenses.",
+            "SOURCE.txt describes corresponding source and how to replace the libraries. The license",
+            "texts of each component are in the licenses folder.",
             "",
-            "OpenPictureStudio 原创代码采用 MIT 许可（LICENSE）。本程序包含 GPLv3 的 PyQt6，",
-            "整体按 GPLv3 分发（GPL-3.0.txt）；对应源码的获取方式见 SOURCE.txt，",
+            "OpenPictureStudio 原创代码采用 MIT 许可（LICENSE）。PySide6、Shiboken 和 Qt",
+            "按各自适用的开源许可证分发；源码和替换说明见 SOURCE.txt，",
             "各组件的许可文本在 licenses 文件夹。",
             "",
             "Name | Version | License | Homepage | License texts",
@@ -402,7 +395,7 @@ class Collector:
             f"  Archive:    {archive}",
             "  Build:      README.md (building the installer), requirements-build.lock.txt, build.ps1,",
             "              OpenPictureStudio.spec, packaging/OpenPictureStudio.iss and native/ops_accel.",
-            "  License:    original code MIT (LICENSE); the program as distributed GPL-3.0 (GPL-3.0.txt).",
+            "  License:    original code MIT (LICENSE); third-party licenses are listed separately.",
             "",
             "Build tools",
         ]
@@ -428,7 +421,12 @@ class Collector:
                     lines.append(f"    {checks}")
             lines.append("")
         lines += [
-            "The source is offered from the network locations above (GNU GPL v3, section 6(d)).",
+            "PySide6 and shiboken6 Python modules, extension modules, and Qt shared libraries are",
+            "separate files in _internal. Compatible replacement builds may be installed in the same",
+            "locations. Use matching Python, PySide6, Shiboken and Qt versions and architectures.",
+            "The application can be run with those replacement files in the program directory.",
+            "",
+            "The source is offered from the network locations above.",
             f"If a location is no longer available, please report it at {REPOSITORY}/issues.",
         ]
         (self.program / "SOURCE.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")

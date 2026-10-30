@@ -25,16 +25,6 @@
         "_sounddevice_data/portaudio-binaries/README.md"
       ]
     },
-    "python:PyQt6-Qt6": {
-      "version": "6.11.0",
-      "files": [
-        {
-          "path": "qt/QT_THIRD_PARTY_NOTICES.txt",
-          "origin": "assembled from the qt_attribution.json files and the license files they name in qtbase, qtsvg and qtimageformats at tag v6.11.0 (https://code.qt.io/cgit/qt/), each checked against the git blob id of the tag; see the file header for the selection",
-          "sha256": "967e33471fe3e11661e18ddd0f5684cbaebc371c4302bb6ef5b53a071f0e9489"
-        }
-      ]
-    },
     "python:mediapipe": {
       "version": "0.10.35",
       "files": [
@@ -44,33 +34,64 @@
           "sha256": "ce6e2b04c7c7894a29de2edea810432ba28cf71ac4c7b624e9d87314f18b862f"
         }
       ]
+    },
+    "python:PySide6_Essentials": {
+      "version": "6.11.3",
+      "files": [
+        {
+          "path": "pyside/GPL-3.0.txt",
+          "origin": "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.11.3-src/pyside-setup-everywhere-src-6.11.3.tar.xz",
+          "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+        },
+        {
+          "path": "pyside/LGPL-3.0.txt",
+          "origin": "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.11.3-src/pyside-setup-everywhere-src-6.11.3.tar.xz",
+          "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+        },
+        {
+          "path": "pyside/GPL-2.0.txt",
+          "origin": "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.11.3-src/pyside-setup-everywhere-src-6.11.3.tar.xz",
+          "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+        },
+        {
+          "path": "qt/QT_THIRD_PARTY_NOTICES.txt",
+          "origin": "Qt qtbase, qtsvg and qtimageformats v6.11.3 qt_attribution.json and license files; https://code.qt.io/cgit/qt/",
+          "sha256": "7dc18316f344bb3b5a42ee5040234d20ebab917c507482c096197c0ad477af2f"
+        }
+      ]
+    },
+    "python:shiboken6": {
+      "version": "6.11.3",
+      "files": [
+        {
+          "path": "pyside/GPL-3.0.txt",
+          "origin": "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.11.3-src/pyside-setup-everywhere-src-6.11.3.tar.xz",
+          "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+        },
+        {
+          "path": "pyside/LGPL-3.0.txt",
+          "origin": "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.11.3-src/pyside-setup-everywhere-src-6.11.3.tar.xz",
+          "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+        },
+        {
+          "path": "pyside/GPL-2.0.txt",
+          "origin": "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.11.3-src/pyside-setup-everywhere-src-6.11.3.tar.xz",
+          "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+        },
+        {
+          "path": "pyside/SHIBOKEN-COPYING.txt",
+          "origin": "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.11.3-src/pyside-setup-everywhere-src-6.11.3.tar.xz",
+          "sha256": "902847d35abac99283b01c6bdd6f358d361de6bb1473c931756af8d68b890b2b"
+        },
+        {
+          "path": "pyside/PYTHON-3.7-LICENSE.txt",
+          "origin": "https://github.com/python/cpython/blob/v3.7.0/LICENSE; https://doc.qt.io/qtforpython-6.11/licenses.html",
+          "sha256": "b9a6d9320b8f2693e8d41e496ce56caadacaddcca9be2a64a61749278f425cf2"
+        }
+      ]
     }
   },
   "sources": {
-    "PyQt6": {
-      "version": "6.11.0",
-      "license": "GPL-3.0-only",
-      "files": [
-        {
-          "url": "https://files.pythonhosted.org/packages/8b/47/b25c13eca5bebc6505394d0223e46d7ebf0c57dcac2ed908d7d19b18ab6b/pyqt6-6.11.0.tar.gz",
-          "sha256": "45dd60aa69976de1918b5ced6b4e7b6a25abd2a919ecef5fd5826ecc76718889"
-        }
-      ]
-    },
-    "PyQt6-Qt6": {
-      "version": "6.11.0",
-      "license": "LGPL-3.0-only (Qt)",
-      "note": "Qt 6.11.0 libraries shipped in the PyQt6-Qt6 wheel. Older releases move to https://download.qt.io/archive/qt/6.11/6.11.0/single/",
-      "files": [
-        {
-          "url": "https://download.qt.io/official_releases/qt/6.11/6.11.0/single/qt-everywhere-src-6.11.0.tar.xz",
-          "md5": "a93e9f424a9d11ee8d67bf8fb1af4772"
-        },
-        {
-          "url": "https://download.qt.io/official_releases/qt/6.11/6.11.0/single/md5sums.txt"
-        }
-      ]
-    },
     "img2pdf": {
       "version": "0.6.3",
       "license": "LGPL-3.0-or-later",
@@ -154,6 +175,32 @@
         {
           "url": "https://files.pythonhosted.org/packages/46/60/d03d52e6690d4e9caf333dcd14550cde634ce6c118b3bc8fa3112c3186fd/pyinstaller-6.20.0.tar.gz",
           "sha256": "95c5c7e03d5d61e9dfb8ef259c699cf492bb1041beb6dbe83696608cec07347a"
+        }
+      ]
+    },
+    "PySide6_Essentials": {
+      "version": "6.11.3",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only; Qt libraries LGPL-3.0-only OR GPL-3.0-only",
+      "note": "PySide6 and Qt libraries are delivered as separate replaceable files. Qt source checksums: https://download.qt.io/official_releases/qt/6.11/6.11.3/single/md5sums.txt",
+      "files": [
+        {
+          "url": "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.11.3-src/pyside-setup-everywhere-src-6.11.3.tar.xz",
+          "sha256": "050819cb05e14d6689f42b56e4fa9c8ff63be2bb339e0c094c45b990b7cabde1"
+        },
+        {
+          "url": "https://download.qt.io/official_releases/qt/6.11/6.11.3/single/qt-everywhere-src-6.11.3.tar.xz",
+          "md5": "f5bc717bd4ec3e5058391a96f6418c98"
+        }
+      ]
+    },
+    "shiboken6": {
+      "version": "6.11.3",
+      "license": "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only; portions of Python 3.7 under PSF-2.0",
+      "note": "The Python module and native library are delivered as separate replaceable files.",
+      "files": [
+        {
+          "url": "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.11.3-src/pyside-setup-everywhere-src-6.11.3.tar.xz",
+          "sha256": "050819cb05e14d6689f42b56e4fa9c8ff63be2bb339e0c094c45b990b7cabde1"
         }
       ]
     }

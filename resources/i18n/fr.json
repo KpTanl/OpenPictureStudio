@@ -446,7 +446,7 @@
   "status.save_failed": "Échec de l’enregistrement : {error}",
   "about.version": "Version v{version}",
   "about.description": "Un espace de travail libre et gratuit pour l’édition d’images en local.\nLe nouvel Open Picture Studio réunit le réglage des couleurs RAW, l’édition par IA, les outils combinés et le traitement par lots.\nEnregistrez vos projets et votre historique d’édition, et reprenez là où vous vous étiez arrêté.",
-  "about.license": "Code source sous licence MIT. Le programme installé inclut PyQt6 sous GPLv3 et est distribué dans son ensemble sous GPLv3 ; les licences tierces figurent dans THIRD_PARTY_NOTICES.txt, dans le dossier d'installation.",
+  "about.license": "Le code original est sous licence MIT. Les licences tierces et les informations sur les sources figurent dans le dossier d’installation.",
   "button.ok": "OK",
   "button.cancel": "Annuler",
   "settings.window_title": "Paramètres",

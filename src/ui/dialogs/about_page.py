@@ -128,7 +128,7 @@ class AboutPage(QWidget, ThemedI18nMixin):
             "The new Open Picture Studio brings together RAW color adjustment, AI editing, "
             "combined tools, and batch processing.\n"
             "Save projects and editing history, and pick up where you left off."))
-        self._license.setText(self._tr("about.license", "Source code licensed under the MIT License. The installed program includes PyQt6 under the GPLv3 and is distributed as a whole under the GPLv3; third-party licenses are listed in THIRD_PARTY_NOTICES.txt in the installation folder."))
+        self._license.setText(self._tr("about.license", "Original code is licensed under the MIT License. Third-party licenses and source information are available in the installation folder."))
         self._source.setText(self._tr("update.source"))
         self._check.setText(self._tr("update.check"))
         self._download.setText(self._tr("update.download"))

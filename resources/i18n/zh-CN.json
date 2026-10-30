@@ -446,7 +446,7 @@
   "status.save_failed": "保存失败: {error}",
   "about.version": "版本 v{version}",
   "about.description": "免费开源的本地影像工作台。\n全新 Open Picture Studio，支持 RAW 调色、AI 修图、多工具组合与批量处理。\n保存项目和编辑历史，随时继续创作。",
-  "about.license": "源码采用 MIT 许可。安装包含 GPLv3 的 PyQt6，整体按 GPLv3 分发；第三方许可见安装目录的 THIRD_PARTY_NOTICES.txt。",
+  "about.license": "原创代码采用 MIT 许可。第三方许可证及源码信息见安装目录。",
   "button.ok": "确定",
   "button.cancel": "取消",
   "settings.window_title": "设置",

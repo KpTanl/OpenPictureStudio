@@ -259,7 +259,7 @@ def isolate_paths(root, monkeypatch):
     monkeypatch.setattr(QStandardPaths, "writableLocation", writable_location)
     monkeypatch.setattr(model_paths, "get_project_model_root", model_root)
     monkeypatch.setattr(model_paths, "get_runtime_root", lambda: root / "runtimes")
-    for module_name in ("src.core.ai_enhancer", "src.core.denoiser"):
+    for module_name in ("src.core.denoiser",):
         module = sys.modules.get(module_name)
         if module is not None:
             monkeypatch.setattr(module, "get_project_model_root", model_root)

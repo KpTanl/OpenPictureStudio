@@ -8,11 +8,9 @@ from PIL import Image
 
 from src.application.image_output_service import ImageOutputService
 from src.application.image_resources import ImageResourcePolicy, ImageResourcePool
-from src.application.tool_modules import MODULES
 from src.core.image_resize import ResizeOptions, plan_resize, resize_memory
 from src.core.photo_engine import load_render_source
 from src.core.tools import enhancement
-from src.core.tools.effects import id_photo_memory, legacy_ai_memory
 from src.core.tools.enhancement import ENHANCE_PARAMETERS, EnhancementExecutor, estimate_memory, output_plan
 
 TILE, OVERLAP, SCALE = 32, 4, 4
@@ -193,13 +191,3 @@ def test_format_processing_refuses_sizes_beyond_the_memory_limit(tmp_path):
     with Image.open(target) as image:
         assert image.size == (400, 320)
     assert enough.usage()["reserved_bytes"] == 0
-
-
-def test_legacy_resizing_tools_declare_their_working_memory():
-    source = SimpleNamespace(pixels=SimpleNamespace(shape=(300, 400, 3), nbytes=400 * 300 * 12))
-    assert MODULES["id_photo"].working_memory is id_photo_memory
-    assert MODULES["ai_enhance"].working_memory is legacy_ai_memory
-    assert id_photo_memory(source, {"custom_width": 1000, "custom_height": 2000}) == 1000 * 2000 * 40 + 400 * 300 * 12
-    small = legacy_ai_memory(source, {"upscale": "1x"})
-    large = legacy_ai_memory(source, {"upscale": "4x"})
-    assert large - small == (1600 * 1200 - 400 * 300) * 48

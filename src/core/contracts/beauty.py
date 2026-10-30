@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 
 DETAIL_BEAUTY_ALGORITHM = 5
-DETAIL_BEAUTY_PROFILES = {1: ("5", 1, 1), 2: ("6", 2, 1), 3: ("7", 2, 2), 4: ("8", 3, 2), 5: ("9", 3, 3)}
+DETAIL_BEAUTY_PROFILES = {5: ("9", 3, 3)}
 # 美颜参数里的模型选择；它们不是效果强度，判断参数是否全为 0 时不计入
 BEAUTY_MODEL_FIELDS = ("face_detection_model", "face_locator_model")
 
@@ -15,17 +15,6 @@ def detail_beauty_algorithm(implementation_version):
                 or implementation_version.startswith(f"{algorithm}-cv")):
             return algorithm
     raise ValueError("美颜算法版本不受支持")
-
-
-def is_current_detail_beauty(implementation_id, implementation_version):
-    """计算配方已是最新的 beauty.detail 记录不需要升级；检测方式随参数里的模型选择而定。"""
-    if implementation_id != "beauty.detail":
-        return False
-    try:
-        algorithm = detail_beauty_algorithm(implementation_version)
-    except ValueError:
-        return False
-    return DETAIL_BEAUTY_PROFILES[algorithm][1] == DETAIL_BEAUTY_PROFILES[max(DETAIL_BEAUTY_PROFILES)][1]
 
 
 @dataclass(frozen=True)

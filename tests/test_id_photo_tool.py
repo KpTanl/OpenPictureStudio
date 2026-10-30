@@ -11,10 +11,9 @@ from src.application.managed_tool_modules import id_photo_binding
 from src.core.contracts import WorkflowGraph
 from src.core.contracts.result import ErrorCode
 from src.core.photo_engine import RenderSource, _pil_from, linear_to_srgb, srgb_to_linear
-from src.core.tools.effect_migration import reference_params
-from src.core.tools.effects import (execute_id_photo, id_photo_memory, make_id_photo, make_id_photo_memory,
+from src.core.tools.effects import (make_id_photo, make_id_photo_memory,
                                     resize_arrays)
-from src.core.tools.id_photo import (BG_PRESETS, ID_PHOTO_PARAMETERS, ID_PHOTO_RESOURCE_FEATURES, LAYOUT_SHEET,
+from src.core.tools.id_photo import (BG_PRESETS, ID_PHOTO_RESOURCE_FEATURES, LAYOUT_SHEET,
                                      MANAGED_ID_PHOTO_PARAMETERS, SHEET_SIZE, SIZE_PRESETS,
                                      id_photo_required_resources, photo_bounds, sheet_grid, sheet_positions)
 from src.core.tools.id_photo_alignment import (_detect_face_cascade, _detect_face_skin, detect_primary_face,
@@ -54,10 +53,6 @@ def _half_mask(image):
 def test_contract_checks_size_range_colour_and_layout():
     contract = MANAGED_ID_PHOTO_PARAMETERS
     assert contract.version == 2 and contract.normalize(_params(), 2).success
-    assert ID_PHOTO_PARAMETERS.version == 1
-    assert set(ID_PHOTO_PARAMETERS.defaults(1)) == {"preset_size", "custom_width", "custom_height", "bg_preset",
-                                                    "change_bg"}
-
     def ok(**changes):
         return contract.normalize(_params(**changes), 2).success
 
@@ -323,38 +318,24 @@ def test_working_memory_grows_with_what_is_asked():
     assert sheet - matted == SHEET_SIZE[0] * SHEET_SIZE[1] * 12 + ONE_INCH[0] * ONE_INCH[1] * 12
 
 
-def test_version_1_still_resizes_the_whole_image():
-    source = _source()
-    params = {**ID_PHOTO_PARAMETERS.defaults(1), "custom_width": 120, "custom_height": 160}
-    result = execute_id_photo(source, params)
-    expected, _ = resize_arrays(source.pixels, None, (120, 160))
-    assert np.array_equal(result.pixels, expected) and result.orig_size == (120, 160)
-    assert id_photo_memory(source, params) == 120 * 160 * 40 + source.pixels.nbytes
-
-
 # ----------------------------------------------------------------------
-# 应用层：按参数里有没有模型一项分到两个版本
+# 应用层：参数校验与模型绑定
 # ----------------------------------------------------------------------
 def _run(runtime, settings, source):
     reference = runtime.effect_reference("id_photo", settings)
     assert reference.success, reference.error
-    graph = WorkflowGraph.single_node("tool", reference_params(reference.data, settings))
+    graph = WorkflowGraph.single_node("tool", reference.data.to_params(settings))
     assert runtime.validate(graph).success
     return reference.data, graph, runtime.snapshot().executor.execute(source, graph)
 
 
-def test_runtime_routes_the_two_versions_and_runs_them(tool_services):
+def test_runtime_runs_the_managed_photo_tool(tool_services):
     from tests.support import wait_for_model_discovery
 
     runtime = tool_services["render_service"].runtime
     # 模型目录在后台发现完成时运行时会换代，正在执行的渲染按过期处理；先等它完成
     wait_for_model_discovery(runtime.models)
     source = _source()
-
-    old = {**ID_PHOTO_PARAMETERS.defaults(1), "custom_width": 120, "custom_height": 160}
-    reference, graph, result = _run(runtime, old, source)
-    assert (reference.implementation_id, reference.params_version) == ("id_photo.float", 1)
-    assert result.success and np.array_equal(result.data.pixels, execute_id_photo(source, old).pixels)
 
     new = _params(crop_rect=[0.2, 0.1, 0.7, 0.95])
     reference, graph, result = _run(runtime, new, source)

@@ -1,6 +1,5 @@
 from ..core.contracts import WorkflowGraph, WorkflowNode
 from ..core.contracts.result import SourceChangedError
-from ..core.tools.effect_migration import reference_params
 from ..core.photo_engine import _pil_from
 from .tool_runtime import ToolRuntime
 from .result_types import CoreOperationError
@@ -69,7 +68,7 @@ class PanelRenderService:
         reference = self.runtime.effect_reference(tool_id, settings)
         if not reference.success:
             raise CoreOperationError(reference.error)
-        workflow = WorkflowGraph(nodes=(WorkflowNode(tool_id, "tool", reference_params(reference.data, settings)),))
+        workflow = WorkflowGraph(nodes=(WorkflowNode(tool_id, "tool", reference.data.to_params(settings)),))
         limit = 1000 if preview and self.runtime.supports_proxy(workflow, canonical_inputs=True) else None
         with source_service.borrow_linear(identity.path, identity=identity, max_side=limit,
                                           is_cancelled=is_cancelled) as lease:
@@ -100,7 +99,7 @@ class PanelRenderService:
         reference = self.runtime.effect_reference(tool_id, settings)
         if not reference.success:
             raise CoreOperationError(reference.error)
-        workflow = WorkflowGraph(nodes=(WorkflowNode(tool_id, "tool", reference_params(reference.data, settings)),))
+        workflow = WorkflowGraph(nodes=(WorkflowNode(tool_id, "tool", reference.data.to_params(settings)),))
         request = MixerSamplingRequest(target_node=tool_id, epoch=epoch)
         snapshot = self.runtime.snapshot()
         capability = snapshot.sampling_capability(workflow, request)

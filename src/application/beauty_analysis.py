@@ -5,7 +5,6 @@ import logging
 
 from ..core.contracts.tools import ToolReference
 from ..core.contracts.workflow import WorkflowNode
-from ..core.tools.effect_migration import reference_params
 from ..core.tools.managed_models import MANAGED_BEAUTY_PARAMETERS
 
 
@@ -110,7 +109,7 @@ class BeautyFaceQuery:
         existing = {node.node_id for node in workflow.nodes}
         while node_id in existing:
             node_id += "_"
-        node = WorkflowNode(node_id, "tool", reference_params(bound.data, settings),
+        node = WorkflowNode(node_id, "tool", bound.data.to_params(settings),
                             inputs=(workflow.nodes[-1].node_id,) if workflow.nodes else ())
         query_workflow = replace(workflow, nodes=(*workflow.nodes, node))
         result = self.core.analyze_beauty(photo.session_id, query_workflow, expected_version=photo.state_version,

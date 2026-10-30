@@ -258,41 +258,6 @@ class MixerSampling:
                 hold.close()
             raise
 
-    def beauty_roi(self, bounds, process_size, map_x, map_y, blend_mask):
-        if not self.active:
-            return
-        import cv2
-
-        left, top, right, bottom = bounds
-        roi_size = (right - left, bottom - top)
-        roi_pixels = roi_size[0] * roi_size[1]
-        process_pixels = process_size[0] * process_size[1]
-        with self.memory(roi_pixels * 96 + process_pixels * 64):
-            rgb = self.field.rgb[top:bottom, left:right]
-            coverage = self.field.coverage[top:bottom, left:right]
-            original = rgb * coverage[..., None]
-            warped, warped_coverage = original, coverage
-            if process_size != roi_size:
-                warped = cv2.resize(warped, process_size, interpolation=cv2.INTER_AREA)
-                warped_coverage = cv2.resize(warped_coverage, process_size, interpolation=cv2.INTER_AREA)
-            if map_x is not None:
-                warped = cv2.remap(warped, map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-                warped_coverage = cv2.remap(warped_coverage, map_x, map_y, cv2.INTER_LINEAR,
-                                            borderMode=cv2.BORDER_REPLICATE)
-            blend = blend_mask[..., 0] if blend_mask.ndim == 3 else blend_mask
-            if process_size != roi_size:
-                warped = cv2.resize(warped, roi_size, interpolation=cv2.INTER_LINEAR)
-                warped_coverage = cv2.resize(warped_coverage, roi_size, interpolation=cv2.INTER_LINEAR)
-                blend = cv2.resize(blend, roi_size, interpolation=cv2.INTER_LINEAR)
-            new_coverage = warped_coverage * blend + coverage * (1 - blend)
-            weighted = warped * blend[..., None] + original * (1 - blend[..., None])
-            np.clip(new_coverage, 0, 1, out=new_coverage)
-            np.divide(weighted, new_coverage[..., None], out=weighted,
-                      where=new_coverage[..., None] > COVERAGE_THRESHOLD)
-            weighted[new_coverage <= COVERAGE_THRESHOLD] = 0
-            rgb[:] = weighted
-            coverage[:] = new_coverage
-
     def beauty_detail(self, field, cancelled):
         if not self.active:
             return

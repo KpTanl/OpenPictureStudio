@@ -8,7 +8,6 @@ from ..core.contracts.result import CoreResult, ErrorCode
 from ..core.local_masks import prepare_masks, upgrade_masks
 from ..core.mask_components import prepare_components, upgrade_components
 from ..core.tools.color import color_identity, migrate_legacy_color
-from ..core.tools.effect_migration import reference_params
 
 
 @dataclass
@@ -68,7 +67,7 @@ def upgrade_color_masks(core, session_id, node_id, reference_size, *, expected_v
     if not reference.success:
         return reference
     workflow = replace(state.draft_workflow, nodes=tuple(
-        replace(item, node_type="tool", version=1, params=reference_params(reference.data, settings))
+        replace(item, node_type="tool", version=1, params=reference.data.to_params(settings))
         if item.node_id == node_id else item for item in state.draft_workflow.nodes))
     generation = core.tools.generation
     source_identity = core.source_identity(session_id)

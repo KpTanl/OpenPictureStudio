@@ -21,6 +21,16 @@ class ToolReference:
     implementation_version: str
     resources: tuple[tuple[str, str], ...] = ()
 
+    def to_params(self, settings):
+        return {
+            "tool_id": self.tool_id,
+            "params_version": self.params_version,
+            "implementation_id": self.implementation_id,
+            "implementation_version": self.implementation_version,
+            "resources": [{"resource_id": key, "hash": digest} for key, digest in self.resources],
+            "settings": settings,
+        }
+
     @classmethod
     def from_dict(cls, data):
         fields = {"tool_id", "params_version", "implementation_id", "implementation_version", "resources", "settings"}

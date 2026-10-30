@@ -4,8 +4,6 @@
 调整时画布上是这一步之前的画面，加锁在规格比例上的裁切框与人像参考线；看结果时是做完之后的证件照。
 自动对齐用的是宿主经 ``on_step_input()`` 交给它的这一步的输入画面（也就是框底下的那一幅），检测在后台做。
 刚进入、还没动过时这个工具还没有进入本次编辑，框按人脸摆好但不记入；点“查看结果”或改了任何一项才记入。
-
-``LegacyIDPhotoPanel`` 只用于打开旧项目里参数版本 1 的节点（整幅缩放到目标尺寸）。
 """
 
 import logging
@@ -20,7 +18,7 @@ from .base_tool_panel import BaseToolPanel
 from .canvas_result import ResultViewControl
 from .managed_model_panels import ManagedModelPanelMixin
 from ...application.tool_feature_readiness import READY
-from ...core.tools.id_photo import (BG_PRESETS, ID_PHOTO_PARAMETERS, ID_PHOTO_RESOURCE_FEATURES, LAYOUT_SHEET,
+from ...core.tools.id_photo import (BG_PRESETS, ID_PHOTO_RESOURCE_FEATURES, LAYOUT_SHEET,
                                     LAYOUT_SINGLE, MANAGED_ID_PHOTO_PARAMETERS, SHEET_SIZE, SIZE_PRESETS,
                                     id_photo_required_resources, normalized_rect, photo_bounds, refit_crop_rect,
                                     sheet_grid)
@@ -28,7 +26,6 @@ from ...core.tools.id_photo_alignment import detect_primary_face, portrait_crop_
 from ..dialogs.color_dialog_utils import pick_color
 from ..overlays.id_photo_overlay import IDPhotoOverlay
 from ..widgets.apple_button import AppleButton
-from ..widgets.apple_menu import AppleDropDown
 from ..widgets.apple_spin_box import AppleSpinBox
 from ..widgets.chip import ChipGroup
 from ..widgets.collapsible_card import CollapsibleCard
@@ -521,160 +518,3 @@ class IDPhotoPanel(ManagedModelPanelMixin, _IDPhotoControls):
             return ""
         return self._tr("preview.blocked", group=self._tr("id_photo.bg_group"),
                         reason=self._tr("tool_manager.state." + state))
-
-
-class LegacyIDPhotoPanel(BaseToolPanel):
-    """证件照（参数版本 1）：整幅缩放到目标尺寸，有透明时铺背景色。只用于打开旧项目里的这类节点。"""
-
-    PARAMETER_CONTRACT = ID_PHOTO_PARAMETERS
-    TOOL_ID = "id_photo"
-    TOOL_TITLE_KEY = "menu.edit.id_photo"
-    TOOL_TITLE_DEFAULT = "ID Photo Maker"
-
-    def __init__(
-        self,
-        image_path: str,
-        parent: Optional[QWidget] = None,
-        edit_state_store=None,
-        **services,
-    ):
-        self._original_image: Optional[Image.Image] = None
-        self._generation = 0
-        self._displayed_generation = -1
-
-        super().__init__(image_path, parent=parent, edit_state_store=edit_state_store, **services)
-
-        self._load_source(image_path)
-        self._restore_initial_params()
-        self.update_preview()
-
-    @staticmethod
-    def _default_params():
-        return ID_PHOTO_PARAMETERS.defaults(ID_PHOTO_PARAMETERS.version)
-
-    def _load_source(self, path):
-        self.load_panel_source(path, None)
-
-    def _restore_initial_params(self) -> None:
-        defaults = self._default_params()
-        params = defaults
-        if self._edit_state_store and self._image_path:
-            params = self._edit_state_store.get_initial_params(
-                self._image_path, self.TOOL_ID, defaults
-            )
-        checked = ID_PHOTO_PARAMETERS.normalize(params)
-        if not checked.success:
-            self.request_status.emit(self._tr(checked.error.message_key, "Invalid photo parameters"))
-        self._params = checked.data if checked.success else defaults
-        self._sync_ui_from_params()
-
-    def build_ui(self) -> None:
-        layout = self._root_layout
-
-        # 卡片 1: 证件照尺寸规格
-        card_size = CollapsibleCard(self._tr("id_photo.spec_group", "Photo Specification"), self)
-        form_size = QFormLayout()
-
-        self._size_combo = AppleDropDown(self)
-        for name in SIZE_PRESETS:
-            self._size_combo.addItem(name, name)
-        self._size_combo.activated.connect(self._on_size_preset_changed)
-        form_size.addRow(QLabel(self._tr("id_photo.preset_label", "Preset:"), self), self._size_combo)
-
-        # 自定义宽高
-        wh_row = QWidget(self)
-        wh_l = QHBoxLayout(wh_row)
-        wh_l.setContentsMargins(0, 0, 0, 0)
-        wh_l.setSpacing(6)
-
-        self._w_spin = AppleSpinBox(self)
-        width_field = next(field for field in ID_PHOTO_PARAMETERS.fields if field.name == "custom_width")
-        self._w_spin.setRange(width_field.minimum, width_field.maximum)
-        self._w_spin.setValue(width_field.default)
-        self._w_spin.valueEdited.connect(self._on_custom_wh_changed)
-        wh_l.addWidget(QLabel("W:", self))
-        wh_l.addWidget(self._w_spin)
-
-        self._h_spin = AppleSpinBox(self)
-        height_field = next(field for field in ID_PHOTO_PARAMETERS.fields if field.name == "custom_height")
-        self._h_spin.setRange(height_field.minimum, height_field.maximum)
-        self._h_spin.setValue(height_field.default)
-        self._h_spin.valueEdited.connect(self._on_custom_wh_changed)
-        wh_l.addWidget(QLabel("H:", self))
-        wh_l.addWidget(self._h_spin)
-        form_size.addRow(QLabel(self._tr("id_photo.custom_size", "Size (px):"), self), wh_row)
-
-        card_size.setContentLayout(form_size)
-        layout.addWidget(card_size)
-
-        # 卡片 2: 背景色设置
-        card_bg = CollapsibleCard(self._tr("id_photo.bg_group", "Background Color"), self)
-        form_bg = QFormLayout()
-
-        self._bg_combo = AppleDropDown(self)
-        for name in BG_PRESETS:
-            self._bg_combo.addItem(name, name)
-        self._bg_combo.addItem(self._tr("id_photo.bg_none", "Keep Original"), "原图")
-        self._bg_combo.activated.connect(self._on_bg_preset_changed)
-        form_bg.addRow(QLabel(self._tr("id_photo.bg_color_label", "Background:"), self), self._bg_combo)
-
-        card_bg.setContentLayout(form_bg)
-        layout.addWidget(card_bg)
-
-        layout.addStretch()
-
-    def _on_size_preset_changed(self, index: int) -> None:
-        name = self._size_combo.itemData(index)
-        params = {**self._params, "preset_size": name}
-        preset = SIZE_PRESETS.get(name)
-        if preset is not None:
-            params["custom_width"], params["custom_height"] = preset
-        self._apply_params(params)
-
-    def _on_custom_wh_changed(self) -> None:
-        params = {**self._params, "custom_width": self._w_spin.value(), "custom_height": self._h_spin.value()}
-        if self._commit_params(params):
-            self.update_preview()
-
-    def _on_bg_preset_changed(self, index: int) -> None:
-        if self._commit_params({**self._params, "bg_preset": self._bg_combo.itemData(index)}):
-            self.update_preview()
-
-    def _sync_ui_from_params(self) -> None:
-        preset_name = self._params["preset_size"]
-        for i in range(self._size_combo.count()):
-            if self._size_combo.itemData(i) == preset_name:
-                self._size_combo.setCurrentIndex(i)
-                break
-
-        w = self._params["custom_width"]
-        h = self._params["custom_height"]
-        self._w_spin.setValue(w)
-        self._h_spin.setValue(h)
-
-        bg_name = self._params.get("bg_preset", "白色")
-        for i in range(self._bg_combo.count()):
-            if self._bg_combo.itemData(i) == bg_name:
-                self._bg_combo.setCurrentIndex(i)
-                break
-
-    def apply(self):
-        try:
-            return self.render_panel_image()
-        except Exception as error:
-            self._processing_error(error)
-            return None
-
-    def reset(self) -> None:
-        self._apply_params(self._default_params())
-
-    def on_image_path_changed(self, path: str) -> None:
-        self._load_source(path)
-        self._restore_initial_params()
-        self.update_preview()
-
-    def _do_update_preview(self):
-        self.preview_panel_image()
-
-    def cleanup(self):
-        super().cleanup()

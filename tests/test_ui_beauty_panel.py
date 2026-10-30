@@ -1,7 +1,6 @@
 """美颜面板：参数行、人脸检测状态的标记与说明、用不了的参数置灰；另含旧降噪与旧画质增强面板的参数行。"""
 
 import os
-from types import SimpleNamespace
 
 import pytest
 
@@ -11,12 +10,8 @@ from PIL import Image  # noqa: E402
 from PySide6.QtGui import QPalette  # noqa: E402
 from PySide6.QtWidgets import QWidget  # noqa: E402
 
-from src.core.tools import beauty_backend  # noqa: E402
-from src.core.contracts.tools import ToolReference  # noqa: E402
-from src.core.tools.beauty import BEAUTY_PARAMETERS, LANDMARK_SETTINGS  # noqa: E402
+from src.core.tools.beauty import BEAUTY_PARAMETERS  # noqa: E402
 from src.i18n import TranslationService, get_translation_service, set_translation_service  # noqa: E402
-from src.ui.panels.ai_enhance_panel import LegacyAIEnhancePanel  # noqa: E402
-from src.ui.panels.beauty_panel import LegacyBeautyPanel  # noqa: E402
 from src.ui.theme import ThemeManager  # noqa: E402
 from src.ui.widgets.parameter_row import ParameterRow  # noqa: E402
 from tests.support import wait_for_model_discovery, wait_for_panel_source  # noqa: E402
@@ -71,10 +66,6 @@ def _make_ready(widget, monkeypatch=None):
     widget._model_status_changed()
     if monkeypatch is not None:
         monkeypatch.setattr(widget._render_service, "needs_preparation", lambda tool_id, params: False)
-
-
-def test_landmark_settings_are_beauty_parameters():
-    assert set(LANDMARK_SETTINGS) < set(_SETTINGS)
 
 
 def test_panel_lists_every_setting_as_a_parameter_row(panel):
@@ -140,11 +131,6 @@ def test_edits_commit_and_backfill_is_silent(panel, monkeypatch):
     widget.restore_params({**widget.parameters, "skin_smooth": 5, "sharpen": 0, "nose_slim": 30})
     assert len(changes) == count
     assert rows["skin_smooth"].value() == 5 and rows["nose_slim"].value() == 30
-    # “保留细节”的推荐预设要先分析人脸；固定数值的推荐预设属于旧的受管美颜引用
-    widget.set_beauty_reference(ToolReference("beauty", 3, "beauty.managed", "4-neutral"))
-    widget._btn_preset.click()
-    assert changes[-1]["skin_smooth"] == 50 and rows["skin_smooth"].value() == 50
-    assert changes[-1]["face_detection_model"] == widget.parameters["face_detection_model"]
     widget.reset()
     assert all(row.value() == 0 for row in rows.values())
 
@@ -163,34 +149,7 @@ def test_panel_follows_a_language_switch_without_inline_styles(panel, language):
     assert not any(child.styleSheet() for child in [widget, *widget.findChildren(QWidget)])
 
 
-@pytest.mark.parametrize("backend,kind,blocked,hint_key", [
-    (None, "warning", set(_SETTINGS), "error.tool.resource_missing"),
-    ("haar", "warning", set(LANDMARK_SETTINGS), "beauty.landmarks_required"),
-    ("mediapipe_tasks", "success", set(), ""),
-])
-def test_legacy_panel_projects_the_detection_backend(theme, language, tool_services, photo, monkeypatch,
-                                                     backend, kind, blocked, hint_key):
-    """打开旧参数时用的面板：按本机可用的人脸检测决定哪些参数能用。"""
-    backends = () if backend is None else (SimpleNamespace(name=backend),)
-    monkeypatch.setattr(beauty_backend, "available_backends", lambda: backends)
-    widget = LegacyBeautyPanel(photo, **tool_services)
-    try:
-        widget.show()
-        assert widget._engine_badge.isVisible() and widget._engine_badge.kind() == kind
-        assert widget._engine_badge.text() == language.translate(
-            "beauty.backend." + (backend or "unavailable"))
-        assert {key for key, row in widget._parameter_rows.items() if not row.isEnabled()} == blocked
-        assert widget._engine_hint.isVisible() == bool(hint_key)
-        if hint_key:
-            assert widget._engine_hint.text() == language.translate(hint_key)
-        usable = blocked != set(_SETTINGS)
-        assert widget._btn_auto_beauty.isEnabled() == usable and widget._btn_preset.isEnabled() == usable
-    finally:
-        widget.cleanup()
-        widget.deleteLater()
-
-
-def test_legacy_denoise_and_enhance_panels_use_parameter_rows(theme, language, panel_factory, tool_services, photo):
+def test_denoise_panel_uses_parameter_rows(theme, language, panel_factory, photo):
     denoise = panel_factory("denoise", photo)
     changes = []
     denoise.params_changed.connect(changes.append)
@@ -206,21 +165,4 @@ def test_legacy_denoise_and_enhance_panels_use_parameter_rows(theme, language, p
     denoise.retranslate_ui()
     assert rows["sharpen"].label() == language.translate("denoise.sharpen_label")
     language.set_language("zh-CN")
-
-    enhance = LegacyAIEnhancePanel(photo, **tool_services)
-    try:
-        changes = []
-        enhance.params_changed.connect(changes.append)
-        row = enhance._strength_row
-        assert isinstance(row, ParameterRow) and row.label() == "强度" and row.value() == 50
-        # 旧画质增强的参数要先准备资源再发布，这里只看面板自己的参数
-        row.slider.edit_value(70)
-        assert enhance.parameters["strength"] == 70 and row.value_edit.text() == "70"
-        count = len(changes)
-        enhance.restore_params({**enhance.parameters, "strength": 20})
-        assert len(changes) == count and row.value() == 20
-        for widget in (denoise, enhance):
-            assert not any(child.styleSheet() for child in [widget, *widget.findChildren(QWidget)])
-    finally:
-        enhance.cleanup()
-        enhance.deleteLater()
+    assert not any(child.styleSheet() for child in [denoise, *denoise.findChildren(QWidget)])

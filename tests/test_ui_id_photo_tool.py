@@ -20,7 +20,7 @@ from src.i18n import TranslationService, get_translation_service, set_translatio
 from src.ui.adapters.studio_adapter import to_workflow  # noqa: E402
 from src.ui.overlays.id_photo_overlay import IDPhotoOverlay  # noqa: E402
 from src.ui.panels.canvas_result import ResultViewControl  # noqa: E402
-from src.ui.panels.id_photo_panel import IDPhotoPanel, LegacyIDPhotoPanel  # noqa: E402
+from src.ui.panels.id_photo_panel import IDPhotoPanel  # noqa: E402
 from src.ui.theme import ThemeManager  # noqa: E402
 from tests.support import wait_for_studio, wait_for_thumbnails, wait_until  # noqa: E402
 
@@ -220,16 +220,6 @@ def test_id_photo_stays_the_last_step(editor):
     _settle(studio)
     order = [node.params.get("tool_id") for node in to_workflow(studio.session).nodes]
     assert order[-1] == "id_photo" and order.index("shape_crop") < order.index("id_photo")
-
-
-def test_version_1_steps_open_in_the_legacy_panel(editor):
-    studio, panel = editor("color_adjust")
-    old = {"preset_size": "一寸", "custom_width": 295, "custom_height": 413, "bg_preset": "白色", "change_bg": True}
-    studio.session.tool_params["id_photo"] = old
-    studio.switch_tool("id_photo")
-    legacy = studio.tool_sidebar.get_current_panel()
-    assert isinstance(legacy, LegacyIDPhotoPanel) and legacy.parameters == old
-    assert not hasattr(legacy, "result_view")
 
 
 def test_overlay_keeps_the_ratio_in_pixels_and_stays_inside(qapp):

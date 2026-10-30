@@ -26,15 +26,6 @@ BG_PRESETS = {
 }
 
 
-ID_PHOTO_PARAMETERS = ParameterContract((
-    ParameterField("preset_size", str, "一寸", choices=tuple(SIZE_PRESETS)),
-    ParameterField("custom_width", int, 295, 50, 4000),
-    ParameterField("custom_height", int, 413, 50, 4000),
-    ParameterField("bg_preset", str, "白色", choices=(*BG_PRESETS, "原图")),
-    ParameterField("change_bg", bool, True),
-))
-
-
 # 人像参考线：头顶线与下巴线距裁切范围上沿的比例、头部范围的宽度，
 # 以及从人脸框推到头顶与下巴时各留的余量（相对人脸的高度）
 PORTRAIT_GUIDE = {

@@ -26,8 +26,7 @@ def geometry_identity(workflow, descriptors):
             reference = ToolReference.from_dict(node.params)
             matched = [item for item in descriptors if item.reference == reference]
         else:
-            matched = [item for item in descriptors if item.implementation_id == node.node_type
-                       or node.node_type == "studio_effect" and item.tool_id == node.params.get("tool")]
+            matched = [item for item in descriptors if item.implementation_id == node.node_type]
         if matched and all(item.image.geometry == "preserve" for item in matched):
             continue
         geometry.append({"type": node.node_type, "version": node.version, "parameters": node.params})

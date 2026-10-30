@@ -9,13 +9,12 @@ from ..core.contracts.preview import PreviewTarget
 from ..core.contracts.result import CoreResult, ErrorCode
 from ..core.tools.color import (COLOR_UI_PARAMETERS, color_ui_contract, engine_to_ui,
                                 migrate_legacy_color, reset_color_params)
-from ..core.tools.effect_migration import is_legacy_effect
 from .color_initialization import (baseline_color_settings, initial_color_identity,
                                    color_baseline_workflow, write_session_drafts)
 from .image_source_service import path_key
 from ..core.tools.stage_defaults import (is_color_default as _is_color_default, is_beauty_default as _is_beauty_default,
                                          is_denoise_default as _is_denoise_default, is_crop_default as _is_crop_default)
-from .workflow_mapping import (WorkflowParameterError, mapped_stage_node, restore_workflow,
+from .workflow_mapping import (WorkflowParameterError, restore_workflow,
                                to_workflow, workflow_stages, stage_identity, stage_order)
 
 STAGE_SPECS = {
@@ -101,16 +100,6 @@ class EditSession:
         else:
             self.issues = issues
         return self.read_only
-
-
-    def has_legacy_effects(self):
-        return any(is_legacy_effect(node) for node in self._raw_workflow.nodes)
-
-
-    def legacy_stage_node(self, tool_id):
-        node = mapped_stage_node(self, tool_id)
-        return node if node is not None and (is_legacy_effect(node)
-                       or node.node_type in ("crop", "studio_geometry")) else None
 
 
     def sync(self, label="adjust", *, edit_group=None, expected_version=None, expected_tools=None, expected_source=None):

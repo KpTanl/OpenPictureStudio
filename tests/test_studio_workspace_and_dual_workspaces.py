@@ -194,11 +194,12 @@ def test_entering_the_editor_does_not_probe_face_detection_on_the_interface_thre
                                                                                   monkeypatch):
     """进入编辑、刷新 AI 助手上下文时不在界面线程导入人脸检测库、哈希模型文件：冷启动时导入要好几秒，调色面板会一直出不来。"""
     import threading
-    from src.core.tools import beauty_backend
+    from src.core.beauty_detection import BeautyDetector
     probed = []
-    original = beauty_backend.available_backends
-    monkeypatch.setattr(beauty_backend, "available_backends",
-                        lambda: probed.append(threading.current_thread() is threading.main_thread()) or original())
+    original = BeautyDetector.__init__
+    monkeypatch.setattr(BeautyDetector, "__init__",
+                        lambda self, *args, **kwargs: probed.append(threading.current_thread() is threading.main_thread())
+                        or original(self, *args, **kwargs))
     win = window_factory()
     win.show()
     win.manager.open_file(sample_image)

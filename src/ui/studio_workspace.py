@@ -54,7 +54,6 @@ from ..application.studio_detail import needs_detail
 from ..application.local_mask_service import MaskGesture, upgrade_color_masks
 from ..core.contracts.preview import PreviewTarget
 from ..core.contracts import WorkflowGraph
-from ..core.contracts.beauty import is_current_detail_beauty
 from ..application.edit_sessions import EditSessionService, EditSession, STAGE_SPECS as _STAGE_SPECS
 from ..application.edit_changes import parameter_changes, stage_changes
 from ..core.contracts.image_display import (DEFAULT_NON_RAW_DISPLAY_MODE, DEFAULT_RAW_DISPLAY_MODE,
@@ -191,7 +190,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                                                     workspace=self._audit_directory))
         self._commit_busy = False
         self._image_loading = False
-        self._upgrade_task = None
         self._output_generation = 0
         self._output_tasks = {}
         self._output_context = None
@@ -400,12 +398,10 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._notice_resources = NoticeBar("warning", parent=self._notices)
         self._notice_resources.action_triggered.connect(
             lambda: self.resource_management_requested.emit(self._active_tool_id))
-        self._notice_legacy = NoticeBar("info", parent=self._notices)
-        self._notice_legacy.action_triggered.connect(self.upgrade_legacy_effects)
         self._notice_enhance = NoticeBar("info", parent=self._notices)
         self._notice_enhance.action_triggered.connect(self._choose_enhancement_upgrade)
         self._notice_bars = (self._notice_load, self._notice_source, self._notice_read_only,
-                             self._notice_resources, self._notice_legacy, self._notice_enhance)
+                             self._notice_resources, self._notice_enhance)
         for bar in self._notice_bars:
             bar.setVisible(False)
             notices_layout.addWidget(bar)
@@ -1013,16 +1009,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             if other_id != tool_id:
                 other.cleanup()
         panel = self._tool_panels.get(tool_id)
-        if tool_id in ("ai_enhance", "beauty", "bg_remove", "id_photo") and panel is not None:
-            # 会话里这一步的参数是旧版本时用旧版面板，否则用现行的；已建的面板不对就重建
-            legacy_type = self._legacy_panel_type(tool_id)
-            expected_version = (legacy_type or PANEL_TYPES[tool_id]).PARAMETER_CONTRACT.version
-            if panel.PARAMETER_CONTRACT.version != expected_version:
-                panel.cleanup()
-                self.tool_sidebar.remove_panel(tool_id)
-                panel.deleteLater()
-                self._tool_panels.pop(tool_id)
-                panel = None
         created = panel is None
         if panel is None:
             panel = self._create_panel(tool_id)
@@ -1359,7 +1345,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                 complete = self.session.render_snapshot().workflow
                 visible = {node.node_id for node in request.session.workflow.nodes}
                 hidden = [node for node in complete.nodes if node.node_id not in visible]
-                crop = any(node.node_type in ("crop", "studio_geometry") or node.params.get("tool_id") == "crop" for node in hidden)
+                crop = any(node.node_type == "crop" or node.params.get("tool_id") == "crop" for node in hidden)
                 message = ("mask.stage_crop" if crop else "mask.stage_hidden") if hidden else ""
         panel.set_mask_context(self._mask_token(), reference, ready=ready, message=message, upgrade=upgrade,
                                engine_params=engine_params)
@@ -1415,21 +1401,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             return False
         return panel.overlay.handle_key_press(key)
 
-    def _legacy_panel_type(self, tool_id):
-        if tool_id not in ("ai_enhance", "beauty", "bg_remove", "id_photo") or self.session is None:
-            return None
-        entries = {"ai_enhance": ("target", "ai_enhance_panel", "LegacyAIEnhancePanel"),
-                   "beauty": ("face_detection_model", "beauty_panel", "LegacyBeautyPanel"),
-                   "bg_remove": ("segmentation_model", "bg_remove_panel", "LegacyBGRemovePanel"),
-                   "id_photo": ("segmentation_model", "id_photo_panel", "LegacyIDPhotoPanel")}
-        field, module, name = entries[tool_id]
-        spec = _STAGE_SPECS.get(tool_id)
-        params = getattr(self.session, spec[0]) if spec else self.session.tool_params.get(tool_id, {})
-        if not params or field in params:
-            return None
-        from importlib import import_module
-        return getattr(import_module(f".panels.{module}", __package__), name)
-
     def _create_panel(self, tool_id: str) -> Optional[BaseToolPanel]:
         panel = self._build_panel(tool_id)
         if panel:
@@ -1437,11 +1408,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         if panel and getattr(panel, "MANUAL_PREVIEW", False):
             panel.preview_requested.connect(self._schedule_pipeline_render)
             panel.cancel_requested.connect(lambda pnl=panel: self._cancel_manual_preview(pnl))
-        if tool_id == "beauty" and panel is not None:
-            button = AppleButton(self._tr("beauty.detail.upgrade"), panel)
-            panel.layout().insertWidget(0, button)
-            panel.beauty_upgrade_button = button
-            button.clicked.connect(self._upgrade_beauty)
         return panel
 
     def _configure_color_panel(self, panel):
@@ -1456,11 +1422,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         node = self.session.stage_node("beauty")
         reference = ToolReference.from_dict(node.params) if node is not None and node.node_type == "tool" else None
         panel.set_tool_reference(reference)
-        if hasattr(panel, "set_beauty_reference"):
-            panel.set_beauty_reference(reference)
-        if hasattr(panel, "beauty_upgrade_button"):
-            panel.beauty_upgrade_button.setVisible(reference is not None and not is_current_detail_beauty(
-                reference.implementation_id, reference.implementation_version))
+        panel.set_beauty_reference(reference)
         panel.beauty_analysis_provider = lambda settings, preset: self._beauty_analysis_job(settings, preset)
 
     def _beauty_analysis_job(self, settings, preset):
@@ -1472,51 +1434,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         return BeautyAnalysisTask(self.core, self.session.core_id, workflow, self.session.state_version,
                                   self.core.source_identity(self.session.core_id), self.core.tools.generation, preset)
 
-    def _upgrade_beauty(self):
-        from .widgets.message_dialog import show_confirm
-        from .services.background_operation import run_background
-        if self.session is None or self._commit_busy or self.session.read_only:
-            return
-        node = self.session.stage_node("beauty")
-        if node is None or is_current_detail_beauty(node.params.get("implementation_id", ""),
-                                                   node.params.get("implementation_version", "")):
-            return
-        if not show_confirm(self, self._tr("beauty.detail.upgrade"), self._tr("beauty.detail.upgrade_confirm"), default_yes=False):
-            return
-        self.stop_preview()
-        session_id, version = self.session.core_id, self.session.state_version
-        result = run_background(self, lambda cancellation: self.core.upgrade_beauty_effect(
-            session_id, node.node_id, expected_version=version, cancellation=cancellation))
-        if self.session is None or self.session.core_id != session_id:
-            return
-        if not result.success:
-            self._show_core_error(result)
-            return
-        self.session.refresh()
-        panel = self._tool_panels.pop("beauty", None)
-        if panel is not None:
-            panel.cleanup()
-            self.tool_sidebar.remove_panel("beauty")
-            panel.deleteLater()
-        self._activate_tool_panel("beauty")
-        self._persist_draft()
-        self._update_actions_state()
-
     def _build_panel(self, tool_id: str) -> Optional[BaseToolPanel]:
-        legacy_type = self._legacy_panel_type(tool_id)
-        if legacy_type is not None and tool_id != "ai_enhance":
-            return legacy_type(self._current_path or "", parent=self.tool_sidebar,
-                edit_state_store=None, **self._panel_services, external_preview=True,
-                source_identity=self.core.source_identity(self.session.core_id),
-                source_preview=self.core.source_preview(self.session.core_id))
-        if tool_id == "ai_enhance" and "mode" in self.session.tool_params.get(tool_id, {}):
-            from .panels.ai_enhance_panel import LegacyAIEnhancePanel
-            panel = LegacyAIEnhancePanel(self._current_path or "", parent=self.tool_sidebar,
-                edit_state_store=None, **self._panel_services, external_preview=True,
-                source_identity=self.core.source_identity(self.session.core_id),
-                source_preview=self.core.source_preview(self.session.core_id))
-            self._add_enhancement_upgrade(panel, tool_id)
-            return panel
         panel = create_tool_panel(
             tool_id,
             self._current_path or "",
@@ -1545,8 +1463,8 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         if not result.success:
             return ()
         return tuple(node for node in result.data.draft_workflow.nodes
-                     if (node.params.get("tool_id") or node.params.get("tool")) in ("denoise", "ai_enhance")
-                     and node.params.get("params_version", 1) in (1, 2))
+                     if node.node_type == "tool" and node.params.get("tool_id") == "denoise"
+                     and node.params.get("params_version") == 2)
 
     def _choose_enhancement_upgrade(self):
         from .base_window import BaseDialog
@@ -1648,27 +1566,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             self._grid_settings[self._current_path] = copy.deepcopy(params)
             return
 
-        spec = _STAGE_SPECS.get(tool_id)
-        if tool_id != "grid_crop":
-            original = self._legacy_stage_node(tool_id)
-            current_params = getattr(self.session, spec[0]) if spec else self.session.tool_params.get(tool_id, {})
-            if original is not None and params != current_params:
-                from .widgets.message_dialog import show_confirm
-                if not show_confirm(
-                    self,
-                    self._tr("studio.effect_upgrade_title", "Update effect version"),
-                    self._tr("studio.effect_upgrade_message",
-                             "Editing this effect will update it to the current version and may change its appearance. Continue?"),
-                    yes_text=self._tr("studio.effect_upgrade_confirm", "Update effect"),
-                    no_text=self._tr("common.cancel", "Cancel"),
-                    default_yes=False,
-                ):
-                    self._restoring = True
-                    try:
-                        panel.restore_params(self._params_for_tool(tool_id))
-                    finally:
-                        self._restoring = False
-                    return
         input_started = monotonic()
         self._invalidate_detail()
         self.session.set_stage(tool_id, params)
@@ -2642,19 +2539,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         """Push the session's stage params back into the panel UIs after undo/redo."""
         if not self.session or self.session.read_only:
             return
-        replace_active = False
         for tool_id, panel in tuple(self._tool_panels.items()):
             if panel.image_path != self._current_path:
                 continue
-            if tool_id in ("ai_enhance", "beauty", "bg_remove"):
-                version = 2 if self._legacy_panel_type(tool_id) is not None else 3
-                if panel.PARAMETER_CONTRACT.version != version:
-                    panel.cleanup()
-                    self.tool_sidebar.remove_panel(tool_id)
-                    panel.deleteLater()
-                    self._tool_panels.pop(tool_id)
-                    replace_active = replace_active or tool_id == self._active_tool_id
-                    continue
             self._restoring = True
             try:
                 if tool_id == "color_adjust":
@@ -2666,8 +2553,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                 self._restoring = False
             if hasattr(panel, "mask_ui_state"):
                 self._save_mask_ui(panel)
-        if replace_active:
-            self._activate_tool_panel(self._active_tool_id)
         self._refresh_modified_tools()
 
     def _tool_defaults(self, tool_id: str) -> dict:
@@ -2709,29 +2594,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             return defaults
         spec = _STAGE_SPECS.get(tool_id)
         params = getattr(self.session, spec[0]) if spec else self.session.tool_params.get(tool_id, {})
-        original = self._legacy_stage_node(tool_id)
-        if original is not None:
-            if tool_id == "crop":
-                displayed = {**defaults, **copy.deepcopy(params)}
-                box = displayed.get("crop_rect")
-                if box:
-                    width, height = self.session.source_size
-                    if displayed.get("rotation_angle", 0):
-                        from ..core.tools.geometry import rotated_size
-                        width, height = rotated_size((width, height), displayed["rotation_angle"])
-                    displayed["crop_rect"] = [box[0] / width, box[1] / height, box[2] / width, box[3] / height]
-                return displayed
-            from ..core.tools.effect_migration import migrated_settings
-            displayed = migrated_settings(tool_id, params,
-                                         legacy_defaults=original.node_type == "studio_effect"
-                                         or original.params.get("implementation_version") == "legacy-1")
-            return {**defaults, **displayed}
         return {**defaults, **copy.deepcopy(params)}
-
-    def _legacy_stage_node(self, tool_id: str):
-        if not self.session:
-            return None
-        return self.session.legacy_stage_node(tool_id)
 
     def _persist_draft(self, *, edit_group=None, commit_stamp=None) -> CoreResult[tuple[str, int, int]]:
         synchronized_state = None
@@ -2948,14 +2811,10 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         if session is not None and not read_only:
             resources_text = described(issue for issue in session.issues if not self._own_resource_gap(issue))
         self._set_notice(self._notice_resources, resources_text, "tool_manager.restore_resources")
-        self._set_notice(self._notice_legacy,
-                         self._tr("studio.notice.legacy_effects")
-                         if session is not None and session.has_legacy_effects() else "",
-                         "studio.effects_upgrade")
         self._set_notice(self._notice_enhance,
                          self._tr("studio.notice.enhancement") if self._enhancement_upgrade_nodes() else "",
                          "enhance.upgrade")
-        for bar in (self._notice_load, self._notice_read_only, self._notice_resources, self._notice_legacy):
+        for bar in (self._notice_load, self._notice_read_only, self._notice_resources):
             bar.action_button.setEnabled(not self._commit_busy)
         self._notice_enhance.action_button.setEnabled(not self._commit_busy and not self._image_loading)
 
@@ -2990,8 +2849,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                 beauty_panel.set_beauty_status(None)
         self._invalidate_detail()
         self._end_sampling()
-        if self._upgrade_task is not None:
-            self._upgrade_task.cancellation.cancel()
         dropped = self._preview_queue.pending
         self._preview_queue.cancel()
         if self._sampling_resources.delivery is not None:
@@ -3208,8 +3065,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
     def assistant_candidate_builder(self, context):
         self.assistant_candidate(context, {})
         mapper = self.session.detached()
+        defaults = {"beauty": self._stage_defaults("beauty")}
         return lambda values, *, workflow=context.workflow, beauty=None: mapper.assistant_proposal(
-            {"color": values, "beauty": beauty or {}}, {}, base_workflow=workflow)
+            {"color": values, "beauty": beauty or {}}, defaults, base_workflow=workflow)
 
     def assistant_revision_labels(self):
         timeline = self.session.timeline() if self.session else None
@@ -3378,48 +3236,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             source_id=state.data.active_source.source_id, state_version=state.data.state_version,
         )
         self._show_project_progress("check")
-
-    def upgrade_legacy_effects(self):
-        if not self.session or self._commit_busy or not self.session.has_legacy_effects():
-            return
-        from .widgets.message_dialog import show_confirm
-
-        session = self.session
-        current = self.core.get_session(session.core_id)
-        if not current.success:
-            self._show_core_error(current)
-            return
-        if not show_confirm(self, self._tr("studio.effect_upgrade_title"),
-                            self._tr("studio.effects_upgrade_message"),
-                            yes_text=self._tr("studio.effect_upgrade_confirm"),
-                            no_text=self._tr("common.cancel"), default_yes=False):
-            return
-        if self.session is not session:
-            return
-        self.stop_preview()
-        self.assistant_panel.invalidate()
-        from .services.effect_upgrade_task import EffectUpgradeTask
-        task = EffectUpgradeTask(self.core, session.core_id, current.data.state_version)
-        self._upgrade_task = task
-        task.signals.finished.connect(self._on_effect_upgrade_finished)
-        self._set_commit_busy(True)
-        self._output_pool.start(task)
-
-    @Slot(object, object)
-    def _on_effect_upgrade_finished(self, task, result):
-        if self._upgrade_task is not task:
-            return
-        self._upgrade_task = None
-        self._set_commit_busy(False)
-        if self.session is None or self.session.core_id != task.session_id:
-            return
-        if not result.success:
-            if result.error.code != "CANCELLED":
-                self._show_core_error(result)
-            self._schedule_pipeline_render()
-            return
-        self.session.refresh()
-        self.load_image_path(self._current_path)
 
     def save_project(self, save_as=False):
         if not self.session or self._commit_busy or self._exit_save_callback is not None:
@@ -3703,8 +3519,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         for panel in self._tool_panels.values():
             if hasattr(panel, "enhancement_upgrade_button"):
                 panel.enhancement_upgrade_button.setText(self._tr("enhance.upgrade"))
-            if hasattr(panel, "beauty_upgrade_button"):
-                panel.beauty_upgrade_button.setText(self._tr("beauty.detail.upgrade"))
         for entry in TOOL_ENTRIES:
             self.tool_rail.set_entry_text(entry.entry_id, self._tr(entry.title_key, entry.title_default))
         self.info_sidebar.retranslate_ui()

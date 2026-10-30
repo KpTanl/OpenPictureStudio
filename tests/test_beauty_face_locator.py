@@ -10,12 +10,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from src.application.model_service import ModelService  # noqa: E402
 from src.core.beauty_detection import BeautyDetector, DETECTION_SPEC_V3, preparation_memory  # noqa: E402
-from src.core.contracts.beauty import (DETAIL_BEAUTY_PROFILES, detail_beauty_algorithm,  # noqa: E402
-                                       is_current_detail_beauty)
+from src.core.contracts.beauty import DETAIL_BEAUTY_PROFILES, detail_beauty_algorithm  # noqa: E402
 from src.core.contracts.tool_resources import ToolParameterRequest  # noqa: E402
 from src.core.face_regions import EYES, OVAL  # noqa: E402
 from src.core.tools.managed_models import (FACE_LOCATOR_MODEL, MANAGED_BEAUTY_PARAMETERS,  # noqa: E402
-                                           beauty_effect_algorithm, beauty_required_resources)
+                                           beauty_required_resources)
 from tests.support import wait_for_model_discovery  # noqa: E402
 
 WIDTH, HEIGHT = 1600, 1000
@@ -155,15 +154,10 @@ def test_multi_face_needs_the_locator_only_when_chosen():
     plain = {**MANAGED_BEAUTY_PARAMETERS.defaults(3), "skin_smooth": 40, "face_detection_model": "face"}
     located = {**plain, "face_locator_model": FACE_LOCATOR_MODEL}
     assert [item.role for item in beauty_required_resources(plain, 5)] == ["face_model"]
-    assert [item.role for item in beauty_required_resources(located)] == ["face_model"]
+    assert [item.role for item in beauty_required_resources(located)] == ["face_model", "face_locator"]
     required = beauty_required_resources(located, 5)
     assert [item.role for item in required] == ["face_model", "face_locator"]
     assert required[1].model_token == FACE_LOCATOR_MODEL and required[1].capability == "face_localization"
-    # 计算配方已是最新的效果 4 选了人脸定位模型，按效果 5 执行；更早的配方不支持
-    assert beauty_effect_algorithm(4, located) == 5 and beauty_effect_algorithm(4, plain) == 4
-    assert [item.role for item in beauty_required_resources(located, 4)] == ["face_model", "face_locator"]
-    assert beauty_effect_algorithm(3, located) == 3
-    assert [item.role for item in beauty_required_resources(located, 3)] == ["face_model"]
     # 模型选择不算效果强度：只选了模型时参数仍为全 0
     neutral = {**MANAGED_BEAUTY_PARAMETERS.defaults(3), "face_detection_model": "face",
                "face_locator_model": FACE_LOCATOR_MODEL}
@@ -172,13 +166,6 @@ def test_multi_face_needs_the_locator_only_when_chosen():
     assert MANAGED_BEAUTY_PARAMETERS.normalize(legacy, 3).data["face_locator_model"] == ""
     assert preparation_memory(SimpleNamespace(pixels=np.zeros((10, 10, 3)), alpha=None),
                               detection_spec=DETECTION_SPEC_V3) > 64 * 1024 * 1024
-
-
-def test_current_effects_need_no_upgrade():
-    assert is_current_detail_beauty("beauty.detail", "5-neutral")
-    assert is_current_detail_beauty("beauty.detail", "4-cv4.13.0-np2.4.4-mp0.10.35")
-    assert not is_current_detail_beauty("beauty.detail", "3-neutral")
-    assert not is_current_detail_beauty("beauty.managed", "managed-task-x")
 
 
 def test_catalog_lists_yunet_and_rejects_a_broken_file(tmp_path):
@@ -206,11 +193,11 @@ def test_resource_status_follows_the_record_and_the_choice(tool_services):
                         if item.tool_id == "beauty" and item.contextual)
         return {item.role: item for item in snapshot.required_resources}, snapshot.implementation_version, snapshot.issue
 
-    for version in ("", "4-neutral", "5-neutral"):
+    for version in ("", "5-neutral"):
         roles, implementation, issue = requested(plain, version)
         assert set(roles) == {"face_model"} and not issue
-        assert implementation.startswith(("4" if version == "4-neutral" else "5") + "-cv")
-    for version in ("", "4-neutral", "5-neutral"):
+        assert implementation.startswith("5-cv")
+    for version in ("", "5-neutral"):
         roles, implementation, issue = requested(located, version)
         assert set(roles) == {"face_model", "face_locator"} and implementation.startswith("5-cv") and not issue
         assert roles["face_locator"].model_token == FACE_LOCATOR_MODEL and roles["face_locator"].runtime == "cv2"
@@ -239,7 +226,6 @@ def _beauty_panel(panel_factory, tmp_path):
 
 
 def test_multi_face_is_an_option_in_the_beauty_model_list(language, panel_factory, tmp_path):
-    from src.core.contracts.tools import ToolReference
     widget = _beauty_panel(panel_factory, tmp_path)
     combo = widget.model_selector.combo
     multi = combo.findData((widget._params["face_detection_model"], FACE_LOCATOR_MODEL))
@@ -251,11 +237,6 @@ def test_multi_face_is_an_option_in_the_beauty_model_list(language, panel_factor
     combo.activated.emit(multi)
     assert committed[-1]["face_locator_model"] == FACE_LOCATOR_MODEL
     assert committed[-1]["face_detection_model"] == widget._params["face_detection_model"]
-    # 更早的旧版效果：多人脸一项置灰并说明
-    widget.set_beauty_reference(ToolReference("beauty", 3, "beauty.detail", "3-neutral"))
-    assert not combo._items[multi]["action"].isEnabled() and "升级" in widget._multi_face_hint.text()
-    widget.set_beauty_reference(ToolReference("beauty", 3, "beauty.detail", "4-neutral"))
-    assert combo._items[multi]["action"].isEnabled()
 
 
 def test_beauty_panel_names_the_missing_locator_and_follows_the_record_version(language, panel_factory, tmp_path):

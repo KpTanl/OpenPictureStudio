@@ -15,7 +15,6 @@ from ..core.contracts.tool_resources import (ModelRequirement, RequiredResource,
 from ..core.denoiser import BASIC_DENOISE_VERSION
 from ..core.project.assets import ProjectAssetError
 from ..core.tools import ParameterContract, ToolCatalog, ToolDefinition
-from ..core.tools.id_photo import ID_PHOTO_PARAMETERS
 from ..core.tools.denoise import DenoiseBackendUnavailable
 from ..core.workflow import NodeRegistry, NodeSpec, WorkflowExecutor
 from ..core.workflow.validator import inspect_workflow, validate
@@ -23,7 +22,7 @@ from .tool_executor_pool import ToolExecutorPool
 from .image_resources import ComputeBudget
 from .runtime_libraries import environment_library
 
-_NEUTRAL_BEAUTY_VERSIONS = ("4-neutral", "1-neutral", "2-neutral", "3-neutral", "5-neutral")
+_NEUTRAL_BEAUTY_VERSIONS = ("5-neutral",)
 
 
 class FunctionExecutor:
@@ -103,15 +102,14 @@ class LeasedProcessor:
             self._hold.close()
 
 
-def builtin_catalog(engine=None, *, memory_threads=1, execution_threads=1, inference_backend=None):
+def builtin_catalog(engine=None, *, memory_threads=1):
     from ..core.photo_engine import mask_working_memory, minimum_render_threads
-    from ..core.nodes import studio_node
     from ..core.nodes.color_adjust_node import execute as color
     from ..core.tools.color import LEGACY_COLOR_PARAMETERS
     from ..core.nodes.crop_node import execute as crop, validate_params as validate_crop
-    from ..core.tools.beauty import BEAUTY_PARAMETERS, execute as execute_beauty
     from ..core.tools.denoise import DENOISE_PARAMETERS, execute as execute_denoise
     from ..core.tools.geometry import GRID_PARAMETERS
+    from .tool_modules import DENOISE_RESOURCE_FEATURES, denoise_required_resources
 
     definitions = []
     bindings = {}
@@ -119,18 +117,16 @@ def builtin_catalog(engine=None, *, memory_threads=1, execution_threads=1, infer
     entries = [
         ("color_adjust", "color_adjust", engine.render_source if engine else color, LEGACY_COLOR_PARAMETERS[1],
          ImageCapabilities(), minimum_render_threads, True, color_memory),
-        ("crop", "crop", crop, ParameterContract(validate=validate_crop, allow_unknown=True), ImageCapabilities(alpha="transform", geometry="resize"), None, False, None),
-        ("studio_geometry", "crop", studio_node.execute_geometry, ParameterContract(validate=studio_node.validate_geometry, allow_unknown=True),
+        ("crop", "crop", crop, ParameterContract(validate=validate_crop, allow_unknown=True),
          ImageCapabilities(alpha="transform", geometry="resize"), None, False, None),
     ]
     for kind, tool_id, function, parameters, image, minimum_threads, uses_cancellation, working_memory in entries:
         descriptor = ToolDescriptor(tool_id, "1", 1, 1, kind, "legacy-1", image)
-        definitions.append(ToolDefinition(descriptor,
-            parameters,
+        definitions.append(ToolDefinition(descriptor, parameters,
             lambda resources, fn=function, threaded=minimum_threads is not None,
                    cancellable=uses_cancellation: FunctionExecutor(
-                fn, uses_thread_limit=threaded, uses_cancellation=cancellable, uses_sampling=True), can_disable=kind != "color_adjust",
-            minimum_threads=minimum_threads, working_memory=working_memory,
+                fn, uses_thread_limit=threaded, uses_cancellation=cancellable, uses_sampling=True),
+            can_disable=kind != "color_adjust", minimum_threads=minimum_threads, working_memory=working_memory,
             sampling_behavior="capture" if kind == "color_adjust" else "transport"))
         bindings[kind] = descriptor.reference
     for params_version in (2, 3, 4):
@@ -141,59 +137,13 @@ def builtin_catalog(engine=None, *, memory_threads=1, execution_threads=1, infer
                                                uses_cancellation=True, uses_sampling=True),
             can_disable=False, supports_proxy=True, minimum_threads=minimum_render_threads,
             working_memory=color_memory, sampling_behavior="capture"))
-    from ..core.tools.effects import AI_PARAMETERS, BG_PARAMETERS, legacy_background_resources
-    from .tool_modules import (create_legacy_background_executor, legacy_background_required_resources,
-                               DENOISE_RESOURCE_FEATURES, denoise_required_resources)
-    from .tool_modules import LEGACY_BACKGROUND_RESOURCE_FEATURES
-    implicit_resources = {"bg_remove": legacy_background_resources}
-    legacy_factories = {"bg_remove": partial(create_legacy_background_executor, execution_threads=execution_threads,
-                                            create_session=inference_backend.create_cpu_session if inference_backend else None)}
-    resource_checks = {
-        "beauty": lambda params: True,
-        "ai_enhance": lambda params: True,
-        "denoise": lambda params: params.get("method", "bilateral") == "ai",
-        "bg_remove": lambda params: bool(legacy_background_resources(params)),
-    }
-    from ..core.tools.geometry import SHAPE_PARAMETERS, LASSO_PARAMETERS
-    legacy_contracts = {"ai_enhance": AI_PARAMETERS, "bg_remove": BG_PARAMETERS,
-                        "shape_crop": SHAPE_PARAMETERS, "lasso": LASSO_PARAMETERS}
-    for tool_id in sorted(studio_node.EFFECTS):
-        def function(source, params, identity=tool_id, *, sampling=None):
-            return studio_node.execute(source, {"tool": identity, "settings": params}, sampling=sampling)
-        descriptor = ToolDescriptor(tool_id, "1", 1, 1, tool_id, "legacy-1",
-            ImageCapabilities(alpha="transform", geometry="tool_defined", intermediate_precision="srgb8"))
-        contract = ID_PHOTO_PARAMETERS if tool_id == "id_photo" else ParameterContract(allow_unknown=True)
-        if tool_id in legacy_contracts:
-            def validate_legacy(settings, current=legacy_contracts[tool_id]):
-                checked = current.normalize(settings, current.version)
-                if not checked.success:
-                    raise ValueError(checked.error.message_key)
-            contract = ParameterContract(validate=validate_legacy, allow_unknown=True)
-        definitions.append(ToolDefinition(descriptor, contract,
-            legacy_factories.get(tool_id, lambda resources, fn=function: FunctionExecutor(fn, uses_sampling=True)),
-            resource_checks.get(tool_id), reusable_executor=tool_id in legacy_factories,
-            implicit_resources=implicit_resources.get(tool_id),
-            resource_features=LEGACY_BACKGROUND_RESOURCE_FEATURES if tool_id == "bg_remove" else (),
-            collect_resources=legacy_background_required_resources if tool_id == "bg_remove" else None,
-            sampling_behavior="preserve" if tool_id == "denoise" else "transport"))
-        bindings[("studio_effect", tool_id)] = descriptor.reference
-    for tool_id, implementation_id, implementation_version, contract, function in (
-        ("denoise", "denoise.basic", "2", DENOISE_PARAMETERS, execute_denoise),
-        ("denoise", "denoise.basic", str(BASIC_DENOISE_VERSION), DENOISE_PARAMETERS,
-         partial(execute_denoise, basic_version=BASIC_DENOISE_VERSION)),
-        ("beauty", "beauty", "2", BEAUTY_PARAMETERS, execute_beauty),
-    ):
-        descriptor = ToolDescriptor(tool_id, implementation_version, 1, contract.version,
-            implementation_id, implementation_version,
-            ImageCapabilities(intermediate_precision="srgb8"))
-        definitions.append(ToolDefinition(descriptor, contract,
-            lambda resources, fn=function, sampled=tool_id == "beauty": FunctionExecutor(fn, uses_sampling=sampled),
-            (lambda params: True) if tool_id == "beauty" else None,
-            needs_preparation=(lambda params: any(params.values())) if tool_id == "beauty" else
-                lambda params: bool(denoise_required_resources(params)),
-            resource_features=DENOISE_RESOURCE_FEATURES if tool_id == "denoise" else (),
-            collect_resources=denoise_required_resources if tool_id == "denoise" else None,
-            sampling_behavior="preserve" if tool_id == "denoise" else "transport"))
+    descriptor = ToolDescriptor("denoise", str(BASIC_DENOISE_VERSION), 1, 2,
+        "denoise.basic", str(BASIC_DENOISE_VERSION), ImageCapabilities(intermediate_precision="srgb8"))
+    definitions.append(ToolDefinition(descriptor, DENOISE_PARAMETERS,
+        lambda resources: FunctionExecutor(partial(execute_denoise, basic_version=BASIC_DENOISE_VERSION)),
+        needs_preparation=lambda params: bool(denoise_required_resources(params)),
+        resource_features=DENOISE_RESOURCE_FEATURES, collect_resources=denoise_required_resources,
+        sampling_behavior="preserve"))
     descriptor = ToolDescriptor("grid_crop", "1", 1, GRID_PARAMETERS.version, "grid_crop.export", "1")
     definitions.append(ToolDefinition(descriptor, GRID_PARAMETERS, None))
     bindings["grid_crop"] = descriptor.reference
@@ -249,8 +199,7 @@ class ToolRuntime:
         self._runtime_query = runtime_query or environment_library
         builtin = catalog is None
         if catalog is None:
-            catalog, default_bindings = builtin_catalog(engine, memory_threads=memory_threads,
-                                                       execution_threads=execution_threads, inference_backend=self.inference)
+            catalog, default_bindings = builtin_catalog(engine, memory_threads=memory_threads)
         else:
             default_bindings = {}
         self._catalog = catalog.copy()
@@ -299,58 +248,24 @@ class ToolRuntime:
         self._ai_model_path = get_recommended_model_path()
         self._ai_model_signature = None
         self._ai_model_reference = None
-        self._beauty_reference = None
-        self._module_digests = {}
         if builtin:
             from .tool_modules import MODULES
             for tool_id, module in MODULES.items():
-                if tool_id not in ("ai_enhance", "bg_remove"):
-                    self.effect_reference(tool_id, module.parameters.defaults(module.parameters.version))
-
-    def _module_digest(self, path):
-        path = Path(path).resolve()
-        stamp = path.stat()
-        signature = (stamp.st_size, stamp.st_mtime_ns, stamp.st_ctime_ns)
-        with self._lock:
-            cached = self._module_digests.get(str(path))
-            if cached is not None and cached[0] == signature:
-                return cached[1]
-        digest = hashlib.sha256()
-        with path.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(chunk)
-        after = path.stat()
-        if signature != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
-            raise OSError("资源在读取期间发生变化")
-        with self._lock:
-            self._module_digests[str(path)] = (signature, digest.hexdigest())
-        return digest.hexdigest()
+                self.effect_reference(tool_id, module.parameters.defaults(module.parameters.version))
 
     def _module_reference(self, tool_id, settings):
-        from .tool_modules import module_for, resource_binding, create_module_executor, managed_module
-        managed = managed_module(tool_id, settings)
-        if managed is not None:
-            return self._managed_reference(tool_id, settings, managed)
+        from .tool_modules import module_for, create_module_executor
         module = module_for(tool_id, settings)
         checked = module.parameters.normalize(settings, module.parameters.version)
         if not checked.success:
             return checked
-        try:
-            implementation, paths, implementation_version = resource_binding(tool_id, checked.data)
-            identities = tuple(sorted((key, self._module_digest(path))
-                                      for key, path in paths.items()))
-        except (ImportError, OSError):
-            self._executors.invalidate({tool_id})
-            return CoreResult.fail(ErrorCode.TOOL_RESOURCE_MISSING, "error.tool.resource_missing", details={"tool_id": tool_id})
         descriptor = ToolDescriptor(tool_id, module.tool_version, 1, module.parameters.version,
-                                    tool_id + "." + implementation, implementation_version, module.image, identities)
+                                    tool_id + ".float", module.implementation_version, module.image)
         with self._lock:
             if not self._catalog.resolve(descriptor.reference).success:
                 self._catalog.register(ToolDefinition(descriptor, module.parameters,
                     lambda resources: create_module_executor(tool_id, resources, self._execution_threads),
-                    supports_proxy=module.supports_proxy and not paths,
-                    needs_preparation=module.needs_preparation,
-                    reusable_executor=tool_id == "ai_enhance" or tool_id == "bg_remove" and bool(paths),
+                    supports_proxy=module.supports_proxy, needs_preparation=module.needs_preparation,
                     minimum_threads=module.minimum_threads,
                     working_memory=(partial(module.working_memory, threads=self._memory_threads)
                                     if module.working_memory is not None else None),
@@ -358,8 +273,6 @@ class ToolRuntime:
                     sampling_behavior=module.sampling_behavior,
                     prepare_execution=self.mask_assets.prepare if tool_id == "color_adjust" and module.parameters.version in (6, 7) else None))
                 self._generation += 1
-            for key, digest in identities:
-                self._resources[(key, digest)] = str(paths[key])
         return CoreResult.ok(descriptor.reference)
 
     def _managed_reference(self, tool_id, settings, module):
@@ -412,29 +325,6 @@ class ToolRuntime:
                         if digest == file.digest:
                             self._resources[(identity, digest)] = path
             self._generation += 1
-
-    def ensure_beauty_backend(self):
-        from ..core.tools.beauty import BEAUTY_PARAMETERS, execute
-        from ..core.tools.beauty_backend import available_backends
-
-        backends = available_backends()
-        with self._lock:
-            self._beauty_reference = None
-            for backend in backends:
-                descriptor = ToolDescriptor("beauty", "3", 1, 2, "beauty." + backend.name,
-                    backend.version, ImageCapabilities(intermediate_precision="srgb8"),
-                    tuple((key, digest) for key, digest, _ in backend.resources))
-                if not self._catalog.resolve(descriptor.reference).success:
-                    self._catalog.register(ToolDefinition(descriptor, BEAUTY_PARAMETERS,
-                        lambda resources, selected=backend: self._beauty_executor(selected, execute),
-                        needs_preparation=lambda params: any(params.values()), reusable_executor=True,
-                        sampling_behavior="transport"))
-                    self._generation += 1
-                for key, digest, path in backend.resources:
-                    self._resources[(key, digest)] = path
-                if self._beauty_reference is None:
-                    self._beauty_reference = descriptor.reference
-            return self._beauty_reference
 
     def ensure_denoise_ai_model(self):
         with self._ai_model_prepare_lock:
@@ -556,9 +446,6 @@ class ToolRuntime:
                 except (ValueError, TypeError, KeyError):
                     continue
                 settings = node.params["settings"]
-            elif node.node_type == "studio_effect":
-                reference = bindings.get((node.node_type, node.params.get("tool")))
-                settings = node.params.get("settings", {})
             else:
                 reference = bindings.get(node.node_type)
                 settings = node.params
@@ -573,15 +460,6 @@ class ToolRuntime:
                 definition = next((catalog.resolve(descriptor.reference).data
                     for descriptor in catalog.descriptors() if descriptor.tool_id == reference.tool_id
                     and descriptor.params_version == reference.params_version), None)
-            legacy_module = None
-            if definition is None and reference.params_version == 2:
-                from .tool_modules import MODULES
-                legacy_module = MODULES.get(reference.tool_id)
-                if legacy_module is not None and legacy_module.parameters.version == reference.params_version:
-                    definition = ToolDefinition(ToolDescriptor(reference.tool_id, "2", 1, reference.params_version,
-                        reference.implementation_id, reference.implementation_version, legacy_module.image,
-                        reference.resources), legacy_module.parameters, None,
-                        resource_features=legacy_module.resource_features, collect_resources=legacy_module.collect_resources)
             issue = ""
             resources = ()
             if definition is not None:
@@ -593,7 +471,7 @@ class ToolRuntime:
                     if (reference.tool_id == "denoise" and reference.params_version == 2
                             and bool(resources) != (reference.implementation_id == "denoise.ai")):
                         issue = ErrorCode.PARAMETER_INVALID.value
-                    if (reference.implementation_id in ("beauty.managed", "beauty.detail")
+                    if (reference.implementation_id == "beauty.detail"
                             and resources and reference.implementation_version in _NEUTRAL_BEAUTY_VERSIONS):
                         issue = ErrorCode.PARAMETER_INVALID.value
                 else:
@@ -604,12 +482,7 @@ class ToolRuntime:
                 known = base is not None and reference.implementation_id == base.descriptor.implementation_id
                 known = known or (reference.tool_id == "denoise" and reference.implementation_id == "denoise.ai"
                                   and reference.implementation_version == "2")
-                known = known or (reference.tool_id == "beauty" and reference.implementation_id in
-                                  ("beauty.managed", "beauty.detail", "beauty.haar", "beauty.mediapipe_tasks", "beauty.mediapipe_legacy"))
-                if legacy_module is not None:
-                    from .tool_modules import implementation_name
-                    known = known or reference.implementation_id == reference.tool_id + "." + implementation_name(
-                        reference.tool_id, checked.data)
+                known = known or (reference.tool_id == "beauty" and reference.implementation_id == "beauty.detail")
                 if not known:
                     issue = ErrorCode.TOOL_INCOMPATIBLE.value
             required = [enrich(resource, reference) for resource in resources]
@@ -617,8 +490,7 @@ class ToolRuntime:
             for role, digest in reference.resources:
                 if role in used_roles:
                     continue
-                runtime = ("mediapipe" if reference.implementation_id.startswith("beauty.mediapipe")
-                           else "onnxruntime" if "-ort" in reference.implementation_version
+                runtime = ("onnxruntime" if "-ort" in reference.implementation_version
                            or reference.implementation_id == "denoise.ai" else "")
                 required.append(enrich(RequiredResource("effect", role, digest=digest, runtime=runtime), reference))
             if reference.tool_id == "denoise":
@@ -626,17 +498,12 @@ class ToolRuntime:
             if base is not None and reference.implementation_id == base.descriptor.implementation_id and not issue:
                 if reference.tool_id in ("ai_enhance", "bg_remove") and reference.implementation_version != base.descriptor.implementation_version:
                     issue = ErrorCode.TOOL_INCOMPATIBLE.value
-            if (reference.tool_id == "beauty" and reference.implementation_id != "beauty" and not issue
+            if (reference.implementation_id == "beauty.detail" and not issue
                     and reference.implementation_version not in _NEUTRAL_BEAUTY_VERSIONS):
-                from ..core.tools.beauty_backend import backend_version
+                from .managed_tool_modules import detail_beauty_version
+                from ..core.contracts.beauty import detail_beauty_algorithm
                 try:
-                    if reference.implementation_id == "beauty.detail":
-                        from .managed_tool_modules import detail_beauty_version
-                        from ..core.contracts.beauty import detail_beauty_algorithm
-                        expected = detail_beauty_version(detail_beauty_algorithm(reference.implementation_version))
-                    else:
-                        backend = backend_version()
-                        expected = "managed-task-" + backend + "-mp" if reference.implementation_id == "beauty.managed" else backend
+                    expected = detail_beauty_version(detail_beauty_algorithm(reference.implementation_version))
                 except (ImportError, AttributeError, ValueError):
                     issue = ErrorCode.TOOL_INCOMPATIBLE.value
                 else:
@@ -704,17 +571,13 @@ class ToolRuntime:
                 # 所需模型随效果版本与人脸定位模型的选择而定：版本按请求给出的精确版本，其次是工作流里的原节点，
                 # 最后才是新建默认；选了人脸定位模型时按实际执行的版本
                 from ..core.contracts.beauty import DETAIL_BEAUTY_ALGORITHM, detail_beauty_algorithm
-                from ..core.tools.managed_models import (beauty_effect_algorithm, beauty_required_resources,
-                                                         beauty_uses_locator)
+                from ..core.tools.managed_models import beauty_required_resources
                 exact = request.implementation_version or (origin[0].implementation_version if origin is not None else "")
                 try:
-                    beauty_algorithm = beauty_effect_algorithm(
-                        detail_beauty_algorithm(exact) if exact else DETAIL_BEAUTY_ALGORITHM, checked.data)
+                    beauty_algorithm = detail_beauty_algorithm(exact) if exact else DETAIL_BEAUTY_ALGORITHM
                 except ValueError:
                     issue = ErrorCode.TOOL_INCOMPATIBLE.value
                 else:
-                    if checked.data.get("face_locator_model") and not beauty_uses_locator(beauty_algorithm):
-                        issue = ErrorCode.TOOL_INCOMPATIBLE.value
                     required = tuple(enrich(resource, original_reference)
                                      for resource in beauty_required_resources(checked.data, beauty_algorithm))
             if checked.success and definition.legacy_resource_check and definition.legacy_resource_check(checked.data):
@@ -752,11 +615,6 @@ class ToolRuntime:
                                                       else f"{beauty_algorithm}-neutral")
                     except (ImportError, AttributeError, ValueError):
                         issue = ErrorCode.TOOL_INCOMPATIBLE.value
-                elif not required:
-                    implementation_version = "4-neutral"
-                else:
-                    from ..core.tools.beauty_backend import backend_version
-                    implementation_version = "managed-task-" + backend_version() + "-mp" + self._runtime_query("mediapipe").version
             result.append(ToolResourceSnapshot(request.tool_id, request.tool_id not in disabled, definition.can_disable,
                 implementation_id, implementation_version, features, required, True,
                 issue, True, tuple(enrich(RequiredResource(feature.feature_id, model.role,
@@ -777,9 +635,6 @@ class ToolRuntime:
                 except (ValueError, TypeError, KeyError):
                     continue
                 settings = node.params["settings"]
-            elif node.node_type == "studio_effect":
-                reference = bindings.get((node.node_type, node.params.get("tool")))
-                settings = node.params.get("settings", {})
             else:
                 reference = bindings.get(node.node_type)
                 settings = node.params
@@ -792,13 +647,6 @@ class ToolRuntime:
                 if checked.success:
                     digests.update(digest for _, digest in resolved.data.resource_references(checked.data))
         return frozenset(digests)
-
-    def _beauty_executor(self, backend, execute):
-        processor = backend.create()
-        return FunctionExecutor(lambda source, params, *, sampling=None: execute(source, params,
-                                    backend=backend, processor=processor, sampling=sampling),
-                                close=processor.close, analyze=processor.analyze_auto_beauty,
-                                regions=processor.face_regions, uses_sampling=True)
 
     def _denoise_executor(self, resources, execute):
         from ..core.denoiser import ImageDenoiser
@@ -1037,25 +885,14 @@ class ToolRuntime:
         if self._owns_models:
             self.models.close()
 
-    def effect_reference(self, tool_id, settings, *, refresh=False, reference=None):
+    def effect_reference(self, tool_id, settings, *, reference=None):
         from .tool_modules import MODULES, managed_module
         managed = managed_module(tool_id, settings, reference)
         if managed is not None:
             return self._managed_reference(tool_id, settings, managed)
-        if reference is not None and tool_id == "beauty":
-            with self._lock:
-                resolved = self._catalog.resolve(reference)
-            if not resolved.success and reference.implementation_id in ("beauty.haar", "beauty.mediapipe_tasks", "beauty.mediapipe_legacy"):
-                self.ensure_beauty_backend()
-                with self._lock:
-                    resolved = self._catalog.resolve(reference)
-            return CoreResult.ok(reference) if resolved.success else resolved
         if tool_id in MODULES:
             return self._module_reference(tool_id, settings)
-        if tool_id == "beauty":
-            reference = (self.ensure_beauty_backend() if refresh
-                         else self._beauty_reference or self.ensure_beauty_backend())
-        elif tool_id == "denoise":
+        if tool_id == "denoise":
             from ..core.tools.denoise import DENOISE_PARAMETERS
             from .tool_modules import denoise_required_resources
             checked = DENOISE_PARAMETERS.normalize(settings, 2)
@@ -1344,12 +1181,6 @@ class ToolRuntime:
                     return CoreResult.fail(ErrorCode.PARAMETER_INVALID, "error.workflow.params")
                 if definition.descriptor.reference != reference:
                     return CoreResult.fail(ErrorCode.PARAMETER_INVALID, "error.workflow.params")
-            if normalized.success and managed is None and reference.implementation_id.startswith(reference.tool_id + "."):
-                from .tool_modules import MODULES, implementation_name
-                if (reference.tool_id in MODULES and reference.implementation_id !=
-                        reference.tool_id + "." + implementation_name(reference.tool_id, normalized.data)):
-                    return CoreResult.fail(ErrorCode.PARAMETER_INVALID, "error.workflow.params",
-                                           details={"tool_id": reference.tool_id, "field_path": "settings.mode"})
             if normalized.success and resolved.data.implicit_resources:
                 for identity, digest in resolved.data.implicit_resources(normalized.data):
                     path = model_paths.get(digest)
@@ -1454,25 +1285,6 @@ class ToolRuntime:
             except FileNotFoundError:
                 return CoreResult.fail(ErrorCode.TOOL_RESOURCE_MISSING, "error.tool.resource_missing", details={"tool_id": reference.tool_id})
 
-        def legacy_reference(params):
-            if (not isinstance(params, dict) or set(params) != {"tool", "settings"}
-                    or not isinstance(params["tool"], str) or not isinstance(params["settings"], dict)):
-                return CoreResult.fail(ErrorCode.PARAMETER_INVALID, "error.workflow.params")
-            reference = self._bindings.get(("studio_effect", params["tool"]))
-            if reference is None:
-                return CoreResult.fail(ErrorCode.TOOL_MISSING, "error.tool.missing", details={"tool_id": params["tool"]})
-            return CoreResult.ok(reference)
-
-        def inspect_legacy(params):
-            reference = legacy_reference(params)
-            if not reference.success:
-                return reference
-            return inspect_reference(reference.data, params["settings"])
-
-        def execute_legacy(incoming, params, *, context):
-            reference = legacy_reference(params)
-            return run(reference.data, incoming, params["settings"], context) if reference.success else reference
-
         def inspect_tool(params):
             try:
                 reference = ToolReference.from_dict(params)
@@ -1490,14 +1302,7 @@ class ToolRuntime:
             resolved = catalog.resolve(reference)
             return resolved.data.sampling_behavior if resolved.success else "unsupported"
 
-        def legacy_threads(params):
-            reference = legacy_reference(params)
-            return (required_threads(reference.data, params["settings"]) if reference.success
-                    else self._execution_threads)
 
-        registry.register(NodeSpec("studio_effect", execute=execute_legacy, inspect_params=inspect_legacy,
-                                   accepts_context=True, required_threads=legacy_threads,
-                                   sampling_behavior=lambda params: sampling_behavior(legacy_reference(params).data)))
         registry.register(NodeSpec("tool", execute=lambda incoming, params, *, context: run(
             ToolReference.from_dict(params), incoming, params["settings"], context), inspect_params=inspect_tool,
             accepts_context=True, required_threads=lambda params: required_threads(
@@ -1557,10 +1362,12 @@ class ToolRuntime:
             with self._lock:
                 available = self._catalog.resolve(reference).success
             if not available:
-                self._restore_legacy_resources(reference, node.params["settings"])
+                self._restore_denoise_resources(reference)
 
-    def _restore_legacy_resources(self, reference, settings):
-        if self.models is None or reference.params_version != 2 or not reference.resources:
+    def _restore_denoise_resources(self, reference):
+        if (self.models is None or reference.tool_id != "denoise" or reference.params_version != 2
+                or reference.implementation_id != "denoise.ai" or reference.implementation_version != "2"
+                or not reference.resources):
             return
         resources = {}
         for role, digest in reference.resources:
@@ -1568,60 +1375,16 @@ class ToolRuntime:
             if found is None:
                 return
             resources[role] = found[1]
-        from .tool_modules import MODULES, implementation_name, resource_binding, create_module_executor
-        if reference.tool_id in MODULES:
-            module = MODULES[reference.tool_id]
-            checked = module.parameters.normalize(settings, 2)
-            if not checked.success:
-                return
-            try:
-                _, expected_paths, implementation_version = resource_binding(reference.tool_id, checked.data)
-            except ImportError:
-                return
-            if (reference.implementation_id != reference.tool_id + "." + implementation_name(reference.tool_id, checked.data)
-                    or implementation_version != reference.implementation_version
-                    or set(resources) != set(expected_paths)):
-                return
-            descriptor = ToolDescriptor(reference.tool_id, "2", 1, 2, reference.implementation_id,
-                reference.implementation_version, module.image, reference.resources)
-            definition = ToolDefinition(descriptor, module.parameters,
-                lambda paths: create_module_executor(reference.tool_id, paths, self._execution_threads),
-                needs_preparation=module.needs_preparation, reusable_executor=True,
-                minimum_threads=module.minimum_threads,
-                working_memory=(partial(module.working_memory, threads=self._memory_threads)
-                                if module.working_memory is not None else None),
-                resource_features=module.resource_features, collect_resources=module.collect_resources,
-                sampling_behavior=module.sampling_behavior)
-        elif reference.tool_id == "denoise" and reference.implementation_id == "denoise.ai" and reference.implementation_version == "2":
-            from ..core.tools.denoise import DENOISE_PARAMETERS, execute
-            from .tool_modules import DENOISE_RESOURCE_FEATURES, denoise_required_resources
-            if set(resources) != {"denoise_model"}:
-                return
-            descriptor = ToolDescriptor("denoise", "2", 1, 2, "denoise.ai", "2",
-                ImageCapabilities(intermediate_precision="srgb8"), reference.resources)
-            definition = ToolDefinition(descriptor, DENOISE_PARAMETERS,
-                lambda paths: self._denoise_executor(paths, execute), reusable_executor=True,
-                resource_features=DENOISE_RESOURCE_FEATURES, collect_resources=denoise_required_resources,
-                sampling_behavior="preserve")
-        elif reference.tool_id == "beauty" and reference.implementation_id == "beauty.mediapipe_tasks":
-            from importlib.metadata import version
-            from ..core.tools.beauty_backend import BeautyBackend, backend_version
-            from ..core.tools.beauty import BEAUTY_PARAMETERS, execute
-            try:
-                current_version = backend_version() + "-mp" + version("mediapipe")
-            except ImportError:
-                return
-            if reference.implementation_version != current_version or set(resources) != {"face_model"}:
-                return
-            backend = BeautyBackend("mediapipe_tasks", current_version,
-                tuple((role, digest, resources[role]) for role, digest in reference.resources))
-            descriptor = ToolDescriptor("beauty", "3", 1, 2, reference.implementation_id,
-                current_version, ImageCapabilities(intermediate_precision="srgb8"), reference.resources)
-            definition = ToolDefinition(descriptor, BEAUTY_PARAMETERS,
-                lambda paths: self._beauty_executor(backend, execute), reusable_executor=True,
-                sampling_behavior="transport")
-        else:
+        if set(resources) != {"denoise_model"}:
             return
+        from ..core.tools.denoise import DENOISE_PARAMETERS, execute
+        from .tool_modules import DENOISE_RESOURCE_FEATURES, denoise_required_resources
+        descriptor = ToolDescriptor("denoise", "2", 1, 2, "denoise.ai", "2",
+            ImageCapabilities(intermediate_precision="srgb8"), reference.resources)
+        definition = ToolDefinition(descriptor, DENOISE_PARAMETERS,
+            lambda paths: self._denoise_executor(paths, execute), reusable_executor=True,
+            resource_features=DENOISE_RESOURCE_FEATURES, collect_resources=denoise_required_resources,
+            sampling_behavior="preserve")
         with self._lock:
             if not self._catalog.resolve(reference).success:
                 self._catalog.register(definition)

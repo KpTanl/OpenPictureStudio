@@ -50,7 +50,7 @@ def required_models(params):
 
 
 # 选了模型、模型暂时不在时仍可以接着编辑的步骤：受管模型的实现与它的参数版本
-_GAP_EDITABLE = frozenset({("ai_enhance.neural", 3), ("beauty.managed", 3), ("bg_remove.managed", 3),
+_GAP_EDITABLE = frozenset({("ai_enhance.neural", 3), ("bg_remove.managed", 3),
                            ("id_photo.managed", 2)})
 
 
@@ -63,20 +63,10 @@ def model_gaps_editable(workflow, issues):
         for issue in issues)
 
 
-def upgrade_settings(tool_id, params, defaults):
+def upgrade_denoise_settings(params, defaults):
     upgraded = ENHANCE_PARAMETERS.defaults(3)
     upgraded.update({cap + "_model": token for cap, token in defaults.items()})
-    if tool_id == "denoise":
-        upgraded.update(luminance=int(params.get("strength", 40)), chroma=int(params.get("color_strength", 30)))
-    else:
-        scale = params.get("upscale", "1x")
-        upgraded["target"] = "original" if scale == "1x" else scale
-        strength = int(params.get("strength", 50))
-        mode = params.get("mode", "auto")
-        if mode == "night":
-            upgraded.update(luminance=strength, chroma=strength)
-        elif mode != "classic":
-            upgraded["deblur"] = strength
+    upgraded.update(luminance=int(params.get("strength", 40)), chroma=int(params.get("color_strength", 30)))
     checked = ENHANCE_PARAMETERS.normalize(upgraded, 3)
     if not checked.success:
         raise ValueError(checked.error.message_key)
@@ -121,7 +111,7 @@ def target_outcomes(size, params, models, memory_limit=None):
     memory_limit 是这台机器的工作内存上限（字节）；给出时，放大所需内存超过它的目标记为做不了。
     """
     outcomes = []
-    for target in next(field.choices for field in ENHANCE_PARAMETERS.fields if field.name == "target"):
+    for target in next(parameter.choices for parameter in ENHANCE_PARAMETERS.fields if parameter.name == "target"):
         if target == "original":
             continue
         settings = {**params, "target": target}

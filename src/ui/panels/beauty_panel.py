@@ -1,11 +1,10 @@
 """Beauty enhancement panel for in-window sidebar editing."""
 
 import logging
-import copy
 from typing import Optional
 from PIL import Image
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QVBoxLayout
 
 from resources.styles.theme_variables import SPACING_SM, px
@@ -16,7 +15,7 @@ from ..widgets.collapsible_card import CollapsibleCard
 from ..widgets.parameter_row import ParameterRow, ParameterSpec
 from ..widgets.status_badge import StatusBadge
 from ...core.tools.beauty import (
-    BEAUTY_PARAMETERS, BEAUTY_RECOMMENDED_PRESET, LANDMARK_SETTINGS, normalize_params,
+    BEAUTY_PARAMETERS,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,7 +42,7 @@ _BEAUTY_GROUPS = (
 _BEAUTY_FIELDS = {field.name: field for field in BEAUTY_PARAMETERS.fields}
 
 
-class LegacyBeautyPanel(BaseToolPanel):
+class BeautyPanelBase(BaseToolPanel):
     """人像美颜单窗口侧栏面板。"""
 
     PARAMETER_CONTRACT = BEAUTY_PARAMETERS
@@ -74,10 +73,6 @@ class LegacyBeautyPanel(BaseToolPanel):
         self._restore_initial_params()
         self._load_source(image_path)
 
-    @staticmethod
-    def _default_params() -> dict:
-        return BEAUTY_PARAMETERS.defaults(2)
-
     def _load_source(self, path: str) -> None:
         if not path:
             return
@@ -91,27 +86,9 @@ class LegacyBeautyPanel(BaseToolPanel):
         logger.error("BeautyPanel: source load failed: %s", error)
         self.request_status.emit(self._tr("error.image.load", "图片加载失败"))
 
-    def _restore_initial_params(self) -> None:
-        defaults = self._default_params()
-        if self._edit_state_store and self._image_path:
-            draft = self._edit_state_store.get_tool_stash(self._image_path, self.TOOL_ID)
-            if draft is not None:
-                checked = BEAUTY_PARAMETERS.normalize(draft, 2)
-                self._params = checked.data if checked.success else defaults
-                if not checked.success:
-                    request_path = self._image_path
-                    QTimer.singleShot(0, self, lambda: self.request_status.emit(
-                        self._tr("beauty.invalid_params", "Invalid beauty settings"))
-                        if self._image_path == request_path else None)
-            else:
-                self._params = defaults
-        else:
-            self._params = defaults
-        self._sync_ui_from_params()
-
     def restore_params(self, params: dict) -> None:
         self._cancel_auto()
-        super().restore_params(normalize_params(params))
+        super().restore_params(params)
 
     def _cancel_auto(self) -> None:
         self._auto_request_id += 1
@@ -168,18 +145,6 @@ class LegacyBeautyPanel(BaseToolPanel):
         self._parameter_rows[key] = row
         return row
 
-    def _engine_state(self) -> tuple[str, str, str, frozenset]:
-        """人脸检测的状态：标记的种类与文字、需要说明的原因、现在用不了的参数。标记文字为空时不显示标记。"""
-        from ...core.tools.beauty_backend import available_backends
-        backends = available_backends()
-        if not backends:
-            return ("warning", self._tr("beauty.backend.unavailable"),
-                    self._tr("error.tool.resource_missing"), frozenset(_BEAUTY_FIELDS))
-        text = self._tr("beauty.backend." + backends[0].name)
-        if backends[0].name == "haar":
-            return "warning", text, self._tr("beauty.landmarks_required"), frozenset(LANDMARK_SETTINGS)
-        return "success", text, "", frozenset()
-
     def _project_engine(self) -> None:
         """把人脸检测的状态投影到标记、说明与各参数行：用不了的参数置灰，全都用不了时两个快捷操作也不可用。"""
         kind, text, hint, blocked = self._engine_state()
@@ -193,38 +158,6 @@ class LegacyBeautyPanel(BaseToolPanel):
         self._btn_auto_beauty.setEnabled(usable)
         self._btn_preset.setEnabled(usable)
 
-    def _on_auto_beauty(self) -> None:
-        if self.parameters_pending:
-            self.request_status.emit(self._tr("tool.preparing"))
-            return
-        bundle = self.source_bundle
-        if bundle is None:
-            return
-        self._auto_request_id += 1
-        request_id = self._auto_request_id
-        service, tool_id, settings = self._ensure_render_service(), self.TOOL_ID, copy.deepcopy(self._params)
-        job = self.beauty_analysis_provider(settings, False) if self.beauty_analysis_provider is not None else None
-        self._auto_guard = job.is_current if job is not None else lambda: True
-        self._auto_publication = job
-        self.submit_background(
-            bundle.proxy,
-            lambda image, cancelled: job(cancelled) if job is not None else service.analyze(
-                tool_id, image, settings, is_cancelled=cancelled),
-            lambda params: self._on_auto_ready(request_id, params),
-            self._on_auto_error,
-            cancellable=True,
-        )
-
-    def _on_auto_ready(self, request_id: int, params: dict) -> None:
-        if request_id != self._auto_request_id or not self._auto_guard():
-            return
-        try:
-            checked = normalize_params(params)
-        except ValueError as error:
-            self._on_auto_error(error)
-            return
-        self._apply_params(checked, publication=self._auto_publication)
-
     def _on_auto_error(self, error: BaseException) -> None:
         if isinstance(error, CoreOperationError) and error.error.code == "CANCELLED":
             return
@@ -234,10 +167,6 @@ class LegacyBeautyPanel(BaseToolPanel):
     def _show_processing_error(self, error: BaseException, fallback_key: str) -> None:
         key = error.error.message_key if isinstance(error, CoreOperationError) else fallback_key
         self.request_status.emit(self._tr(key, self._tr(fallback_key)))
-
-    def _on_recommended_preset(self) -> None:
-        self._cancel_auto()
-        self._apply_params(dict(BEAUTY_RECOMMENDED_PRESET))
 
     def retranslate_ui(self) -> None:
         super().retranslate_ui()

@@ -4,14 +4,13 @@ from pathlib import Path
 
 from ..core.contracts.result import CoreError, CoreOperationError, ErrorCode
 from ..core.contracts.tools import ImageCapabilities, ToolDescriptor
-from ..core.contracts.beauty import (BEAUTY_MODEL_FIELDS, DETAIL_BEAUTY_ALGORITHM, DETAIL_BEAUTY_PROFILES,
+from ..core.contracts.beauty import (DETAIL_BEAUTY_ALGORITHM, DETAIL_BEAUTY_PROFILES,
     detail_beauty_algorithm)
 from ..core.tools.catalog import ToolDefinition
 from ..core.tools.id_photo import (MANAGED_ID_PHOTO_PARAMETERS, ID_PHOTO_RESOURCE_FEATURES,
     id_photo_required_resources)
 from ..core.tools.managed_models import (MANAGED_BG_PARAMETERS, MANAGED_BEAUTY_PARAMETERS, effect_settings,
-    BACKGROUND_RESOURCE_FEATURES, BEAUTY_RESOURCE_FEATURES, background_required_resources, beauty_required_resources,
-    beauty_effect_algorithm, beauty_uses_locator)
+    BACKGROUND_RESOURCE_FEATURES, BEAUTY_RESOURCE_FEATURES, background_required_resources, beauty_required_resources)
 
 
 def bind_model_resources(requirements, service, *, tool_id, implementation_id):
@@ -88,40 +87,9 @@ def beauty_binding(params, service, threads, inference=None, *, implementation_i
         except ValueError as error:
             raise CoreOperationError(CoreError(ErrorCode.TOOL_INCOMPATIBLE, "error.tool.incompatible",
                 {"tool_id": "beauty", "implementation_id": implementation_id})) from error
-        # 选了人脸定位模型：计算配方已是最新的记录按支持多人脸的版本执行，更早的配方不支持
-        algorithm = beauty_effect_algorithm(algorithm, params)
-        if params.get("face_locator_model") and not beauty_uses_locator(algorithm):
-            raise CoreOperationError(CoreError(ErrorCode.TOOL_INCOMPATIBLE, "error.tool.incompatible",
-                {"tool_id": "beauty", "implementation_id": implementation_id}))
         return detail_beauty_binding(params, service, threads, algorithm=algorithm, retain_resources=retain_resources)
-    if params.get("face_locator_model"):
-        raise CoreOperationError(CoreError(ErrorCode.TOOL_INCOMPATIBLE, "error.tool.incompatible",
-            {"tool_id": "beauty", "implementation_id": implementation_id}))
-    from .tool_runtime import FunctionExecutor
-    from ..core.tools.beauty import execute
-    from ..core.tools.beauty_backend import BeautyBackend, backend_version
-    binding_params = {**params, "skin_smooth": max(1, params["skin_smooth"])} if retain_resources else params
-    models, paths = bind_model_resources(beauty_required_resources(binding_params), service,
-                                        tool_id="beauty", implementation_id="beauty.managed")
-    identities = tuple(sorted((role, model.files[0].digest) for role, model in models.items()))
-    backend = "managed-task-" + backend_version() + "-mp" + version("mediapipe") if paths else "4-neutral"
-    descriptor = ToolDescriptor("beauty", "4", 1, 3, "beauty.managed", backend,
-                                ImageCapabilities(intermediate_precision="srgb8"), identities)
-    def factory(resources):
-        if not resources:
-            return FunctionExecutor(lambda source, settings, sampling=None: execute(
-                source, effect_settings(settings, *BEAUTY_MODEL_FIELDS), sampling=sampling), uses_sampling=True)
-        bound = BeautyBackend("mediapipe_tasks", backend, tuple((role, dict(identities)[role], path)
-                                                                for role, path in resources.items()))
-        processor = bound.create()
-        return FunctionExecutor(lambda source, settings, sampling=None: execute(source,
-            effect_settings(settings, *BEAUTY_MODEL_FIELDS), backend=bound, processor=processor, sampling=sampling),
-            close=processor.close, analyze=processor.analyze_auto_beauty,
-            regions=processor.face_regions, uses_sampling=True)
-    return ToolDefinition(descriptor, MANAGED_BEAUTY_PARAMETERS, factory, reusable_executor=bool(paths),
-        needs_preparation=lambda settings: bool(beauty_required_resources(settings)), allow_resource_gaps_edit=True,
-        resource_features=BEAUTY_RESOURCE_FEATURES, collect_resources=beauty_required_resources,
-        sampling_behavior="transport"), paths
+    raise CoreOperationError(CoreError(ErrorCode.TOOL_INCOMPATIBLE, "error.tool.incompatible",
+        {"tool_id": "beauty", "implementation_id": implementation_id}))
 
 
 BEAUTY_PROXY_ADMISSIONS = frozenset()
@@ -161,12 +129,7 @@ def detail_beauty_binding(params, service, threads, *, algorithm=DETAIL_BEAUTY_A
     from ..core.beauty_detection import BeautyDetector, DETECTION_SPECS, preparation_identity, preparation_memory
     from ..core.beauty_v2 import analyze_auto, face_rectangles
     from ..core.photo_engine import guided_filter_execution
-    if color_algorithm == 3:
-        from ..core.beauty_detail_v3 import execute, working_memory
-    elif color_algorithm == 2:
-        from ..core.beauty_detail_v2 import execute, working_memory
-    else:
-        from ..core.beauty_v2 import execute, working_memory
+    from ..core.beauty_detail_v3 import execute, working_memory
     implementation_version = detail_beauty_version(algorithm)
     # 支持多人脸的版本只在选了人脸定位模型时用检测规格 3，否则与上一版的检测相同
     detection_spec = DETECTION_SPECS[detection_version if "face_locator" in paths else min(detection_version, 2)]

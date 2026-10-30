@@ -12,7 +12,6 @@ from PySide6.QtWidgets import QApplication, QFileDialog
 
 from src.ui.services.ui_thread_relay import UiThreadRelay
 from src.core.edit_state import EditStateStore
-from src.core.contracts.tools import ToolReference
 from src.ui.dialogs.apply_target_dialog import ApplyTarget
 from src.ui.widgets.tool_sidebar import ToolSidebar
 from src.ui.panels import BaseToolPanel, GridCropPanel
@@ -558,13 +557,6 @@ class TestCoreStateAndWorkflowFixes:
         panel._btn_preset.click()
         wait_until(lambda: statuses, "保留细节美颜推荐预设的分析提示")
         assert panel._params == initial and not panel.can_undo()
-        # 旧受管美颜引用直接套用推荐预设
-        panel.set_beauty_reference(ToolReference("beauty", 3, "beauty.managed", "4-neutral"))
-        panel._btn_preset.click()
-        assert panel._params["skin_smooth"] > 0 and panel.can_undo()
-        assert panel._params["face_detection_model"] == initial["face_detection_model"]
-        panel.undo()
-        assert panel._params == initial
         rows["skin_smooth"].slider.edit_value(80)
         assert panel._params["skin_smooth"] == 80 and rows["skin_smooth"].value_edit.text() == "80"
         panel.undo()

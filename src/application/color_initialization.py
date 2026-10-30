@@ -3,7 +3,6 @@ from ..core.contracts.image_display import (DEFAULT_NON_RAW_DISPLAY_MODE, DEFAUL
                                             NonRawDisplayMode, RawDisplayMode)
 from ..core.tools.color import (COLOR_PARAMETERS, COLOR_UI_PARAMETERS, OPS_LOOK, is_color_default_ui,
                                migrate_legacy_color, color_ui_contract, color_engine_contract, canonical_look)
-from ..core.tools.effect_migration import reference_params
 from .result_types import CoreOperationError, CoreResult, ErrorCode
 
 
@@ -45,7 +44,7 @@ def color_baseline_workflow(tools, identity):
         return WorkflowGraph()
     settings = {**defaults, "look": look, "process_version": process_version}
     reference = tools.effect_reference("color_adjust", settings).unwrap()
-    return WorkflowGraph(nodes=(WorkflowNode("color", "tool", reference_params(reference, settings)),))
+    return WorkflowGraph(nodes=(WorkflowNode("color", "tool", reference.to_params(settings)),))
 
 
 def baseline_color_settings(workflow):

@@ -13,7 +13,7 @@ STUDIO_PREVIEW_MAX_DIMENSION = 1600
 def comparison_workflow(workflow):
     nodes = []
     for node in workflow.nodes:
-        if (node.node_type in ("crop", "studio_geometry")
+        if (node.node_type == "crop"
                 or node.node_type == "tool" and node.params.get("tool_id") == "crop"):
             nodes.append(replace(node, inputs=(nodes[-1].node_id,) if nodes else ()))
     return WorkflowGraph(nodes=tuple(nodes))

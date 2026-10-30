@@ -1032,53 +1032,6 @@ class CoreAPI:
         session.preview_state = {}
         return CoreResult.ok(copy.deepcopy(session))
 
-    def upgrade_legacy_effects(self, session_id, *, expected_version, cancellation=None):
-        from dataclasses import replace
-        from ..core.tools.effect_migration import is_legacy_effect, migrated_settings, reference_params
-        from ..core.workflow.validator import inspect_workflow
-        from .output_writer import OperationCancellation
-
-        cancellation = cancellation or OperationCancellation()
-        self.end_edit_group(session_id)
-        current = self.get_session(session_id)
-        if not current.success:
-            return current
-        session = current.data
-        if session.state_version != expected_version:
-            return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
-        nodes = []
-        for node in session.draft_workflow.nodes:
-            if cancellation.is_cancelled():
-                return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
-            if not is_legacy_effect(node):
-                nodes.append(copy.deepcopy(node))
-                continue
-            tool_id = node.params.get("tool") or node.params.get("tool_id")
-            settings = migrated_settings(tool_id, node.params["settings"],
-                                         legacy_defaults=node.node_type == "studio_effect"
-                                         or node.params.get("implementation_version") == "legacy-1")
-            reference = self.tools.effect_reference(tool_id, settings, refresh=True)
-            if not reference.success:
-                return reference
-            nodes.append(replace(node, node_type="tool", version=1,
-                                 params=reference_params(reference.data, settings)))
-        workflow = replace(session.draft_workflow, nodes=tuple(nodes))
-        snapshot = self.tools.snapshot(require_resource_versions=True)
-        checked = inspect_workflow(workflow, snapshot.registry)
-        if not checked.success:
-            return checked
-        if checked.data["issues"]:
-            issue = checked.data["issues"][0]
-            return CoreResult.fail(issue["code"], issue["message_key"], details=issue["details"])
-        with self._lock, self.tools.publication(snapshot) as available, cancellation.publication() as active:
-            current = self._sessions.get(session_id)
-            if (not available or not active or current is None
-                    or current.state_version != expected_version):
-                return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
-            result = self._record_workflow_edit(session_id, workflow, "studio.effect_upgrade_title")
-            cancellation.mark_published()
-            return result
-
     def analyze_node_input(self, session_id, workflow, node_id, consumer, *, expected_version,
                            is_cancelled=lambda: False):
         from ..core.workflow.executor import input_fingerprint
@@ -1182,56 +1135,9 @@ class CoreAPI:
         except CoreOperationError as error:
             return CoreResult.from_exception(error)
 
-    def upgrade_beauty_effect(self, session_id, node_id, *, expected_version, cancellation=None):
-        from dataclasses import replace
-        from ..core.tools.effect_migration import migrated_settings, reference_params, is_legacy_effect
-        from ..core.tools.managed_models import MANAGED_BEAUTY_PARAMETERS
-        from ..core.contracts.beauty import DETAIL_BEAUTY_PROFILES, is_current_detail_beauty
-        from ..core.contracts.tools import ToolReference
-        from .output_writer import OperationCancellation
-        cancellation = cancellation or OperationCancellation()
-        self.end_edit_group(session_id)
-        current = self.get_session(session_id)
-        if not current.success:
-            return current
-        session = current.data
-        source_identity = self.source_identity(session_id)
-        original = next((node for node in session.draft_workflow.nodes if node.node_id == node_id), None)
-        if session.state_version != expected_version:
-            return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
-        if (original is None or (original.params.get("tool_id") or original.params.get("tool")) != "beauty"
-                or is_current_detail_beauty(original.params.get("implementation_id", ""),
-                                            original.params.get("implementation_version", ""))):
-            return CoreResult.fail(ErrorCode.TOOL_INCOMPATIBLE, "error.tool.incompatible")
-        raw = original.params.get("settings", {})
-        settings = migrated_settings("beauty", raw, legacy_defaults=is_legacy_effect(original))
-        settings["face_detection_model"] = raw.get("face_detection_model") or self.models.default("face_detection")
-        settings = MANAGED_BEAUTY_PARAMETERS.normalize(settings, 3).unwrap()
-        target = ToolReference("beauty", 3, "beauty.detail", f"{max(DETAIL_BEAUTY_PROFILES)}-neutral")
-        reference = self.tools.effect_reference("beauty", settings, reference=target)
-        if not reference.success:
-            return reference
-        workflow = replace(session.draft_workflow, nodes=tuple(
-            replace(node, node_type="tool", version=1, params=reference_params(reference.data, settings))
-            if node.node_id == node_id else node for node in session.draft_workflow.nodes))
-        checked = self.tools.validate(workflow)
-        if not checked.success:
-            return checked
-        snapshot = self.tools.snapshot()
-        with self._lock, self.tools.publication(snapshot) as available, cancellation.publication() as active:
-            current = self._sessions.get(session_id)
-            if (not available or not active or current is None or current.state_version != expected_version
-                    or self.source_identity(session_id) != source_identity
-                    or not self.image_sources.matches_file(source_identity)):
-                return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
-            result = self._record_workflow_edit(session_id, workflow, "beauty.detail.upgrade")
-            cancellation.mark_published()
-            return result
-
     def upgrade_enhancement_effect(self, session_id, node_id, *, expected_version, cancellation=None):
         from dataclasses import replace
-        from ..core.tools.enhancement import upgrade_settings
-        from ..core.tools.effect_migration import reference_params
+        from ..core.tools.enhancement import upgrade_denoise_settings
         from .output_writer import OperationCancellation
         cancellation = cancellation or OperationCancellation()
         self.end_edit_group(session_id)
@@ -1245,19 +1151,19 @@ class CoreAPI:
         if original is None:
             return CoreResult.fail(ErrorCode.INVALID_INPUT, "error.workflow.params")
         tool_id = original.params.get("tool_id") or original.params.get("tool")
-        if tool_id not in ("denoise", "ai_enhance") or original.params.get("params_version") == 3:
+        if tool_id != "denoise" or original.params.get("params_version") != 2:
             return CoreResult.fail(ErrorCode.TOOL_INCOMPATIBLE, "error.tool.incompatible")
-        if tool_id == "denoise" and any(node is not original and
+        if any(node is not original and
                 (node.params.get("tool_id") or node.params.get("tool")) == "ai_enhance"
                 for node in session.draft_workflow.nodes):
             return CoreResult.fail(ErrorCode.TOOL_INCOMPATIBLE, "enhance.upgrade_conflict")
         defaults = {cap: self.models.default(cap) for cap in ("super_resolution", "denoise", "deblur")}
-        settings = upgrade_settings(tool_id, original.params["settings"], defaults)
+        settings = upgrade_denoise_settings(original.params["settings"], defaults)
         reference = self.tools.effect_reference("ai_enhance", settings)
         if not reference.success:
             return reference
         workflow = replace(session.draft_workflow, nodes=tuple(
-            replace(node, node_type="tool", version=1, params=reference_params(reference.data, settings))
+            replace(node, node_type="tool", version=1, params=reference.data.to_params(settings))
             if node.node_id == node_id else node for node in session.draft_workflow.nodes))
         checked = self.tools.validate(workflow, allow_model_gaps=True)
         if not checked.success:

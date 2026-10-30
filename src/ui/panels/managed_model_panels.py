@@ -2,15 +2,13 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QLabel
 
 from .base_tool_panel import BaseToolPanel
-from .beauty_panel import LegacyBeautyPanel
-from .bg_remove_panel import LegacyBGRemovePanel
+from .beauty_panel import BeautyPanelBase
+from .bg_remove_panel import BGRemovePanelBase
 from ...application.tool_feature_readiness import READY, ToolFeatureReadiness
 from ...core.tools.managed_models import (BACKGROUND_RESOURCE_FEATURES, BEAUTY_RESOURCE_FEATURES, FACE_LOCATOR_MODEL,
                                          MANAGED_BG_PARAMETERS, MANAGED_BEAUTY_PARAMETERS,
                                          background_required_resources, beauty_required_resources)
-from ...core.tools.beauty import BEAUTY_RECOMMENDED_PRESET
-from ...core.contracts.beauty import (DETAIL_BEAUTY_ALGORITHM, DETAIL_BEAUTY_PROFILES, detail_beauty_algorithm,
-                                      is_current_detail_beauty)
+from ...core.contracts.beauty import DETAIL_BEAUTY_ALGORITHM, DETAIL_BEAUTY_PROFILES, detail_beauty_algorithm
 from ..widgets.model_selector import ModelSelector
 
 
@@ -138,7 +136,7 @@ class ManagedModelPanelMixin:
         self._commit_params({**self._params, self.MODEL_CAPABILITY + "_model": token, self.MODEL_PAIRING[2]: paired})
 
 
-class BGRemovePanel(ManagedModelPanelMixin, LegacyBGRemovePanel):
+class BGRemovePanel(ManagedModelPanelMixin, BGRemovePanelBase):
     availability_changed = Signal()
     MODEL_CAPABILITY = "segmentation"
     PARAMETER_CONTRACT = MANAGED_BG_PARAMETERS
@@ -154,7 +152,7 @@ class BGRemovePanel(ManagedModelPanelMixin, LegacyBGRemovePanel):
         return self._params.get("mode") == "ai"
 
     def restore_params(self, params):
-        LegacyBGRemovePanel.restore_params(self, params)
+        BGRemovePanelBase.restore_params(self, params)
 
     def _model_status_changed(self):
         super()._model_status_changed()
@@ -174,7 +172,7 @@ class BGRemovePanel(ManagedModelPanelMixin, LegacyBGRemovePanel):
         return MANAGED_BG_PARAMETERS.defaults(3)
 
 
-class BeautyPanel(ManagedModelPanelMixin, LegacyBeautyPanel):
+class BeautyPanel(ManagedModelPanelMixin, BeautyPanelBase):
     availability_changed = Signal()
     MODEL_CAPABILITY = "face_detection"
     PARAMETER_CONTRACT = MANAGED_BEAUTY_PARAMETERS
@@ -183,13 +181,11 @@ class BeautyPanel(ManagedModelPanelMixin, LegacyBeautyPanel):
     RESOURCE_REQUIREMENTS = staticmethod(beauty_required_resources)
     # 模型下拉里多一项“多人脸”：选了人脸定位模型即开启多人脸检测
     MODEL_PAIRING = (FACE_LOCATOR_MODEL, "beauty.model.multi_face", "face_locator_model")
-    PARAMETER_LABELS = {**LegacyBeautyPanel.PARAMETER_LABELS, "face_locator_model": ("beauty.param.multi_face", "")}
+    PARAMETER_LABELS = {**BeautyPanelBase.PARAMETER_LABELS, "face_locator_model": ("beauty.param.multi_face", "")}
 
     def __init__(self, *args, **kwargs):
-        self._detail_beauty = True
         self._detail_algorithm = DETAIL_BEAUTY_ALGORITHM
         self._beauty_status = None
-        self._multi_face_supported = True
         super().__init__(*args, **kwargs)
 
     def _default_pairing(self):
@@ -204,20 +200,13 @@ class BeautyPanel(ManagedModelPanelMixin, LegacyBeautyPanel):
         self._root_layout.insertWidget(self._root_layout.indexOf(self.model_selector) + 1, self._multi_face_hint)
 
     def set_beauty_reference(self, reference):
-        detail = reference is None or reference.implementation_id == "beauty.detail"
         algorithm = (detail_beauty_algorithm(reference.implementation_version) if reference is not None
-                     else DETAIL_BEAUTY_ALGORITHM) if detail else None
-        if detail != self._detail_beauty or algorithm != self._detail_algorithm:
+                     else DETAIL_BEAUTY_ALGORITHM)
+        if algorithm != self._detail_algorithm:
             self._cancel_auto()
             self._beauty_status = None
-        self._detail_beauty = detail
         self._detail_algorithm = algorithm
-        # 多人脸要求计算配方已是最新；更早的旧版效果需先升级
-        self._multi_face_supported = reference is None or is_current_detail_beauty(
-            reference.implementation_id, reference.implementation_version)
-        self.model_selector.set_pairing_enabled(self._multi_face_supported)
-        # 所需模型随这条记录的效果版本与人脸定位模型的选择而定
-        self._readiness.set_implementation(reference.implementation_version if detail and reference is not None else "")
+        self._readiness.set_implementation(reference.implementation_version if reference is not None else "")
         self._model_status_changed()
 
     def set_beauty_status(self, status):
@@ -234,11 +223,7 @@ class BeautyPanel(ManagedModelPanelMixin, LegacyBeautyPanel):
         return MANAGED_BEAUTY_PARAMETERS.defaults(3)
 
     def _on_recommended_preset(self):
-        if self._detail_beauty:
-            self._start_detail_analysis(preset=True)
-            return
-        self._cancel_auto()
-        self._apply_params({**BEAUTY_RECOMMENDED_PRESET, **self._model_choice()})
+        self._start_detail_analysis(preset=True)
 
     def _on_auto_ready(self, request_id, params):
         from ...application.beauty_analysis import BeautyAnalysisNotice
@@ -255,10 +240,7 @@ class BeautyPanel(ManagedModelPanelMixin, LegacyBeautyPanel):
         self._apply_params({**params, **self._model_choice()}, publication=self._auto_publication)
 
     def _on_auto_beauty(self):
-        if self._detail_beauty:
-            self._start_detail_analysis(preset=False)
-        else:
-            super()._on_auto_beauty()
+        self._start_detail_analysis(preset=False)
 
     def _start_detail_analysis(self, *, preset):
         import copy
@@ -299,8 +281,7 @@ class BeautyPanel(ManagedModelPanelMixin, LegacyBeautyPanel):
     def _project_engine(self):
         super()._project_engine()
         if hasattr(self, "_multi_face_hint"):
-            key = ("beauty.multi_face.legacy" if not self._multi_face_supported
-                   else "beauty.multi_face.on" if self._params.get("face_locator_model") else "beauty.multi_face.off")
+            key = "beauty.multi_face.on" if self._params.get("face_locator_model") else "beauty.multi_face.off"
             self._multi_face_hint.setText(self._tr(key))
 
     def _models_changed(self):
@@ -311,8 +292,6 @@ class BeautyPanel(ManagedModelPanelMixin, LegacyBeautyPanel):
         # 模型用不了时由模型选择说明原因并给出安装入口，这里只把参数置灰
         if self._readiness.states(self._params).get(self.MODEL_FEATURE) != READY:
             return "pending", "", "", frozenset(self._parameter_rows)
-        if not self._detail_beauty:
-            return "success", self._tr("beauty.engine.ready"), "", frozenset()
         calculation = DETAIL_BEAUTY_PROFILES[self._detail_algorithm][1]
         description = self._tr("beauty.detail.description" if calculation == 1
                                else f"beauty.detail.description_v{calculation}")

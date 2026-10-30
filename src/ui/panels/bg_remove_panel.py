@@ -26,7 +26,7 @@ _MODES = ("ai", "color")
 _BACKGROUNDS = ("transparent", "white", "black")
 
 
-class LegacyBGRemovePanel(BaseToolPanel):
+class BGRemovePanelBase(BaseToolPanel):
     """背景移除：选好方式、边缘与背景，再点底部的“渲染预览”。
 
     与画质增强一样是手动预览：改参数只记入本次编辑，不自动渲染；预览任务归宿主，面板发出

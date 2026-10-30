@@ -8,9 +8,9 @@ from PIL import Image, ImageFilter
 
 from .catalog import ParameterContract, ParameterField
 from .geometry import checked
-from .id_photo import (ID_PHOTO_PARAMETERS, BG_PRESETS, LAYOUT_SHEET, MANAGED_ID_PHOTO_PARAMETERS, SHEET_BORDER,
+from .id_photo import (LAYOUT_SHEET, MANAGED_ID_PHOTO_PARAMETERS, SHEET_BORDER,
                        SHEET_SIZE, photo_bounds, sheet_positions)
-from ..photo_engine import _pil_from, _src_from_pil, linear_to_srgb, srgb_to_linear
+from ..photo_engine import _pil_from, linear_to_srgb, srgb_to_linear
 
 
 def _validate_color(params):
@@ -26,20 +26,6 @@ BG_PARAMETERS = ParameterContract((
     ParameterField("target_color", (list, tuple), [255, 255, 255]),
     ParameterField("bg_type", str, "transparent", choices=("transparent", "white", "black")),
 ), version=2, validate=_validate_color)
-
-AI_PARAMETERS = ParameterContract((
-    ParameterField("mode", str, "auto", choices=("auto", "sharpen", "deblur", "portrait", "superres", "night", "classic")),
-    ParameterField("strength", int, 50, 0, 100),
-    ParameterField("upscale", str, "1x", choices=("1x", "2x", "4x")),
-), version=2)
-
-
-LEGACY_U2NET_DIGEST = "8d10d2f3bb75ae3b6d527c77944fc5e7dcd94b29809d47a739a7a728a912b491"
-
-
-def legacy_background_resources(params):
-    return (("model", LEGACY_U2NET_DIGEST),) if params.get("mode", "ai") == "ai" else ()
-
 
 def resize_arrays(pixels, alpha, size, *, box=None, parallelism=1):
     """缩放线性图像与直通透明通道，返回 (图像, 透明通道)。
@@ -81,29 +67,6 @@ def resize_source(source, size, *, box=None, parallelism=1, sampling=None):
 def resize_working_memory(source, size):
     """resize_source() 的工作内存估算：三个通道各自的结果、合并后的图像与透明通道，加输入的一份转换。"""
     return size[0] * size[1] * 40 + source.pixels.nbytes
-
-
-def id_photo_memory(source, params, *, threads=1):
-    return resize_working_memory(source, (params["custom_width"], params["custom_height"]))
-
-
-def legacy_ai_memory(source, params, *, threads=1):
-    """旧版画质增强：8 位图像进出处理器，放大后按目标尺寸再缩放一次。"""
-    factor = {"1x": 1, "2x": 2, "4x": 4}[params["upscale"]]
-    height, width = source.pixels.shape[:2]
-    target = (width * factor, height * factor)
-    return resize_working_memory(source, target) + width * height * 8 + target[0] * target[1] * 8
-
-
-def execute_id_photo(source, params, *, sampling=None):
-    params = checked(ID_PHOTO_PARAMETERS, params)
-    result = resize_source(source, (params["custom_width"], params["custom_height"]), sampling=sampling)
-    color = BG_PRESETS.get(params["bg_preset"]) if params["change_bg"] else None
-    if color is not None and result.alpha is not None:
-        background = srgb_to_linear(np.asarray(color, dtype=np.float32) / np.float32(255))
-        result = replace(result, pixels=result.pixels * result.alpha[..., None]
-                         + background * (1 - result.alpha[..., None]), alpha=None)
-    return result
 
 
 def _linear_color(color):
@@ -223,36 +186,3 @@ def execute_background(source, params, *, mask_provider=None, sampling=None):
         return replace(source, alpha=alpha)
     background = np.float32(1 if params["bg_type"] == "white" else 0)
     return replace(source, pixels=source.pixels * alpha[..., None] + background * (1 - alpha[..., None]), alpha=None)
-
-
-def execute_ai(source, params, *, model_path=None, detector_path=None, processor=None, sampling=None):
-    from ..ai_enhancer import AIEnhancer, AIEnhanceConfig
-    from ..denoiser import is_ai_model_available
-
-    params = checked(AI_PARAMETERS, params)
-    factor = int(params["upscale"][0])
-    width, height = source.pixels.shape[1], source.pixels.shape[0]
-    if width * height * factor * factor > 100_000_000:
-        raise ValueError("输出尺寸超限")
-    mode = {"auto": "portrait", "sharpen": "portrait", "deblur": "superres", "classic": "superres"}.get(params["mode"], params["mode"])
-    needs_model = mode in ("superres", "night") and params["mode"] != "classic"
-    if needs_model and not is_ai_model_available(model_path):
-        raise FileNotFoundError("AI 模型不可用")
-    owns_processor = processor is None
-    if owns_processor:
-        processor = AIEnhancer(detector_path=detector_path, strict=True)
-    try:
-        with _pil_from(source) as input_image:
-            with processor.enhance(input_image, AIEnhanceConfig(
-                mode=mode, strength=params["strength"], upscale_factor=factor,
-                prefer_ai=needs_model, deblur_model_path=model_path, denoise_model_path=model_path)) as image:
-                result = _src_from_pil(image, source_path=source.source_path, is_proxy=source.is_proxy)
-                alpha_source = source if image.size == (width, height) else resize_source(source, image.size)
-                if sampling is not None and sampling.active:
-                    sampling.resize(image.size)
-                result = replace(source, pixels=result.pixels, alpha=alpha_source.alpha, orig_size=image.size)
-    finally:
-        if owns_processor:
-            processor.close()
-    target = (width * factor, height * factor)
-    return result if image.size == target else resize_source(result, target, sampling=sampling)

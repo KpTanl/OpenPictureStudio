@@ -102,18 +102,11 @@ class AssistantContextBuilder:
         )
         available, unavailable = available_tools(photo, faces)
         if photo is not None and "beauty" in available:
-            from ..core.contracts.beauty import is_current_detail_beauty
-            beauty_node = next((node for node in photo.workflow.nodes
-                                if (node.params.get("tool_id") or node.params.get("tool") or node.node_type) == "beauty"), None)
-            detail = beauty_node is None or beauty_node.params.get("implementation_id") == "beauty.detail"
             instructions += ("Beauty uses the detail-preserving algorithm: smoothing reduces mid-frequency variation; "
                              "brightening adds low-frequency luminance; sharpening affects only eyes, eyebrows and lips. "
-                             "All beauty effects require usable facial landmarks. " if detail else
-                             "Beauty uses the saved legacy implementation. Its existing parameter semantics remain active. ")
-            if beauty_node is None or is_current_detail_beauty(
-                    beauty_node.params.get("implementation_id", ""), beauty_node.params.get("implementation_version", "")):
-                instructions += ("High smoothing also softens some fine skin texture and evens local skin chroma. "
-                                 "Blemish repair matches surrounding skin tone and avoids reusing the same donor patch. ")
+                             "All beauty effects require usable facial landmarks. "
+                             "High smoothing also softens some fine skin texture and evens local skin chroma. "
+                             "Blemish repair matches surrounding skin tone and avoids reusing the same donor patch. ")
         if long_term_preferences:
             instructions += ("User-confirmed long-term photography preferences; the current request takes priority: "
                              + json.dumps([item["text"] for item in long_term_preferences], ensure_ascii=False) + ". ")

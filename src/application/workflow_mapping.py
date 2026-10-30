@@ -7,11 +7,9 @@ from ..core.contracts import WorkflowGraph, WorkflowNode
 from ..core.contracts.tools import ToolReference
 from ..core.contracts.preview import PreviewTarget
 from ..core.contracts.result import CoreResult
-from ..core.tools.beauty import BEAUTY_PARAMETERS
 from ..core.tools.denoise import DENOISE_PARAMETERS
 from ..core.tools.color import (COLOR_PARAMETERS, color_engine_contract, color_identity, preserve_unedited_color_fields,
                                 ui_to_engine, engine_to_ui)
-from ..core.tools.effect_migration import is_legacy_effect, reference_params
 from ..core.tools.stage_defaults import (is_color_default as _is_color_default, is_beauty_default as _is_beauty_default,
                                          is_denoise_default as _is_denoise_default, is_crop_default as _is_crop_default)
 
@@ -38,9 +36,7 @@ def mapped_stage_node(session, tool_id, state=None):
         return None
     for node in workflow.nodes:
         if (tool_id == "color_adjust" and node.node_type == "color_adjust"
-                or tool_id == "crop" and node.node_type in ("crop", "studio_geometry")):
-            return node
-        if node.node_type == "studio_effect" and node.params.get("tool") == tool_id:
+                or tool_id == "crop" and node.node_type == "crop"):
             return node
         if node.node_type == "tool" and node.params.get("tool_id") == tool_id:
             return node
@@ -69,36 +65,26 @@ def _versioned_tool_params(session, tool_id, settings):
             if reference.params_version <= 2:
                 saved.pop("look", None)
                 saved.pop("process_version", None)
-            return reference_params(reference, saved)
-    if tool_id in ("beauty", "ai_enhance", "bg_remove"):
+            return reference.to_params(saved)
+    if tool_id == "beauty":
         workflow = getattr(session, "_mapped_workflow", None)
         for node in workflow.nodes if workflow is not None else ():
-            if (tool_id == "beauty" and node.node_type == "tool" and node.params.get("tool_id") == tool_id
-                    and not is_legacy_effect(node)):
+            if node.node_type == "tool" and node.params.get("tool_id") == tool_id:
                 reference = ToolReference.from_dict(node.params)
-                if "face_detection_model" in settings:
-                    result = session.core.tools.effect_reference(tool_id, settings, reference=reference)
-                    if not result.success:
-                        raise WorkflowParameterError(result)
-                    reference = result.data
-                return reference_params(reference, copy.deepcopy(settings))
-            if (node.node_type == "tool" and node.params.get("tool_id") == tool_id
-                    and not is_legacy_effect(node)
-                    and not any(key in settings for key in ("target", "segmentation_model", "face_detection_model"))
-                    and node.params["settings"].get("mode") == settings.get("mode")):
-                return reference_params(ToolReference.from_dict(node.params), copy.deepcopy(settings))
+                result = session.core.tools.effect_reference(tool_id, settings, reference=reference)
+                if not result.success:
+                    raise WorkflowParameterError(result)
+                return result.data.to_params(copy.deepcopy(settings))
     result = session.core.tools.effect_reference(tool_id, settings)
     if not result.success:
         raise WorkflowParameterError(result)
-    return reference_params(result.data, copy.deepcopy(settings))
+    return result.data.to_params(copy.deepcopy(settings))
 
 
 def stage_identity(node):
     if node.node_type == "tool":
         return node.params["tool_id"]
-    if node.node_type == "studio_effect":
-        return node.params["tool"]
-    return "crop" if node.node_type in ("crop", "studio_geometry") else node.node_type
+    return node.node_type
 
 
 def stage_params(node):
@@ -108,8 +94,6 @@ def stage_params(node):
         return engine_to_ui(node.params)
     if kind == "crop":
         return {"crop_rect": copy.deepcopy(node.params["box"])}
-    if kind == "studio_geometry":
-        return copy.deepcopy(node.params)
     settings = copy.deepcopy(node.params["settings"])
     if kind == "tool" and node.params["tool_id"] == "color_adjust":
         return engine_to_ui(settings)
@@ -175,7 +159,7 @@ def to_workflow(session, editing_tool=None, preview_target=None):
                 params = session.denoise_params if tool == "denoise" else session.beauty_params
                 neutral = _is_denoise_default if tool == "denoise" else _is_beauty_default
                 if params != {}:
-                    contract = DENOISE_PARAMETERS if tool == "denoise" else MANAGED_BEAUTY_PARAMETERS if "face_detection_model" in params else BEAUTY_PARAMETERS
+                    contract = DENOISE_PARAMETERS if tool == "denoise" else MANAGED_BEAUTY_PARAMETERS
                     checked = contract.normalize(params, contract.version)
                     if not checked.success:
                         raise WorkflowParameterError(CoreResult.fail(
@@ -220,11 +204,9 @@ def restore_workflow(session, workflow):
         kind = node.node_type
         if kind in ("source", "export"):
             continue
-        identity = node.params.get("tool") if kind == "studio_effect" else kind
+        identity = kind
         if kind == "tool":
             identity = node.params.get("tool_id")
-        if kind == "crop":
-            identity = "studio_geometry"
         if identity in seen:
             raise ValueError("此工作流包含重复处理阶段")
         seen.add(identity)
@@ -239,18 +221,9 @@ def restore_workflow(session, workflow):
                 if not equal:
                     raise ValueError("调色参数超出当前面板精度")
             expected.append((kind, None))
-        elif kind in ("studio_geometry", "crop"):
+        elif kind == "crop":
             crop = stage_params(node)
             expected.append((kind, None))
-        elif kind == "studio_effect":
-            settings = copy.deepcopy(node.params["settings"])
-            if identity == "beauty":
-                beauty = settings
-            elif identity == "denoise":
-                denoise = settings
-            else:
-                extras[identity] = settings
-            expected.append((kind, identity))
         elif kind == "tool":
             reference = ToolReference.from_dict(node.params)
             if not (reference.params_version in (1, 2)
@@ -281,7 +254,7 @@ def restore_workflow(session, workflow):
     session._mapped_workflow = copy.deepcopy(workflow)
     session._mapped_snapshot = session.snapshot()
     normalized = to_workflow(session, editing_tool="")
-    actual = [(node.node_type, node.params.get("tool") or node.params.get("tool_id"))
+    actual = [(node.node_type, node.params.get("tool_id"))
               for node in normalized.nodes]
     if actual != expected:
         raise ValueError("此工作流的处理顺序不支持当前工具面板")

@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..application.studio_service import STUDIO_PREVIEW_MAX_DIMENSION, StudioRenderService
+from ..application.studio_service import STUDIO_PREVIEW_MAX_DIMENSION, StudioRenderService, comparison_workflow
 from ..application.agent_service import AgentService
 from ..application.assistant_models import AssistantContext
 from ..application.audit import AuditLog
@@ -53,6 +53,7 @@ from ..application.studio_preview_queue import StudioPreviewContext, StudioPrevi
 from ..application.studio_detail import needs_detail
 from ..application.local_mask_service import MaskGesture, upgrade_color_masks
 from ..core.contracts.preview import PreviewTarget
+from ..core.contracts import WorkflowGraph
 from ..core.contracts.beauty import is_current_detail_beauty
 from ..application.edit_sessions import EditSessionService, EditSession, STAGE_SPECS as _STAGE_SPECS
 from ..application.edit_changes import parameter_changes, stage_changes
@@ -257,11 +258,11 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._original_qimage: Optional[QImage] = None
         self._original_display = None
         self._original_level_requested = None
+        self._original_geometry = ""
         self.destroyed.connect(self._clear_original_display)
-        self._original_requested = False
         self._original_error = None
         self._original_runner = StudioOriginalRunner(self.core.image_sources, self,
-            complete_source=self.core.complete_source_preview)
+            complete_source=self.core.complete_source_preview, render_original=self._render_service.render_original)
         self._original_runner.ready.connect(self._on_original_ready)
         self._original_runner.source_ready.connect(self._on_full_source_ready)
         self.destroyed.connect(self._original_runner.shutdown)
@@ -707,7 +708,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self.stop_preview()
         self._detail_resources.release_source()
         self._original_runner.cancel()
-        self._original_requested = False
         self._original_error = None
         self._render_generation += 1
         self._image_loading = bool(path)
@@ -851,7 +851,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._render_generation += 1
         self._comparing = False
         self._original_runner.cancel()
-        self._original_requested = False
         self._original_error = None
         self._clear_original_display()
         if self.session and (force or self.session.image_path != path):
@@ -886,9 +885,8 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self.session.refresh()
         self.session.refresh_availability()
         if self.core.source_preview(self.session.core_id).half_size:
-            self._original_requested = True
             full = self._canvas_preview_mode == "full"
-            self._original_level_requested = (full, not full)
+            self._original_level_requested = (full, not full, "")
             self._original_runner.submit(self.session.core_id, self.core.source_identity(self.session.core_id), full=full)
         if self.session.read_only:
             self.viewer.clear()
@@ -2173,8 +2171,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                 canvas.result_view.set_busy(False)
         self._arm_preview_render()
         if self._preview_queue.pending is None and request is self._preview_queue.latest:
-            if (qimg is not None and self._accept_preview(request) and not self.session.read_only
-                    and not self._original_requested):
+            if qimg is not None and self._accept_preview(request) and not self.session.read_only:
                 self._request_original()
             self.preview_finished.emit()
         self._refresh_detail()
@@ -2191,10 +2188,11 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self.stop_preview()
         self._original_runner.cancel()
         self._original_level_requested = None
-        self._original_requested = False
         self._original_error = None
         self._canvas_preview_mode = mode
-        if mode == "preview1600" and self._original_display is not None and max(self._original_display.size) > 1600:
+        large_source = self.session is not None and max(self.session.source_size) > 1600
+        if (mode == "preview1600" and self._original_display is not None
+                and (large_source or max(self._original_display.size) > 1600)):
             self._original_display.full = None
             self._original_qimage = self._original_display.preview
             if self._original_display.full_memory is not None:
@@ -2206,14 +2204,27 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
 
     def _clear_original_display(self):
         self._original_qimage = None
-        self._original_requested = False
         self._original_level_requested = None
+        self._original_geometry = ""
         display, self._original_display = self._original_display, None
         if display is not None:
             display.close()
 
+    def _comparison_workflow(self):
+        request = self._displayed_request
+        return comparison_workflow(request.session.workflow) if request is not None else WorkflowGraph()
+
     def _request_original(self):
-        if self.session is None or self.session.read_only or self._image_loading or self._original_error is not None:
+        if self.session is None or self.session.read_only or self._image_loading:
+            return
+        workflow = self._comparison_workflow()
+        geometry_key = workflow.canonical_json() if workflow.nodes else ""
+        if geometry_key != self._original_geometry:
+            self._original_runner.cancel()
+            self._clear_original_display()
+            self._original_geometry = geometry_key
+            self._original_error = None
+        if self._original_error is not None:
             return
         full = (self._canvas_preview_mode == "full"
                 or self._canvas_preview_mode == "auto" and self._view_needs_detail())
@@ -2221,19 +2232,22 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         display = self._original_display
         if display is not None and (display.full is not None if full else display.preview_proxy_input == proxy_input):
             return
-        requested = (full, proxy_input)
+        requested = (full, proxy_input, geometry_key)
         if (self._original_level_requested is not None
                 and (self._original_level_requested[0] or self._original_level_requested == requested)):
             return
-        self._original_requested = True
         self._original_level_requested = requested
         self._original_runner.submit(self.session.core_id, self.core.source_identity(self.session.core_id),
-                                     full=full, proxy_input=proxy_input)
+                                     full=full, proxy_input=proxy_input, workflow=workflow)
 
     def _comparison_image(self):
         display = self._original_display
         if display is None:
             return self._original_qimage
+        workflow = self._comparison_workflow()
+        geometry_key = workflow.canonical_json() if workflow.nodes else ""
+        if display.geometry_key != geometry_key:
+            return None
         full = self._canvas_preview_mode == "full" or self._detail_showing
         if full:
             return display.full
@@ -2260,7 +2274,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             image = before if self._comparing else edited
             full_size = frame.full_size if frame is not None and frame.full_size else (
                 self.session.source_size if self.session is not None else None)
-            reference = self.session.source_size if self._comparing and self.session is not None else full_size
+            reference = full_size
             if image is None or reference is None or self._image_loading:
                 state = CanvasPreviewState(mode=self._canvas_preview_mode)
             else:
@@ -2283,8 +2297,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                     False if detail_ready else (frame.input_is_proxy if frame is not None else None))
                 key = (image.cacheKey(), tuple(reference), self._comparing)
                 companion = edited if self._comparing else before
-                companion_reference = full_size if self._comparing else (
-                    self.session.source_size if self.session is not None else None)
+                companion_reference = full_size
                 if key != self._canvas_image_key:
                     try:
                         self._show_canvas_image(image, companion=companion, companion_reference=companion_reference)
@@ -2490,6 +2503,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             if image is not None:
                 image.close()
             return
+        if image is not None and image.geometry_key != self._original_geometry:
+            image.close()
+            return
         self._original_level_requested = None
         if error is not None:
             self._original_error = error
@@ -2529,7 +2545,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
     # 对比、重置、撤销、应用
     # ------------------------------------------------------------------
     def start_compare(self) -> None:
-        """按住对比：显示原始原图。"""
+        """按住对比：显示与当前几何区域对齐的改前画面。"""
         self.assistant_panel.reset_comparison()
         image = self._comparison_image()
         if image is not None:
@@ -3210,7 +3226,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             previous, self._sampling_resources.sampling = self._sampling_resources.sampling, sampling
             if previous is not None:
                 previous.close()
-        actual_size = (self._displayed_frame.full_size if not self._comparing and self._displayed_frame is not None
+        actual_size = (self._displayed_frame.full_size if self._displayed_frame is not None
                        else None)
         reference_size = QSize(*(actual_size or self.session.source_size)) if self.session is not None else image.size()
         horizontal = self.scroll_area.horizontalScrollBar()
@@ -3218,7 +3234,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         position = (horizontal.value(), vertical.value())
         if companion is None and not self._comparing:
             companion = self._comparison_image()
-            companion_reference = self.session.source_size if self.session is not None else None
+            companion_reference = actual_size or (self.session.source_size if self.session is not None else None)
         self.viewer.set_display_pair(image, reference_size, companion, companion_reference, sampling=sampling)
         self._canvas_image_key = (image.cacheKey(), (reference_size.width(), reference_size.height()), self._comparing)
         if sampling is not None:

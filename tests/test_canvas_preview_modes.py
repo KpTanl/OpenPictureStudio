@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 from PySide6.QtCore import QRectF, QSettings, QSize, QTimer
 from PySide6.QtGui import QColor, QFontDatabase, QImage, QPainter
 from PySide6.QtWidgets import QScrollArea
@@ -261,6 +261,102 @@ def test_source_completion_can_prepare_only_a_small_comparison(qapp):
     finally:
         runner.shutdown()
         resources.close()
+
+
+def test_new_comparison_geometry_cancels_the_old_region(qapp):
+    from src.application.services import PreviewResult
+    from src.ui.services.studio_original_runner import StudioOriginalRunner
+
+    resources = ImageResourcePool(ImageResourcePolicy())
+    entered, release = Event(), Event()
+    calls, packets = [], []
+    identity = SourceIdentity("image.png", "0" * 64, 1, 1)
+    first = WorkflowGraph.single_node("crop", {"box": [0, 0, .5, .5]})
+    second = WorkflowGraph.single_node("crop", {"box": [.5, 0, 1, .5]})
+
+    def render(session_id, workflow, **options):
+        calls.append(workflow)
+        if len(calls) == 1:
+            entered.set()
+            assert release.wait(5)
+            assert options["is_cancelled"]()
+        return PreviewResult(Image.new("RGB", (20, 10)), "source", workflow.workflow_hash(), 20, 10,
+                             full_size=(20, 10), input_is_proxy=False)
+
+    sources = SimpleNamespace(resources=resources, dimensions=lambda path: (40, 20))
+    runner = StudioOriginalRunner(sources, render_original=render)
+    runner.ready.connect(lambda key, image, error: packets.append((image, error)))
+    try:
+        runner.submit("session", identity, workflow=first)
+        wait_until(entered.is_set, "旧裁切区域开始渲染")
+        runner.submit("session", identity, workflow=second)
+        release.set()
+        wait_until(lambda: bool(packets), "新裁切区域送达")
+        assert len(packets) == 1 and packets[0][1] is None
+        assert packets[0][0].geometry_key == second.canonical_json()
+        packets[0][0].close()
+        assert resources._reserved == 0
+    finally:
+        release.set()
+        runner.shutdown()
+        resources.close()
+
+
+@pytest.mark.parametrize("mode", ["preview1600", "full", "auto"])
+@pytest.mark.parametrize("angle", [0, 90])
+def test_original_comparison_keeps_crop_rotation_and_view(window_factory, tmp_path, canvas_fonts, mode, angle):
+    path = str(tmp_path / "comparison.png")
+    image = Image.new("RGB", (2400, 1600), (100, 120, 140))
+    ImageDraw.Draw(image).rectangle((1100, 700, 1299, 899), fill=(180, 60, 80))
+    image.save(path)
+    window = window_factory()
+    window.resize(1440, 900)
+    window.show()
+    window.manager.open_file(path)
+    window._refresh_all()
+    studio = wait_for_studio(window, path)
+    window._set_canvas_preview_mode(mode)
+    studio._on_panel_params_changed("color_adjust", {**studio.session.color_params, "exposure_amt": 60})
+    studio._on_panel_params_changed("crop", {"crop_rect": [.25, .1, .75, .9], "rotation_angle": angle,
+                                           "aspect_ratio": None})
+    expected = (1200, 1280) if angle == 0 else (800, 1920)
+    wait_until(lambda: studio._displayed_frame is not None and studio._displayed_frame.full_size == expected
+               and studio._preview_queue.active is None and studio._preview_queue.pending is None,
+               "裁切旋转后的改后画面")
+    wait_until(lambda: studio._original_display is not None and studio._original_display.size == expected
+               and studio._comparison_image() is not None, "对应裁切区域的改前画面")
+    studio.viewer.set_zoom_percent(100)
+    wait_until(lambda: studio._comparison_image() is not None, "当前倍率的改前画面")
+    before = studio._comparison_image()
+    assert before.pixelColor(10, 10).getRgb()[:3] == (100, 120, 140)
+    assert studio._last_rendered_qimage.pixelColor(10, 10) != before.pixelColor(10, 10)
+    view = studio.viewer.view_state()
+    edited_rect = studio.viewer.get_image_display_rect()
+    edited_reference = QSize(studio.viewer._display_size)
+    studio.start_compare()
+    assert studio._comparing
+    assert studio.viewer._display_size == edited_reference
+    assert studio.viewer.get_image_display_rect() == edited_rect
+    assert studio.viewer.get_zoom_percent() == 100
+    studio.stop_compare()
+    assert studio.viewer.view_state() == view
+    assert studio.viewer.get_image_display_rect() == edited_rect
+    studio.undo()
+    wait_until(lambda: studio._displayed_frame is not None and studio._displayed_frame.full_size == (2400, 1600)
+               and studio._original_display is not None and studio._original_display.size == (2400, 1600),
+               "撤销裁切后更新改前区域")
+    studio.redo()
+    wait_until(lambda: studio._displayed_frame is not None and studio._displayed_frame.full_size == expected
+               and studio._original_display is not None and studio._original_display.size == expected,
+               "重做裁切后更新改前区域")
+    if mode == "full":
+        window._set_canvas_preview_mode("preview1600")
+        wait_until(lambda: studio._displayed_request is not None
+                   and studio._displayed_request.context.preview_mode == "preview1600"
+                   and studio._original_display is not None and studio._comparison_image() is not None
+                   and studio._original_display.preview_proxy_input == studio._displayed_frame.input_is_proxy,
+                   "切回预览后更新改前画质")
+        assert studio._original_display.full_memory is None
 
 
 @pytest.mark.parametrize("language", ("zh-CN", "en", "fr"))

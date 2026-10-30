@@ -1,10 +1,22 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
+from ..core.contracts import WorkflowGraph
 from .core_api import CoreAPI
 from .result_types import CoreOperationError, CoreResult, ErrorCode
 from .services import DisplayFrame
 
 STUDIO_PREVIEW_MAX_DIMENSION = 1600
+
+
+def comparison_workflow(workflow):
+    nodes = []
+    for node in workflow.nodes:
+        if (node.node_type in ("crop", "studio_geometry")
+                or node.node_type == "tool" and node.params.get("tool_id") == "crop"):
+            nodes.append(replace(node, inputs=(nodes[-1].node_id,) if nodes else ()))
+    return WorkflowGraph(nodes=tuple(nodes))
 
 
 class StudioRenderService:
@@ -30,6 +42,14 @@ class StudioRenderService:
 
     def render_preview(self, session, **options):
         return self._render(session, display=True, **options)
+
+    def render_original(self, session_id, workflow, *, proxy_input, is_cancelled):
+        result = self.core.preview(session_id, workflow, update_draft=False, allow_intermediate=True,
+            max_dimension=STUDIO_PREVIEW_MAX_DIMENSION if proxy_input else None,
+            is_cancelled=is_cancelled, priority=2)
+        if not result.success:
+            raise CoreOperationError(result.error)
+        return result.data
 
     def _render(self, session, *, display, use_proxy=True, editing_tool=None, is_cancelled=lambda: False,
                 allow_intermediate=False, source_identity=None, source_preview=None, sampling_request=None,

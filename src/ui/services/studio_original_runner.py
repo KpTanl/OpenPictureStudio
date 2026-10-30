@@ -1,4 +1,5 @@
 import logging
+import json
 from dataclasses import dataclass
 from contextlib import nullcontext
 from concurrent.futures import CancelledError
@@ -10,6 +11,7 @@ from PySide6.QtCore import QObject, Qt, Signal, Slot
 
 from ...application.image_load_queue import ImageLoadQueue
 from ...application.result_types import CoreResult, CoreOperationError
+from ...core.contracts import WorkflowGraph
 from .studio_source_runner import source_qimage
 
 logger = logging.getLogger(__name__)
@@ -23,6 +25,7 @@ class OriginalDisplay:
     memory: object = None
     full_memory: object = None
     preview_proxy_input: bool = True
+    geometry_key: str = ""
 
     def close(self):
         self.preview = self.full = None
@@ -40,10 +43,11 @@ class StudioOriginalRunner(QObject):
     _source_completed = Signal(object)
     _completed = Signal(object, object, object)
 
-    def __init__(self, sources, parent=None, *, complete_source=None):
+    def __init__(self, sources, parent=None, *, complete_source=None, render_original=None):
         super().__init__(parent)
         self._sources = sources
         self._complete_source = complete_source
+        self._render_original = render_original
         self._queue = ImageLoadQueue()
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ops-original")
         self._closed = False
@@ -52,8 +56,9 @@ class StudioOriginalRunner(QObject):
         self._completed.connect(self._deliver, Qt.ConnectionType.QueuedConnection)
         self._source_completed.connect(self._deliver_source, Qt.ConnectionType.QueuedConnection)
 
-    def submit(self, session_id, identity, *, full=True, proxy_input=True):
-        for request in self._queue.replace([(session_id, identity, full, proxy_input)]):
+    def submit(self, session_id, identity, *, full=True, proxy_input=True, workflow=None):
+        geometry_key = workflow.canonical_json() if workflow is not None and workflow.nodes else ""
+        for request in self._queue.replace([(session_id, identity, full, proxy_input, geometry_key)]):
             self._pool.submit(self._run, request)
 
     def cancel(self):
@@ -66,6 +71,7 @@ class StudioOriginalRunner(QObject):
         try:
             full = request.key[2]
             proxy_input = request.key[3] and not full
+            geometry_key = request.key[4]
             if self._complete_source is not None:
                 prepared = self._complete_source(*request.key[:2], is_cancelled=request.cancellation.is_set)
                 if not prepared.success:
@@ -93,7 +99,17 @@ class StudioOriginalRunner(QObject):
             working = (self._sources.resources.working_memory(width * height * 8, request.cancellation.is_set)
                        if not proxy_input else nullcontext())
             with working:
-                if not proxy_input:
+                if geometry_key:
+                    rendered = self._render_original(request.key[0],
+                        WorkflowGraph.from_dict(json.loads(geometry_key)), proxy_input=proxy_input,
+                        is_cancelled=request.cancellation.is_set)
+                    try:
+                        original, rendered.image = rendered.image, None
+                        size = rendered.full_size or original.size
+                        proxy_input = rendered.input_is_proxy is not False
+                    finally:
+                        rendered.close()
+                elif not proxy_input:
                     original = self._sources.load_original_display(request.key[1],
                         is_cancelled=request.cancellation.is_set)
                     size = original.size
@@ -107,7 +123,7 @@ class StudioOriginalRunner(QObject):
                         preview = source_qimage(original)
                         image = OriginalDisplay(preview, full_image if full else (
                             preview if (preview.width(), preview.height()) == size else None), size,
-                            memory, full_memory, proxy_input)
+                            memory, full_memory, proxy_input, geometry_key)
                         memory = full_memory = None
                 finally:
                     original.close()

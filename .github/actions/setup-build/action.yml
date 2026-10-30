@@ -13,6 +13,8 @@ runs:
       shell: pwsh
       run: |
         python -m venv .venv
+        $pythonSignature = .venv\Scripts\python.exe -c "import sys; print(sys.version, sys.base_prefix)"
+        "PYO3_ENVIRONMENT_SIGNATURE=$pythonSignature" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
         .venv\Scripts\python.exe -m pip install -r requirements-build.lock.txt
     - name: Check dependencies
       shell: pwsh

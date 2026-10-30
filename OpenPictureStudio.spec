@@ -7,6 +7,7 @@
 # places them manually) into %APPDATA%\OpenPictureStudio\OpenPictureStudio\models.
 
 import json
+import sys
 from fnmatch import fnmatch
 
 from PyInstaller.utils.hooks import collect_submodules, collect_all, copy_metadata
@@ -73,7 +74,10 @@ a = Analysis(
 
 
 # QtPdf (PDFium) comes in with the Qt image format plugins; the app never reads PDFs through Qt.
-_EXCLUDED_NATIVE = {"opengl32sw.dll", "qt6pdf.dll", "qpdf.dll"}
+_EXCLUDED_NATIVE = {"opengl32sw.dll", "qt6pdf.dll", "qpdf.dll", "qopensslbackend.dll"}
+_QT_OPENSSL = {"libcrypto-3-x64.dll", "libssl-3-x64.dll"}
+_PYTHON_PREFIXES = tuple(os.path.normcase(os.path.realpath(prefix)) + os.sep
+                         for prefix in (sys.prefix, sys.base_prefix))
 
 
 def _keep_native_file(entry):
@@ -81,6 +85,8 @@ def _keep_native_file(entry):
         name = os.path.basename(path).lower()
         if name in _EXCLUDED_NATIVE or fnmatch(name, "opencv_videoio_ffmpeg*.dll"):
             return False
+    if os.path.basename(entry[0]).lower() in _QT_OPENSSL:
+        return os.path.normcase(os.path.realpath(entry[1])).startswith(_PYTHON_PREFIXES)
     return True
 
 

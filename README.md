@@ -119,7 +119,7 @@ OpenPictureStudio（OPS）是一个以专业图像处理为基础的开源 AI �
 
 ### 下载 Windows 安装包
 
-1. 打开 [最新版本](https://github.com/KpTanl/OpenPictureStudio/releases/latest)，在 **Assets** 中下载 `OpenPictureStudio-<版本>-beta-setup.exe` 和同名 `.exe.sha256` 文件。
+1. 打开 [最新版本](https://github.com/KpTanl/OpenPictureStudio/releases/latest)，在 **Assets** 中下载 `OpenPictureStudio-<版本>-setup.exe` 和同名 `.exe.sha256` 文件。
 2. 核对安装包的 SHA256，双击 EXE，按安装向导完成安装。
 3. 启动 OpenPictureStudio，打开照片或文件夹。安装版无需另装 Python 或 Rust；AI 模型按需下载。
 
@@ -165,9 +165,9 @@ AI 修图助手使用你在“设置 → AI 服务”中配置的连接和模型
 - **Rust + Rayon**：覆盖全局与局部调色、滤波、RAW 矩阵转换和显示输出等热点，并协调多线程执行。
 - **AVX2 SIMD**：已接入调色、色彩转换、曲线、局部调整、RAW、滤波和显示七组内核。自动检测 CPU，支持 AVX2 即启用加速，否则使用通用 Rust。
 - **RAW 快速预览**：NEF 等适用 RAW 的内嵌 JPEG 预览已实现，完整解码与后处理继续优化。
-- **GPU**：DirectML 当前用于可选 AI 推理；通用 GPU 图像计算列入规划，wgpu 为候选方案。
+- **GPU**：Windows 图像计算采用 wgpu／D3D12，与 DirectML 模型推理共同遵守整链执行契约。工具、模型和设备通过对应数值与性能资格后启用 GPU，其余请求使用 CPU。
 
-Image Engine、Workflow Engine 与 Project Model 分别承载图像操作、流程编排和项目状态。CPU 与规划中的 GPU 后端沿统一图像操作契约发展，工具扩展遵循 Everything is Plugin 的长期方向。详见[架构与原生加速](open-docs/architecture.md)。
+Image Engine、Workflow Engine 与 Project Model 分别承载图像操作、流程编排和项目状态。CPU 与 GPU 后端共享图像契约；内部增量复用、代理预览和可见区处理服务连续编辑。受信图像插件通过版本化 float32 接口接入同一工具运行时。详见[架构与原生加速](open-docs/architecture.md)和[图像插件接口](open-docs/image-plugins.md)。
 
 ## 系统要求与性能基准
 

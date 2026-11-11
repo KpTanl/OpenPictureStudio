@@ -68,7 +68,7 @@ def _run(executor, source, params):
     return executor._execute(source, params, lambda: False)
 
 
-@pytest.mark.parametrize("size", [(70, 53), (96, 48), (25, 90)])
+@pytest.mark.parametrize("size", [(70, 105), (96, 120), (25, 101)])
 @pytest.mark.parametrize("alpha", [False, True])
 @pytest.mark.parametrize("target,fit", [("2x", "contain"), ("2x", "cover"), ("2x", "pad"), ("4x", "contain")])
 def test_banded_upscale_matches_the_whole_image_path_bit_for_bit(tmp_path, monkeypatch, size, alpha, target, fit):
@@ -77,7 +77,8 @@ def test_banded_upscale_matches_the_whole_image_path_bit_for_bit(tmp_path, monke
     executor, session = _executor()
     plan = output_plan(size, params)
     upscaled = (size[0] * SCALE, size[1] * SCALE)
-    assert enhancement._banded(upscaled, enhancement._final_plan(upscaled, plan, params))
+    assert enhancement._upscale_storage(size[1], upscaled, plan, enhancement._final_plan(upscaled, plan, params),
+                                        _descriptor())[1]
     banded = _run(executor, source, params)
     calls = session.calls
 

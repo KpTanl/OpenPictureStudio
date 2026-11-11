@@ -181,6 +181,7 @@ class MainWindow(BaseWindow):
                                                max_bytes=self._preload_settings.thumbnail_mib * 1024 ** 2)
         self._edit_cache = LinearProxyCache(storage_path("edit_cache", data_root / "edit_cache"),
                                            max_bytes=self._preload_settings.disk_mib * 1024 ** 2)
+        self._edit_cache.sources.enabled = self._preload_settings.source_cache_enabled
         self._thumbnail_cache_runner = CacheMaintenanceRunner(
             self._thumbnail_cache, ImageSourceService.THUMBNAIL_PIPELINE_VERSION, self,
             message_keys={"clear": "settings.thumbnails.clear_failed",
@@ -231,6 +232,9 @@ class MainWindow(BaseWindow):
             activation=runtime_activation, inference=self._inference, profile_provider=detect_profile)
         self.destroyed.connect(self._runtime_service.close)
         self._image_display_settings = ImageDisplaySettings.load(QSettings(APP_NAME, "ImageDisplay"))
+        from ..application.image_compute_settings import ImageComputeSettings
+        self._image_compute_settings = ImageComputeSettings.load(QSettings(APP_NAME, "ImageCompute"))
+        self._inference.image_compute_preference = self._image_compute_settings.engine
         self.viewer = ImageViewer(image_source_service=self._image_sources,
                                   canvas_scale_runner=self._canvas_scale_runner,
                                   raw_display_mode=self._image_display_settings.raw_mode,
@@ -342,7 +346,9 @@ class MainWindow(BaseWindow):
         from .services.photo_browser_controller import PhotoBrowserController
         self._photo_browser = PhotoBrowserController(self.manager, get_rating_store(), self._image_sources, self._tr,
             drafts_ready=lambda: self._draft_runner.loaded,
-            foreground_busy=lambda: self.active_viewer.is_loading or self._browse_runner.is_busy, parent=self)
+            foreground_busy=lambda: (self.active_viewer.is_loading or self._browse_runner.is_busy
+                or self.studio_workspace is not None and self.studio_workspace.session is not None
+                and not self.studio_workspace.can_prefetch()), parent=self)
         from ..application.photo_library import PhotoLibraryService
         from ..application.photo_library_store import PhotoLibraryStore
         from .services.photo_library_runner import PhotoLibraryRunner
@@ -1436,6 +1442,7 @@ class MainWindow(BaseWindow):
         if isinstance(disabled_tools, str):
             disabled_tools = [item for item in disabled_tools.split(",") if item]
         core.restore_disabled_tools(disabled_tools or [])
+        core.tools.configure_image_compute(self._image_compute_settings)
         self._panel_services = {
             "image_source_service": self._image_sources,
             "preview_runner": PreviewTaskRunner(),
@@ -1511,6 +1518,7 @@ class MainWindow(BaseWindow):
         self._studio_source_runner.preview_ready.connect(self._on_studio_cached_preview)
         self._studio_source_runner.prefetch_failed.connect(self._on_studio_prefetch_failed)
         studio.preview_started.connect(self._studio_source_runner.pause_prefetch)
+        studio.preview_started.connect(self._photo_browser.runner.pause_previews)
         studio.preview_finished.connect(self._refresh_studio_prefetch)
         self.destroyed.connect(self._studio_source_runner.shutdown)
         self.tool_sidebar = studio.tool_sidebar
@@ -1594,7 +1602,8 @@ class MainWindow(BaseWindow):
             return
         self._studio_source_runner.submit(path, self.studio_workspace.cached_session_id(path),
                                             preview_key=preview_key, initial_workflow=initial_workflow,
-                                            preview_workflow=preview_workflow)
+                                            preview_workflow=preview_workflow,
+                                            max_dimension=self.studio_workspace.preview_max_dimension(preview_workflow, path=path))
         snapshot, self._studio_loading_snapshot = self._studio_loading_snapshot, None
         if snapshot is not None and os.path.normcase(snapshot.path) == os.path.normcase(os.path.normpath(path)):
             try:
@@ -1617,6 +1626,14 @@ class MainWindow(BaseWindow):
 
     @Slot()
     def _refresh_studio_prefetch(self):
+        if self.studio_workspace is not None:
+            paths = self.manager.get_filtered_images()
+            current = self.manager.current_path
+            window = []
+            if current in paths:
+                index = paths.index(current)
+                window = [paths[index + offset] for offset in (0, 1, -1, 2) if 0 <= index + offset < len(paths)]
+            self.studio_workspace.core.tools.execution.gpu.set_window(window)
         if self._is_studio_active() and self.studio_workspace.can_prefetch():
             for thumbnails in self._thumbnail_panels():
                 thumbnails.set_loading_paused(False)
@@ -1627,7 +1644,10 @@ class MainWindow(BaseWindow):
             targets = []
             for path in paths:
                 try:
-                    targets.append(StudioPreviewTarget(os.path.normpath(path), self.studio_workspace.initial_workflow(path)))
+                    workflow = self.studio_workspace.preview_workflow(path)
+                    targets.append(StudioPreviewTarget(os.path.normpath(path), workflow,
+                        self.studio_workspace.preview_key(path, workflow),
+                        self.studio_workspace.preview_max_dimension(workflow, path=path)))
                 except (CoreOperationError, ValueError) as error:
                     logger.warning("OPS prefetch color failed: image=%r error=%s", os.path.basename(path), error)
             self._studio_source_runner.prefetch(targets)
@@ -1659,9 +1679,6 @@ class MainWindow(BaseWindow):
             studio.load_prepared_session(request.path, prepared.project.active_source,
                                          prepared.project, qimage=qimage,
                                          preview_key=request.preview_key)
-            if studio.session is not None and studio.session.core_id == prepared.project.session_id:
-                studio.hold_preview_source(prepared.proxy_lease)
-                prepared.proxy_lease = None
         except Exception as error:
             logger.exception("OPS source attachment failed")
             studio.show_image_load_error(error)
@@ -2746,12 +2763,14 @@ class MainWindow(BaseWindow):
                 language=self.translation_service.get_language() if self.translation_service else "en",
                 theme=QSettings(APP_NAME, "Theme").value("current", ThemeManager.THEME_DARK),
                 image_display=self._image_display_settings, preload=self._preload_settings,
+                image_compute=self._image_compute_settings,
                 memory=self._memory_state, shortcuts=self.window_actions.shortcut_rows(),
                 startup_window=self.startup_mode(), check_updates=self._version_runner.state.enabled))
         dialog.language_edited.connect(lambda code: self._set_language(dialog, code))
         dialog.theme_edited.connect(self._set_theme)
         dialog.startup_window_edited.connect(lambda mode: self._set_startup_window(dialog, mode))
         dialog.image_display_edited.connect(lambda value: self._set_image_display(dialog, value))
+        dialog.image_compute_edited.connect(lambda value: self._set_image_compute(dialog, value))
         dialog.preload_edited.connect(lambda value: self._set_preload(dialog, value))
         dialog.memory_edited.connect(lambda value: self._set_memory(dialog, value))
         dialog.shortcut_edited.connect(lambda key, sequence: self._set_shortcut(dialog, key, sequence))
@@ -2847,12 +2866,16 @@ class MainWindow(BaseWindow):
         value.save(settings)
         if settings.status() != QSettings.Status.NoError:
             if dialog is not None:
-                dialog.show_page_error("performance", self._tr("settings.ops.save_failed"))
+                storage = (value.disk_mib, value.thumbnail_mib, value.source_cache_enabled) != (
+                    self._preload_settings.disk_mib, self._preload_settings.thumbnail_mib, self._preload_settings.source_cache_enabled)
+                dialog.show_page_error("storage" if storage else "performance", self._tr("settings.ops.save_failed"))
                 dialog.set_preload(self._preload_settings)
             else:
                 self.show_toast(self._tr("settings.ops.save_failed"), 5000)
             return
         previous, self._preload_settings = self._preload_settings, value
+        if value.source_cache_enabled != previous.source_cache_enabled:
+            self._image_sources.set_source_cache_enabled(value.source_cache_enabled)
         if self.studio_workspace is not None and value.canvas_preview_mode != previous.canvas_preview_mode:
             self.studio_workspace.set_canvas_preview_mode(value.canvas_preview_mode)
         self._sync_canvas_toolbar()
@@ -2871,6 +2894,22 @@ class MainWindow(BaseWindow):
 
     def _set_canvas_preview_mode(self, mode):
         self._set_preload(None, replace(self._preload_settings, canvas_preview_mode=mode))
+
+    def _set_image_compute(self, dialog, value):
+        settings = QSettings(APP_NAME, "ImageCompute")
+        value.save(settings)
+        if settings.status() != QSettings.Status.NoError:
+            dialog.show_page_error("performance", self._tr("settings.compute.save_failed"))
+            dialog.set_image_compute(self._image_compute_settings)
+            return
+        self._image_compute_settings = value
+        self._inference.image_compute_preference = value.engine
+        if self.studio_workspace is not None:
+            self.studio_workspace.core.tools.configure_image_compute(value)
+            self.studio_workspace.refresh_compute_backend()
+        if self._studio_source_runner is not None:
+            self._studio_source_runner.pause_prefetch()
+        self._refresh_studio_prefetch()
 
     def _set_memory(self, dialog, value):
         """保存内存偏好并立即生效：重新解析预算、向系统登记座位、替换资源池的内存字段，再把生效的结果投影回去。"""

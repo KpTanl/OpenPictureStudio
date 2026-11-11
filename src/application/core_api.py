@@ -264,22 +264,27 @@ class CoreAPI:
                 return (is_cancelled() or self._sessions.get(session_id) is not session
                         or session.state_version != version or session.active_source != source)
 
-        decoded = self._decode_source(source.path, source.file_hash, identity=identity,
-                                      max_side=1600, is_cancelled=cancelled)
-        if not decoded.success:
+        def completed():
             with self._lock:
                 if (not is_cancelled() and self._sessions.get(session_id) is session
                         and session.state_version == version and isinstance(session.active_source, RenderSource)
                         and session.active_source.source_id == source.source_id):
                     return CoreResult.ok(copy.deepcopy(session))
-            return decoded
-        lease, identity = decoded.data
+            return None
+
         try:
-            complete = self._engine.to_contract_source(lease.value, file_hash=source.file_hash,
+            identity = identity or self.image_sources.identity(source.path, is_cancelled=cancelled)
+            if identity.file_hash != source.file_hash:
+                return CoreResult.fail(ErrorCode.SOURCE_CHANGED, "error.source.changed")
+            metadata = self.image_sources.describe(identity, is_cancelled=cancelled)
+            complete = self._engine.to_contract_source(metadata, file_hash=source.file_hash,
                                                        is_raw=source.is_raw)
             if complete.source_id != source.source_id:
                 return CoreResult.fail(ErrorCode.SOURCE_CHANGED, "error.source.changed")
             with self._lock:
+                current = completed()
+                if current is not None:
+                    return current
                 if cancelled() or not self.image_sources.matches_file(identity):
                     return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
                 self._sources[source.source_id] = complete
@@ -290,11 +295,14 @@ class CoreAPI:
                     if active.active_source.source_id == source.source_id:
                         active.active_source = complete
                 return CoreResult.ok(copy.deepcopy(session))
+        except CancelledError:
+            current = completed()
+            return current if current is not None else CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
+        except MemoryError as error:
+            return CoreResult.fail(ErrorCode.DECODE_FAILED, memory_error_key(error))
         except Exception as error:
             return CoreResult.from_exception(error, code=ErrorCode.DECODE_FAILED,
                                              message_key="error.source.decode_failed")
-        finally:
-            lease.close()
 
     def complete_source_preview(self, session_id, identity, *, is_cancelled=lambda: False):
         ready = self.ensure_source_ready(session_id, expected_source=identity, is_cancelled=is_cancelled)
@@ -414,9 +422,12 @@ class CoreAPI:
                 if digest in assets and any(assets[digest][key] != value for key, value in entry.items()):
                     raise ValueError("error.mask.asset")
                 assets[digest] = {**entry, "path": str(self.tools.mask_assets.path(digest))}
+        from ..core.contracts.image_plugins import workflow_plugin_dependencies
+        plugins = workflow_plugin_dependencies((session.draft_workflow, *self._workflows[session_id].values()))
         return ProjectDocument(
             schema_version=max(self._project_versions.get(session_id, 1),
                                3 if assets else 1,
+                               4 if plugins else 1,
                                2 if any(a.kind == LINEAR_ARTIFACT for r in self._history[session_id]
                                         for a in r.artifact_refs) else 1),
             source=session.active_source.to_dict(), document_id=session.document_id,
@@ -424,7 +435,7 @@ class CoreAPI:
             revisions=[r.to_dict() for r in self._history[session_id]],
             workflows={key: value.to_dict() for key, value in self._workflows[session_id].items()},
             draft=session.draft_workflow.to_dict(), redo_targets=dict(self._redo_targets[session_id]),
-            assets=assets,
+            assets=assets, plugins=plugins,
         )
 
     def _prepare_project(self, path, doc, *, expected_hash=None, is_cancelled=lambda: False):
@@ -434,12 +445,17 @@ class CoreAPI:
             raise ValueError("项目目标必须为独立的 .opsproj 文件")
         root = target.with_suffix(".opsdata")
         store = ProjectStore()
+        from ..core.contracts.image_plugins import workflow_plugin_dependencies
+        doc.plugins = workflow_plugin_dependencies(WorkflowGraph.from_dict(graph)
+            for graph in (*doc.workflows.values(), doc.draft))
+        if doc.plugins:
+            doc.schema_version = max(4, doc.schema_version)
         from .mask_assets import workflow_assets
         for graph in (*doc.workflows.values(), doc.draft):
             for digest, entry in workflow_assets(WorkflowGraph.from_dict(graph)).items():
                 doc.assets[digest] = {**entry, "path": str(self.tools.mask_assets.path(digest))}
         if doc.assets:
-            doc.schema_version = 3
+            doc.schema_version = max(3, doc.schema_version)
         copied = set()
         for digest, asset in doc.assets.items():
             relative = "assets/" + digest + ".png"
@@ -784,38 +800,31 @@ class CoreAPI:
         try:
             if identity is not None and os.path.normcase(os.path.realpath(normalized)) != os.path.normcase(identity.path):
                 return CoreResult.fail(ErrorCode.SOURCE_CHANGED, "error.source.changed")
-            from ..core.photo_engine import supports_raw_initial_proxy
             identity = identity or self.image_sources.identity(normalized, is_cancelled=is_cancelled or (lambda: False))
-            lease = self.image_sources.borrow_cached_linear(identity) if initial_proxy else None
-            if lease is None and initial_proxy:
-                lease = self.image_sources.borrow_cached_proxy(identity,
-                    is_cancelled=is_cancelled or (lambda: False))
-            half_size = lease is None and initial_proxy and supports_raw_initial_proxy(normalized)
-            if lease is None:
-                decoded = self._decode_source(normalized, is_cancelled=is_cancelled, identity=identity,
-                                              half_size=half_size)
+            if initial_proxy:
+                metadata = self.image_sources.describe(identity, is_cancelled=is_cancelled or (lambda: False))
+                source = self._engine.to_contract_source(metadata, file_hash=identity.file_hash,
+                                                        is_raw=is_raw_file(normalized))
+            else:
+                decoded = self._decode_source(normalized, is_cancelled=is_cancelled, identity=identity)
                 if not decoded.success:
                     return CoreResult(success=False, error=decoded.error)
                 lease, identity = decoded.unwrap()
-            try:
-                source = self._engine.to_contract_source(
-                    lease.value, file_hash=identity.file_hash, is_raw=is_raw_file(normalized)
-                )
-                with self.image_sources.borrow_linear(normalized, identity=identity, max_side=1600,
-                                                      half_size=half_size,
-                                                      is_cancelled=is_cancelled or (lambda: False)):
-                    pass
-            finally:
-                lease.close()
+                try:
+                    source = self._engine.to_contract_source(lease.value, file_hash=identity.file_hash,
+                                                            is_raw=is_raw_file(normalized))
+                finally:
+                    lease.close()
             with self._lock:
                 if is_cancelled is not None and is_cancelled():
                     return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
                 self._sources[source.source_id] = source
                 self._source_identities[source.source_id] = identity
-                self._source_previews.setdefault(source.source_id, SourcePreviewSpec(half_size=half_size))
+                self._source_previews.setdefault(source.source_id, SourcePreviewSpec())
                 spec = self._source_previews[source.source_id]
-                if spec.half_size and not half_size:
+                if spec.half_size:
                     self._source_previews[source.source_id] = SourcePreviewSpec(generation=spec.generation + 1)
+            self.image_sources.record_source_open(identity)
             return CoreResult.ok(copy.deepcopy(source))
         except CancelledError:
             return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
@@ -1057,8 +1066,7 @@ class CoreAPI:
         snapshot = self.tools.snapshot()
         cancelled = lambda: is_cancelled() or snapshot.is_cancelled()
         try:
-            with lease, self.image_sources.resources.working_memory(lease.value.pixels.nbytes * 4, cancelled), \
-                    self.image_sources.compute.borrow(cancelled, role="foreground",
+            with lease, self.image_sources.compute.request_context(cancelled, role="foreground",
                         threads=max(self.image_sources.policy.operator_threads, snapshot.required_threads(prefix))):
                 rendered = snapshot.executor.execute(lease.value, prefix, is_cancelled=cancelled)
                 if not rendered.success:
@@ -1111,8 +1119,7 @@ class CoreAPI:
         snapshot = self.tools.snapshot()
         cancelled = lambda: is_cancelled() or snapshot.is_cancelled()
         try:
-            with lease, self.image_sources.resources.working_memory(lease.value.pixels.nbytes * 4, cancelled), \
-                    self.image_sources.compute.borrow(cancelled, role="foreground",
+            with lease, self.image_sources.compute.request_context(cancelled, role="foreground",
                         threads=max(self.image_sources.policy.operator_threads, snapshot.required_threads(prefix))):
                 rendered = snapshot.executor.execute(lease.value, prefix, is_cancelled=cancelled)
                 if not rendered.success:
@@ -1232,7 +1239,7 @@ class CoreAPI:
         self, session_id, workflow, *, generation=0, compute_histogram=False,
         is_cancelled=None, update_draft=True, max_dimension=None, allow_intermediate=False,
         display=False, sampling_request=None, priority=0, keep_full_display=False, expected_state=None,
-        temporary_workflow=None,
+        temporary_workflow=None, source_is_cancelled=None,
     ):
         """display=True 时结果的 image 为 None，display 为显示用 RGBA8 帧；其余契约相同。"""
         started = monotonic()
@@ -1259,7 +1266,9 @@ class CoreAPI:
         resolved = self._resolve(session_id, is_cancelled=is_cancelled,
                                  max_side=max_dimension if self.tools.supports_proxy(
                                      workflow, canonical_inputs=sampling_request is None) else None,
-                                 allow_intermediate=allow_intermediate, priority=priority, expected_state=expected_state)
+                                 allow_intermediate=allow_intermediate, priority=priority, expected_state=expected_state,
+                                 deferred=sampling_request is None, preview_workflow=workflow, tool_snapshot=tool_snapshot,
+                                 source_is_cancelled=source_is_cancelled)
         if not resolved.success:
             return resolved
         session, source_lease, version, source_preview = resolved.data
@@ -1306,23 +1315,22 @@ class CoreAPI:
             minimum_threads = tool_snapshot.required_threads(render_workflow)
             if engine_source.is_proxy and self.tools.uses_prepared_inputs(render_workflow):
                 minimum_threads = max(minimum_threads, self.image_sources.policy.operator_threads)
-            with self.image_sources.resources.working_memory(engine_source.pixels.nbytes * 4, cancelled):
-                with self.image_sources.compute.borrow(cancelled, priority=priority, role="foreground",
-                        threads=max(self.image_sources.policy.interactive_threads, minimum_threads),
-                        minimum_threads=minimum_threads) as compute:
-                    render_started = monotonic()
-                    result = self._preview_service.render(
-                        engine_source, render_workflow, generation=generation,
-                        compute_histogram=compute_histogram, is_cancelled=cancelled,
-                        display=display, max_dimension=max_dimension, parallelism=compute.threads,
-                        full_source=lambda abort: self.image_sources.borrow_linear(source.path,
-                            identity=render_identity, is_cancelled=abort, priority=priority),
-                        temporary_workflow=temporary_workflow,
-                        **({"sampling_request": sampling_request} if sampling_request is not None else {}),
-                        **({"resources": self.image_sources.resources}
-                           if sampling_request is not None or keep_full_display else {}),
-                        **({"keep_full_display": not engine_source.is_proxy} if keep_full_display else {}),
-                    )
+            with self.image_sources.compute.request_context(cancelled, priority=priority, role="foreground",
+                    threads=max(self.image_sources.policy.interactive_threads, minimum_threads),
+                    minimum_threads=minimum_threads) as compute:
+                render_started = monotonic()
+                result = self._preview_service.render(
+                    engine_source, render_workflow, generation=generation,
+                    compute_histogram=compute_histogram, is_cancelled=cancelled,
+                    display=display, max_dimension=max_dimension, parallelism=compute.threads,
+                    full_source=lambda abort: self.image_sources.borrow_deferred(source.path,
+                        identity=render_identity, is_cancelled=abort, priority=priority, source_cancelled=source_is_cancelled),
+                    temporary_workflow=temporary_workflow,
+                    **({"sampling_request": sampling_request} if sampling_request is not None else {}),
+                    **({"resources": self.image_sources.resources}
+                       if sampling_request is not None or keep_full_display else {}),
+                    **({"keep_full_display": not engine_source.is_proxy} if keep_full_display else {}),
+                )
             logger.debug("OPS 预览准备 session=%s state=%s input=%sx%s proxy=%s prepare_ms=%.1f source_ms=%.1f availability_ms=%.1f budget_wait_ms=%.1f render_ms=%.1f",
                          session_id, version, engine_source.pixels.shape[1], engine_source.pixels.shape[0],
                          engine_source.is_proxy, (prepared_at - started) * 1000,
@@ -1385,17 +1393,24 @@ class CoreAPI:
             return CoreResult.ok((session, copy.deepcopy(session)))
 
     def _operation_pixels(self, source, is_cancelled=None):
+        cancelled = is_cancelled or (lambda: False)
         try:
-            if hash_file(source.path, is_cancelled=is_cancelled or (lambda: False)) != source.file_hash:
+            identity = self.image_sources.identity(source.path, is_cancelled=cancelled)
+            if identity.file_hash != source.file_hash:
                 return CoreResult.fail(ErrorCode.SOURCE_CHANGED, "error.source.changed")
+            lease = self.image_sources.borrow_deferred(source.path, identity=identity,
+                                                       is_cancelled=cancelled, priority=1)
+            return CoreResult.ok(lease)
         except CancelledError:
             return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
         except OSError:
             return CoreResult.fail(ErrorCode.SOURCE_NOT_FOUND, "error.source.not_found")
-        decoded = self._decode_source(source.path, source.file_hash, is_cancelled=is_cancelled)
-        if not decoded.success:
-            return decoded
-        return CoreResult.ok(decoded.data[0])
+        except MemoryError as error:
+            return CoreResult.fail(ErrorCode.DECODE_FAILED, memory_error_key(error))
+        except Exception as error:
+            code = ErrorCode.UNSUPPORTED_FORMAT if isinstance(error, RawSupportUnavailableError) else ErrorCode.DECODE_FAILED
+            return CoreResult.from_exception(error, code=code,
+                                             message_key="error.source.decode_failed")
 
     @staticmethod
     def _source_stamp(path):
@@ -1472,14 +1487,13 @@ class CoreAPI:
             return pixels
         try:
             with pixels.data as lease:
-                with self.image_sources.resources.working_memory(lease.value.pixels.nbytes * 4, cancelled):
-                    with self.image_sources.compute.borrow(cancelled, priority=1):
-                        if cancelled():
-                            return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
-                        result = self._commit_service.commit(
-                            lease.value, state.active_source, workflow, policy=policy,
-                            parent=state.current_revision, label=label, is_cancelled=cancelled,
-                        )
+                with self.image_sources.compute.request_context(cancelled, priority=1):
+                    if cancelled():
+                        return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
+                    result = self._commit_service.commit(
+                        lease.value, state.active_source, workflow, policy=policy,
+                        parent=state.current_revision, label=label, is_cancelled=cancelled,
+                    )
         except CancelledError:
             return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
         except MemoryError as memory_error:
@@ -1709,10 +1723,9 @@ class CoreAPI:
                 if not pixels.success:
                     return pixels
                 try:
-                    estimate = (pixels.data.value.pixels.nbytes * 4 if needs_render
-                                else state.active_source.width * state.active_source.height * 64)
-                    with self.image_sources.resources.working_memory(estimate, cancelled):
-                        with self.image_sources.compute.borrow(cancelled, priority=1):
+                    estimate = state.active_source.width * state.active_source.height * 64
+                    with nullcontext() if needs_render else self.image_sources.resources.working_memory(estimate, cancelled):
+                        with self.image_sources.compute.request_context(cancelled, priority=1):
                             return self._export_service.export(
                                 pixels.data.value if needs_render else None, state.draft_workflow, request, artifact=artifact,
                                 execution_allowed=execution.success, is_cancelled=cancelled,
@@ -1769,16 +1782,16 @@ class CoreAPI:
                 return pixels
             with pixels.data as lease:
                 cancelled = lambda: not current()
-                with self.image_sources.resources.working_memory(lease.value.pixels.nbytes * 4, cancelled):
+                with self.image_sources.compute.request_context(cancelled, priority=1):
+                    rendered = self.tools.execute_output(snapshot, lease.value, session.draft_workflow,
+                                                         is_cancelled=cancelled, boundary="grid")
+                    if not rendered.success:
+                        return rendered
+                    service = ImageOutputService(self._export_service.writer)
                     with self.image_sources.compute.borrow(cancelled, priority=1):
-                        rendered = snapshot.executor.execute(lease.value, session.draft_workflow,
-                                                             is_cancelled=cancelled)
-                        if not rendered.success:
-                            return rendered
-                        service = ImageOutputService(self._export_service.writer)
                         paths = service.grid(rendered.data, params, directory, prefix, extension,
                                              cancellation=cancellation, publication=publication)
-                        return CoreResult.ok(paths)
+                    return CoreResult.ok(paths)
         except CancelledError:
             return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
         except MemoryError as memory_error:
@@ -2033,7 +2046,8 @@ class CoreAPI:
             )
 
     def _resolve(self, session_id: str, *, is_cancelled=None, max_side=None, allow_intermediate=False,
-                 priority=0, expected_state=None):
+                 priority=0, expected_state=None, deferred=False, preview_workflow=None, tool_snapshot=None,
+                 source_is_cancelled=None):
         ready = self.ensure_source_ready(session_id, expected_state=expected_state,
                                          is_cancelled=is_cancelled or (lambda: False))
         if not ready.success:
@@ -2050,9 +2064,41 @@ class CoreAPI:
             source_preview = self.source_preview(session_id)
         if is_cancelled is not None and is_cancelled():
             return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
-        decoded = self._decode_source(source.path, source.file_hash, is_cancelled=is_cancelled,
-                                      identity=identity, max_side=max_side,
-                                      half_size=max_side is not None and source_preview.half_size, priority=priority)
+        try:
+            if max_side is not None and preview_workflow is not None:
+                from ..core.contracts.image_display import PreviewDisplaySpec
+                display_limit = max_side
+                max_side = tool_snapshot.executor.preview_input_limit((source.width, source.height),
+                    preview_workflow, PreviewDisplaySpec(max_side))
+                logger.debug("预览规格 source=%s display_limit=%s input_limit=%s reference=%sx%s",
+                    source.path, display_limit, max_side, source.width, source.height)
+            if deferred:
+                identity = identity or self.image_sources.identity(source.path,
+                    is_cancelled=is_cancelled or (lambda: False))
+                if identity.file_hash != source.file_hash:
+                    return CoreResult.fail(ErrorCode.SOURCE_CHANGED, "error.source.changed")
+                half_size = max_side is not None and source_preview.half_size
+                if (not half_size and preview_workflow is not None
+                        and not self.tools.uses_prepared_inputs(preview_workflow)):
+                    half_size = self.image_sources.preview_half_size(identity, max_side,
+                        is_cancelled=is_cancelled or (lambda: False))
+                lease = self.image_sources.borrow_deferred(source.path, identity=identity, max_side=max_side,
+                    half_size=half_size,
+                    is_cancelled=is_cancelled or (lambda: False), priority=priority, source_cancelled=source_is_cancelled)
+                decoded = CoreResult.ok((lease, identity))
+            else:
+                decoded = self._decode_source(source.path, source.file_hash, is_cancelled=is_cancelled,
+                    identity=identity, max_side=max_side,
+                    half_size=max_side is not None and source_preview.half_size, priority=priority)
+        except CancelledError:
+            return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
+        except CoreOperationError as error:
+            return CoreResult.from_exception(error)
+        except MemoryError as error:
+            return CoreResult.fail(ErrorCode.DECODE_FAILED, memory_error_key(error))
+        except Exception as error:
+            return CoreResult.from_exception(error, code=ErrorCode.DECODE_FAILED,
+                                             message_key="error.source.decode_failed")
         if not decoded.success:
             return decoded
         lease, identity = decoded.unwrap()

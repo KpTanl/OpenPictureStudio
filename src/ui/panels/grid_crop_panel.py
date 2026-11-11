@@ -193,9 +193,9 @@ class GridCropPanel(BaseToolPanel):
             from ...application.result_types import CoreOperationError
             self._processing_error(CoreOperationError(available.error))
             return
-        if not self._original_image:
+        if self.source_bundle is None:
             self._load_source(self._image_path)
-        if not self._original_image:
+        if self.source_bundle is None:
             return
 
         output_dir = QFileDialog.getExistingDirectory(

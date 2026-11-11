@@ -14,6 +14,8 @@ from threading import RLock
 from PIL import Image, ImageOps
 
 from ..core.contracts import WorkflowGraph
+from ..core.contracts.gpu import display_request
+from ..core.contracts.image_display import PreviewDisplaySpec
 from ..core.contracts.result import CoreResult, ErrorCode, memory_error_key
 from ..core.image_resize import ResizeOptions, apply_resize, plan_resize, resize_memory
 from ..core.project.assets import validate_asset
@@ -281,14 +283,13 @@ class FixedOutputService:
         if not checked.success:
             from ..core.contracts.result import CoreOperationError
             raise CoreOperationError(checked.error)
-        with self.sources.borrow_linear(snapshot.path, identity=identity, max_side=max_side,
+        with self.sources.borrow_deferred(snapshot.path, identity=identity, max_side=max_side,
                                         is_cancelled=cancelled, priority=2) as lease:
-            with self.sources.resources.working_memory(lease.value.pixels.nbytes * 4, cancelled):
-                with self.sources.compute.borrow(cancelled, priority=2,
-                        threads=max(self.sources.policy.operator_threads, runtime.required_threads(snapshot.workflow))):
-                    if cancelled():
-                        raise CancelledError()
-                    yield lease.value, runtime, identity, cancelled
+            with self.sources.compute.request_context(cancelled, priority=2,
+                    threads=max(self.sources.policy.operator_threads, runtime.required_threads(snapshot.workflow))):
+                if cancelled():
+                    raise CancelledError()
+                yield lease.value, runtime, identity, cancelled
 
     def export(self, snapshot, target_path, preset, *, cancellation=None):
         cancellation = cancellation or OperationCancellation()
@@ -339,22 +340,29 @@ class FixedOutputService:
                 return CoreResult.fail(ErrorCode.PARAMETER_INVALID, "error.param.range")
             proxy = (proxy and preset.width is None and preset.height is None
                      and self.tools.supports_proxy(snapshot.workflow, canonical_inputs=True))
-            with self._render_source(snapshot, cancellation, max_side=1600 if proxy else None,
+            with display_request(PreviewDisplaySpec(max_dimension)), self._render_source(snapshot, cancellation, max_side=1600 if proxy else None,
                                      hashed=True) as (source, runtime, identity, cancelled):
                 executed = self.tools.execute_preview(runtime, source, snapshot.workflow, is_cancelled=cancelled,
                     resources=self.sources.resources,
-                    full_source=lambda abort: self.sources.borrow_linear(snapshot.path, identity=identity,
+                    full_source=lambda abort: self.sources.borrow_deferred(snapshot.path, identity=identity,
                                                                          is_cancelled=abort, priority=2))
                 if not executed.success:
                     return executed
                 rendered = executed.data
                 plan = plan_resize((rendered.pixels.shape[1], rendered.pixels.shape[0]), ResizeOptions(preset.width, preset.height, preset.mode))
                 changes_size = plan.content_size != plan.source_size or plan.crop_box is not None or any(plan.padding)
-                extra = resize_memory(plan) - plan.source_size[0] * plan.source_size[1] * 48 if changes_size else 0
-                with self.sources.resources.working_memory(extra, cancelled):
-                    # 代理只用于不缩放的预设
-                    resized = rendered if source.is_proxy else apply_resize(rendered, plan)
-                    image = self.engine.source_to_pil(resized)
+                extra = resize_memory(plan) if changes_size else rendered.pixels.nbytes * 3
+                with self.tools.execution.output_operation(rendered, "fixed.preview.display", cancelled,
+                        threads=self.sources.policy.operator_threads, memory_bytes=extra):
+                    if rendered.gpu_image is not None:
+                        resized = self.tools.execution.gpu.output(rendered, cancelled,
+                            ResizeOptions(preset.width, preset.height, preset.mode))
+                        displayed = self.engine.source_to_display(resized, cancelled=cancelled,
+                            max_dimension=None if square else max_dimension)
+                        image = Image.frombytes("RGBA", displayed.size, displayed.rgba)
+                    else:
+                        resized = rendered if source.is_proxy else apply_resize(rendered, plan)
+                        image = self.engine.source_to_pil(resized)
                     try:
                         if max_dimension is not None:
                             if square:
@@ -369,7 +377,7 @@ class FixedOutputService:
                         if cancelled() or not self.sources.matches_file(identity):
                             raise InterruptedError("error.cancelled")
                         memory = self.sources.resources.hold_memory(image.width * image.height * 12, cancelled)
-                        frame = DisplayFrame.from_image(image)
+                        frame = replace(DisplayFrame.from_image(image), backend_identity=rendered.backend_identity)
                         size = tuple(rendered.orig_size) if source.is_proxy else plan.output_size
                         result = CoreResult.ok((frame, size, memory))
                         memory = None

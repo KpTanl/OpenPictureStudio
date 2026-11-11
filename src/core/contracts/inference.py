@@ -58,6 +58,8 @@ class GraphicsAdapter:
     vendor_id: int
     dedicated_bytes: int
     directx12: bool
+    luid: str = ""
+    dxgi_index: int = -1
 
 
 @dataclass(frozen=True)

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMenu,
 from resources.styles.theme_variables import (CONTROL_HEIGHT, DIALOG_SIZES, SPACING_LG, SPACING_MD, SPACING_XL,
                                               SPACING_XS, px)
 from ...application.image_display_settings import ImageDisplaySettings
+from ...application.image_compute_settings import ImageComputeSettings
 from ...application.memory_settings import GIB, MemorySettings, MemoryState
 from ...application.studio_preload import StudioPreloadSettings
 from ...core.contracts.image_display import CanvasBackground, NonRawDisplayMode, RawDisplayMode
@@ -63,6 +64,7 @@ class SettingsValues:
     shortcuts: tuple[ShortcutRow, ...] = ()
     startup_window: str = STARTUP_LAST
     check_updates: bool = True
+    image_compute: ImageComputeSettings = ImageComputeSettings()
 
 
 class ShortcutEdit(QPushButton):
@@ -277,6 +279,7 @@ class SettingsDialog(BaseDialog):
     theme_edited = Signal(str)
     startup_window_edited = Signal(str)
     image_display_edited = Signal(object)
+    image_compute_edited = Signal(object)
     preload_edited = Signal(object)
     # 用户改了内存占用上限或保留的内存：新的 MemorySettings；生效后的结果经 set_memory() 投影回来
     memory_edited = Signal(object)
@@ -356,6 +359,10 @@ class SettingsDialog(BaseDialog):
         ("full", "canvas.preview.mode.full", "Always full resolution"),
         ("preview1600", "canvas.preview.mode.preview1600", "Always 1600 preview"),
     )
+    IMAGE_ENGINES = (("auto", "settings.compute.auto", "Automatic"), ("cpu", "settings.compute.cpu", "CPU only"))
+    SOURCE_CACHE_MODES = ((True, "settings.source_cache.on", "On"), (False, "settings.compute.off", "Off"))
+    GPU_CACHE_MODES = (("auto", "settings.compute.auto", "Automatic"), ("off", "settings.compute.off", "Off"),
+                       ("custom", "settings.compute.custom", "Custom MiB"))
     PRELOAD_FIELDS = (
         ("before", "settings.ops.before", "Previous images"),
         ("after", "settings.ops.after", "Next images"),
@@ -412,6 +419,10 @@ class SettingsDialog(BaseDialog):
         self._memory_timer.setInterval(_APPLY_DELAY_MS)
         self._memory_timer.timeout.connect(self._emit_memory)
         self._memory_state = values.memory
+        self._gpu_timer = QTimer(self)
+        self._gpu_timer.setSingleShot(True)
+        self._gpu_timer.setInterval(_APPLY_DELAY_MS)
+        self._gpu_timer.timeout.connect(self._emit_image_compute)
 
         self._setup_ui()
         self.set_language(values.language)
@@ -421,6 +432,7 @@ class SettingsDialog(BaseDialog):
         self.set_image_display(values.image_display)
         self.set_preload(values.preload)
         self.set_memory(values.memory)
+        self.set_image_compute(values.image_compute)
         self.set_shortcuts(values.shortcuts)
         self.retranslate_ui()
         self.show_page(page or self.PAGES[0][0])
@@ -551,6 +563,18 @@ class SettingsDialog(BaseDialog):
         self.canvas_mode = self._choice(self.CANVAS_MODES)
         self.canvas_mode.activated.connect(lambda _index: self._emit_preload())
         self.canvas_mode_row.add_control(self.canvas_mode)
+        self.compute_section = page.add(SettingSection(page))
+        self.compute_engine_row = self.compute_section.add_row(SettingRow(self.compute_section))
+        self.compute_engine = self._choice(self.IMAGE_ENGINES)
+        self.compute_engine.activated.connect(self._emit_image_compute)
+        self.compute_engine_row.add_control(self.compute_engine)
+        self.gpu_cache_row = self.compute_section.add_row(SettingRow(self.compute_section))
+        self.gpu_cache_mode = self._choice(self.GPU_CACHE_MODES)
+        self.gpu_cache_mode.activated.connect(self._emit_image_compute)
+        self.gpu_cache_row.add_control(self.gpu_cache_mode)
+        self.gpu_cache_limit_row = self.compute_section.add_row(SettingRow(self.compute_section))
+        self.gpu_cache_limit = self._number((64, 65536), self._gpu_timer)
+        self.gpu_cache_limit_row.add_control(self.gpu_cache_limit)
         self.memory_section = page.add(SettingSection(page))
         self.memory_usage_row = self.memory_section.add_row(SettingRow(self.memory_section))
         self.memory_usage = self._number(MemorySettings.USAGE_RANGE, self._memory_timer)
@@ -591,6 +615,10 @@ class SettingsDialog(BaseDialog):
         self.storage_page.add_cache_section("thumbnails", self.thumbnail_section, self.thumbnail_row)
 
         self.edit_cache_section = SettingSection(self.storage_page)
+        self.source_cache_row = self.edit_cache_section.add_row(SettingRow(self.edit_cache_section))
+        self.source_cache_mode = self._choice(self.SOURCE_CACHE_MODES)
+        self.source_cache_mode.activated.connect(lambda _index: self._emit_preload())
+        self.source_cache_row.add_control(self.source_cache_mode)
         location = QWidget()
         location_layout = QVBoxLayout(location)
         location_layout.setContentsMargins(0, 0, 0, 0)
@@ -648,6 +676,13 @@ class SettingsDialog(BaseDialog):
         self.raw_display_row.set_text(self._tr("settings.images.raw_mode", "RAW display mode"))
         self.non_raw_display_row.set_text(self._tr("settings.images.non_raw_mode", "Display mode for other formats"))
         self.canvas_background_row.set_text(self._tr("settings.images.canvas_background", "Canvas background"))
+        self.compute_section.set_title(self._tr("settings.compute.title", "Image processing"))
+        self.compute_engine_row.set_text(self._tr("settings.compute.engine", "Image computation"))
+        self.gpu_cache_row.set_text(self._tr("settings.compute.cache", "GPU memory cache"))
+        self.gpu_cache_limit_row.set_text(self._tr("settings.compute.limit", "Cache limit (MiB)"))
+        for control, options in ((self.compute_engine, self.IMAGE_ENGINES), (self.gpu_cache_mode, self.GPU_CACHE_MODES)):
+            for index, (_, key, fallback) in enumerate(options):
+                control.setItemText(index, self._tr(key, fallback))
         for control, options in ((self.language_combo, self.LANGUAGE_OPTIONS), (self.theme_combo, self.THEME_OPTIONS),
                                  (self.canvas_background, self.CANVAS_BACKGROUNDS)):
             for index, (_, text_key, fallback) in enumerate(options):
@@ -689,16 +724,19 @@ class SettingsDialog(BaseDialog):
                      "Thumbnails are rebuilt when needed after clearing. Older unused entries are removed when space runs low."))
         self.thumbnail_clear.setText(self._tr("settings.thumbnails.clear", "Clear thumbnail cache"))
         self._update_thumbnail_cache()
-        self.edit_cache_section.set_title(self._tr("settings.edit_cache.title", "Edit proxy cache (disk)"))
+        self.edit_cache_section.set_title(self._tr("settings.edit_cache.title", "Edit cache (disk)"))
+        self.source_cache_row.set_text(self._tr("settings.source_cache.title", "Source image cache"),
+            self._tr("settings.source_cache.hint", "Reuses decoded image data to open large images faster. Shares the edit cache limit."))
+        for index, (_, key, fallback) in enumerate(self.SOURCE_CACHE_MODES):
+            self.source_cache_mode.setItemText(index, self._tr(key, fallback))
         self._preload_rows["disk_mib"].set_text(
             self._tr("settings.ops.disk", "Limit (MiB)"),
-            self._tr("settings.edit_cache.hint", "Stores editing sources with a 1600-pixel long edge to reduce original "
-                     "image decoding. Clearing keeps source files, projects and edit history. Older unused entries "
-                     "are removed when space runs low."))
+            self._tr("settings.edit_cache.hint", "Stores editing previews and decoded source data to reduce repeated decoding. "
+                     "Clearing keeps source files, projects and edit history. Older unused entries are removed when space runs low."))
         self.edit_cache_location_label.setText(self._tr("settings.edit_cache.location", "Location"))
         self.edit_cache_path.copy_text = self._tr("settings.edit_cache.copy_path", "Copy path")
         self.edit_cache_open.setText(self._tr("settings.edit_cache.open_folder", "Open folder"))
-        self.edit_cache_clear.setText(self._tr("settings.edit_cache.clear", "Clear edit proxy cache"))
+        self.edit_cache_clear.setText(self._tr("settings.edit_cache.clear", "Clear edit cache"))
         self._update_edit_cache()
         self.storage_page.retranslate()
 
@@ -786,7 +824,7 @@ class SettingsDialog(BaseDialog):
                                 "models": ModelManagerPage(core.models, backend_status=core.inference.status)}
         if runtime_service is not None:
             from .runtime_manager_page import RuntimeManagerPage
-            runtime = RuntimeManagerPage(runtime_service)
+            runtime = RuntimeManagerPage(runtime_service, image_compute=core.tools.execution.gpu)
             runtime.restart_requested.connect(self._restart)
             self._resource_pages["runtime"] = runtime
         for key, page in self._resource_pages.items():
@@ -892,6 +930,19 @@ class SettingsDialog(BaseDialog):
     # ------------------------------------------------------------------
     # 快捷键
     # ------------------------------------------------------------------
+    def set_image_compute(self, value):
+        self._select(self.compute_engine, value.engine)
+        self._select(self.gpu_cache_mode, value.cache)
+        self.gpu_cache_limit.setValue(value.cache_mib)
+        self.gpu_cache_limit.setEnabled(value.cache == "custom")
+
+    def _emit_image_compute(self, _index=0):
+        self._gpu_timer.stop()
+        value = ImageComputeSettings(self.compute_engine.currentData(), self.gpu_cache_mode.currentData(),
+                                     self.gpu_cache_limit.value())
+        self.gpu_cache_limit.setEnabled(value.cache == "custom")
+        self.image_compute_edited.emit(value)
+
     def set_shortcuts(self, rows: Sequence[ShortcutRow]) -> None:
         """投影快捷键各行；行的集合变了才重建，否则原位更新。行下的冲突说明随之收起。"""
         rows = tuple(rows)
@@ -962,6 +1013,7 @@ class SettingsDialog(BaseDialog):
     # 预加载
     # ------------------------------------------------------------------
     def set_preload(self, settings: StudioPreloadSettings) -> None:
+        self.source_cache_mode.setCurrentIndex(0 if settings.source_cache_enabled else 1)
         self.canvas_mode.setCurrentIndex(StudioPreloadSettings.CANVAS_MODES.index(settings.canvas_preview_mode))
         self.preload_mode.setCurrentIndex([mode for mode, _, _ in self.PRELOAD_MODES].index(settings.mode))
         for name, control in self._preload_inputs.items():
@@ -980,7 +1032,9 @@ class SettingsDialog(BaseDialog):
     def _emit_preload(self) -> None:
         self._preload_timer.stop()
         self.show_page_error("performance", "")
+        self.show_page_error("storage", "")
         self.preload_edited.emit(StudioPreloadSettings(mode=self.preload_mode.currentData(),
+            source_cache_enabled=bool(self.source_cache_mode.currentData()),
             canvas_preview_mode=self.canvas_mode.currentData(), **{
             name: control.value() for name, control in self._preload_inputs.items()}))
 

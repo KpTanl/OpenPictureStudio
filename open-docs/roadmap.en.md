@@ -103,9 +103,9 @@ CPUs that support AVX2 automatically enable the kernels already wired in, and ot
 
 ### Cross-Hardware Acceleration
 
-On top of CPU processing power, we will explore a wgpu-based GPU image computation backend. We will first evaluate the real gains on Windows hardware such as Intel, AMD, and NVIDIA, and keep a reliable CPU execution path.
+Building on the wgpu/D3D12 image backend, extend coverage across Intel, AMD, and NVIDIA Windows hardware, record numerical quality and measured gains for each tool, model, and device qualification, and keep a reliable CPU execution path.
 
-As the image operation interfaces and resource management mature, we will keep studying support for more hardware and platforms. DirectML, used for AI inference today, and the planned GPU image processing develop separately and together serve the editing experience.
+As image operation interfaces and resource management mature, continue support for more hardware and platforms. DirectML inference and GPU image processing coordinate through the unified execution contract to serve the editing experience.
 
 ### RAW and Color Processing
 

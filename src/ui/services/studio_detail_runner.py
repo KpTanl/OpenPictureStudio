@@ -61,16 +61,17 @@ class StudioDetailRunner(QObject):
         self._closed = False
         self._completed.connect(self._deliver, Qt.ConnectionType.QueuedConnection)
 
-    def submit(self, preview):
+    def submit(self, preview, bounds=None):
         if self._closed:
             return
-        self._pending = preview
-        for job in self._queue.replace([(preview.generation,)]):
+        self._pending = preview, bounds
+        for job in self._queue.replace([(preview.generation, bounds)]):
             self._start(job)
 
     def _start(self, job):
-        preview, self._pending = self._pending, None
-        self._pool.submit(self._run, job, preview)
+        pending, self._pending = self._pending, None
+        preview, bounds = pending
+        self._pool.submit(self._run, job, preview, bounds)
 
     def cancel(self):
         self._queue.replace([])
@@ -80,14 +81,19 @@ class StudioDetailRunner(QObject):
         for packet in packets.values():
             packet.close()
 
-    def _run(self, job, preview):
+    def _run(self, job, preview, bounds):
         result, image, error = None, None, None
         cancelled = lambda: job.cancellation.is_set() or preview.is_cancelled()
         try:
-            result = self._service.render_preview(preview.session, use_proxy=False,
-                allow_intermediate=False, keep_full_display=True, priority=1,
-                source_identity=preview.context.source_identity,
-                source_preview=preview.context.source_preview, is_cancelled=cancelled)
+            if bounds is not None and not preview.session.read_only:
+                result = self._service.render_region(preview.session, bounds,
+                    source_identity=preview.context.source_identity,
+                    source_preview=preview.context.source_preview, is_cancelled=cancelled)
+            else:
+                result = self._service.render_preview(preview.session, use_proxy=False,
+                    allow_intermediate=False, keep_full_display=True, priority=1,
+                    source_identity=preview.context.source_identity,
+                    source_preview=preview.context.source_preview, is_cancelled=cancelled)
             if result is not None and result.detail is not None and not cancelled():
                 frame = result.detail.frame
                 width, height = frame.size

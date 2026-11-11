@@ -1,6 +1,6 @@
 from ..core.contracts import WorkflowGraph, WorkflowNode
 from ..core.contracts.result import SourceChangedError
-from ..core.photo_engine import _pil_from
+from ..core.photo_engine import display_rgba8
 from .tool_runtime import ToolRuntime
 from .result_types import CoreOperationError
 from .services import PreviewService
@@ -54,11 +54,17 @@ class PanelRenderService:
         result = self.render_source(identity, tool_id, settings, source_service=source_service,
                                     preview=preview, is_cancelled=is_cancelled)
         with source_service.resources.working_memory(result.pixels.nbytes * 4, is_cancelled):
+            from ..core.image_patches import display_stage_scope
             with source_service.compute.borrow(is_cancelled, role="foreground",
-                    threads=source_service.policy.interactive_threads) as compute:
-                image = _pil_from(result, parallelism=compute.threads)
-        if preview:
-            image.thumbnail((1000, 1000))
+                    threads=source_service.policy.interactive_threads) as compute, display_stage_scope(
+                        self.runtime.execution.results if self.runtime.execution.memo_enabled else None):
+                from PIL import Image
+                rgba = display_rgba8(result, parallelism=compute.threads,
+                    max_dimension=1000 if preview else None, cancelled=is_cancelled)
+                image = Image.fromarray(rgba, mode="RGBA")
+                if result.alpha is None:
+                    original, image = image, image.convert("RGB")
+                    original.close()
         return image
 
     def render_source(self, identity, tool_id, settings, *, source_service, preview=False, is_cancelled=lambda: False):
@@ -76,19 +82,18 @@ class PanelRenderService:
             minimum_threads = snapshot.required_threads(workflow)
             if lease.value.is_proxy and self.runtime.uses_prepared_inputs(workflow):
                 minimum_threads = max(minimum_threads, source_service.policy.operator_threads)
-            with source_service.resources.working_memory(lease.value.pixels.nbytes * 4, is_cancelled):
-                with source_service.compute.borrow(is_cancelled, role="foreground",
-                        threads=max(source_service.policy.interactive_threads, minimum_threads),
-                        minimum_threads=minimum_threads):
-                    result = self.runtime.execute_preview(snapshot, lease.value, workflow, is_cancelled=is_cancelled,
-                        resources=source_service.resources,
-                        full_source=lambda abort: source_service.borrow_linear(identity.path, identity=identity,
-                                                                               is_cancelled=abort))
-                    if not result.success:
-                        raise CoreOperationError(result.error)
-                    if is_cancelled() or not source_service.matches_file(identity):
-                        raise SourceChangedError()
-                    return result.data
+            with source_service.compute.request_context(is_cancelled, role="foreground",
+                    threads=max(source_service.policy.interactive_threads, minimum_threads),
+                    minimum_threads=minimum_threads):
+                result = self.runtime.execute_preview(snapshot, lease.value, workflow, is_cancelled=is_cancelled,
+                    resources=source_service.resources,
+                    full_source=lambda abort: source_service.borrow_linear(identity.path, identity=identity,
+                                                                           is_cancelled=abort))
+                if not result.success:
+                    raise CoreOperationError(result.error)
+                if is_cancelled() or not source_service.matches_file(identity):
+                    raise SourceChangedError()
+                return result.data
 
     def render_sampled(self, identity, tool_id, settings, *, source_service, epoch,
                        preview=True, is_cancelled=lambda: False):
@@ -113,8 +118,7 @@ class PanelRenderService:
             with source_service.borrow_linear(identity.path, identity=identity, max_side=limit,
                                               is_cancelled=cancelled) as lease:
                 minimum_threads = snapshot.required_threads(workflow)
-                with source_service.resources.working_memory(lease.value.pixels.nbytes * 4, cancelled), \
-                        source_service.compute.borrow(cancelled, role="foreground",
+                with source_service.compute.request_context(cancelled, role="foreground",
                             threads=max(source_service.policy.interactive_threads, minimum_threads),
                             minimum_threads=minimum_threads) as compute:
                     result = self._preview_service.render(lease.value, workflow, display=True,

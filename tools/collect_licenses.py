@@ -265,6 +265,11 @@ class Collector:
         manifest = ROOT / "native" / "ops_accel" / "Cargo.toml"
         if f"{CONTENTS}/ops_accel.pyd" not in project.files:
             return
+        headers = ROOT / "native" / "ops_accel" / "vendor" / "onnxruntime"
+        component = Component("native:onnxruntime-headers", "ONNX Runtime C API headers", "1.24.4", "MIT",
+            "https://github.com/microsoft/onnxruntime/tree/v1.24.4", "Native interface headers",
+            {"LICENSE": headers / "LICENSE"}, note="interface declarations compiled into _internal/ops_accel.pyd")
+        self.components[component.key] = component
         result = subprocess.run(["cargo", "metadata", "--locked", "--offline", "--format-version", "1",
                                  "--manifest-path", str(manifest), "--filter-platform", "x86_64-pc-windows-msvc"],
                                 capture_output=True, text=True, encoding="utf-8")
@@ -299,6 +304,14 @@ class Collector:
                                   "Rust crate", notices,
                                   note=("compiled into _internal/ops_accel.pyd" if pid in linked
                                         else "build-time only (procedural macro or build script)"))
+            self._supplement(component)
+            self.components[component.key] = component
+        if any(packages[pid]["name"] == "mach-dxcompiler-rs" for pid in linked):
+            component = Component("native:mach-dxcompiler", "Mach DirectX Shader Compiler",
+                "2026.10.26+141dd7f.1", "MIT / Apache-2.0 / NCSA",
+                "https://github.com/DouglasDwyer/mach-dxcompiler/tree/2026.10.26%2B141dd7f.1",
+                "Static DirectX shader compiler", {},
+                note="compiled into _internal/ops_accel.pyd; LLVM/DXC source 4190bb0c90d374c6b4d0b0f2c7b45b604eda24b6")
             self._supplement(component)
             self.components[component.key] = component
 

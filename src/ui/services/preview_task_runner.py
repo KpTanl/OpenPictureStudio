@@ -92,13 +92,14 @@ class PreviewTaskRunner(QObject):
         proxy_only=False,
         identity=None,
         half_size=False,
+        metadata_only=False,
     ) -> int:
         cancellation = Event()
         service = source_service or ImageSourceService()
         return self._submit(
             revision,
             lambda: service.load(path, max_side, proxy_only=proxy_only, identity=identity, half_size=half_size,
-                                 is_cancelled=cancellation.is_set),
+                                 metadata_only=metadata_only, is_cancelled=cancellation.is_set),
             SourceLoadResult,
             done,
             cancellation=cancellation,

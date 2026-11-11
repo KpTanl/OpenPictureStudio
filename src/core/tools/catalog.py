@@ -107,9 +107,19 @@ class ToolDefinition:
     collect_resources: Callable | None = None
     sampling_behavior: str = "unsupported"
     prepare_input: Callable | None = None
+    prepare_gpu_input: bool = False
     preparation_memory: Callable | None = None
     prepare_execution: Callable | None = None
     executor_memory: Callable | None = None
+    execution_engines: tuple[str, ...] = ("cpu",)
+    execution_dependencies: Callable | None = None
+    create_prepared_executor: Callable | None = None
+    supports_patches: bool = False
+    cacheable: Callable | None = None
+    output_size: Callable | None = None
+    region_input: Callable | None = None
+    execute_region: Callable | None = None
+    region_memory: Callable | None = None
 
     def required_resources(self, validated_params) -> tuple[RequiredResource, ...]:
         return tuple(self.collect_resources(validated_params)) if self.collect_resources else ()
@@ -149,6 +159,9 @@ class ToolCatalog:
             raise ValueError("工具参数版本不一致")
         if definition.sampling_behavior not in ("capture", "preserve", "transport", "unsupported"):
             raise ValueError("取样行为无效")
+        if (not definition.execution_engines or "cpu" not in definition.execution_engines
+                or any(engine not in ("cpu", "gpu") for engine in definition.execution_engines)):
+            raise ValueError("工具必须提供 CPU 执行能力")
         self._definitions[reference] = definition
 
     def resolve(self, reference: ToolReference):

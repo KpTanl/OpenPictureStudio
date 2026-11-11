@@ -119,7 +119,7 @@ Réglez les paramètres de la peau, des yeux et de la forme du visage, puis zoom
 
 ### Télécharger l’installateur Windows
 
-1. Ouvrez la [dernière version](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Dans **Assets**, téléchargez `OpenPictureStudio-<version>-beta-setup.exe` et le fichier `.exe.sha256` du même nom.
+1. Ouvrez la [dernière version](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Dans **Assets**, téléchargez `OpenPictureStudio-<version>-setup.exe` et le fichier `.exe.sha256` du même nom.
 2. Vérifiez le SHA256 de l’installateur, double-cliquez sur le fichier EXE et suivez l’assistant d’installation.
 3. Lancez OpenPictureStudio, puis ouvrez une photo ou un dossier. La version installée n’exige ni Python ni Rust ; les modèles IA se téléchargent à la demande.
 
@@ -165,9 +165,9 @@ L’interface de bureau repose sur **Python/PySide6**. Les services d’applicat
 - **Rust + Rayon** : couvre les points chauds comme les réglages de couleur globaux et locaux, les filtres, la conversion matricielle RAW et la sortie d’affichage, et coordonne l’exécution multithread.
 - **AVX2 SIMD** : sept groupes de noyaux sont branchés (couleur, conversion colorimétrique, courbes, réglages locaux, RAW, filtres et affichage). Le CPU est détecté automatiquement : l’accélération est activée si AVX2 est pris en charge, sinon le Rust générique est utilisé.
 - **Aperçu RAW rapide** : l’aperçu JPEG intégré aux RAW concernés, comme les NEF, est déjà en place ; le décodage complet et le post-traitement continuent d’être optimisés.
-- **GPU** : DirectML sert pour l’instant à l’inférence IA facultative. Le calcul d’image générique sur GPU est prévu, avec wgpu comme candidat.
+- **GPU** : sous Windows, le calcul d’image utilise wgpu/D3D12 et l’inférence DirectML suit le même contrat de chaîne complète. Le GPU est activé après qualification numérique et de performance de l’outil, du modèle et de l’appareil concernés ; les autres requêtes utilisent le CPU.
 
-Image Engine, Workflow Engine et Project Model portent respectivement les opérations d’image, l’orchestration des flux et l’état du projet. Le moteur CPU et le futur moteur GPU évolueront autour d’un même contrat d’opérations d’image, et l’extension des outils suit la direction à long terme Everything is Plugin. Détails dans [Architecture et accélération native](open-docs/architecture.fr.md).
+Image Engine, Workflow Engine et Project Model portent respectivement les opérations d’image, l’orchestration des flux et l’état du projet. Les moteurs CPU et GPU partagent les contrats d’image ; la réutilisation incrémentale, les aperçus proxy et le traitement de la zone visible accompagnent la retouche continue. Les plug-ins d’image de confiance rejoignent le même moteur d’outils par une interface float32 versionnée. Voir [Architecture et accélération native](open-docs/architecture.fr.md) et [Plug-ins d’image](open-docs/image-plugins.fr.md).
 
 ## Configuration requise et mesures de performances
 

@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from concurrent.futures import CancelledError
 from dataclasses import dataclass, replace
+import logging
 
 import cv2
 import numpy as np
 
 from .contracts.beauty import BEAUTY_MODEL_FIELDS, BeautyEffectStatus
 from .face_regions import JAW, eye_geometry, face_regions, face_bounds
-from .photo_engine import guided_filter, guided_filter_working_memory, linear_luma
+from .photo_engine import guided_filter, guided_filter_working_memory, linear_luma, remap_bicubic_native
+from .execution_memo import memo, domain, current_memo, cancelled as execution_cancelled
+from .image_patches import ImagePatch
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -46,11 +51,21 @@ _WHITE = np.array([0.95047, 1, 1.08883], np.float32)
 
 
 def _check(cancelled):
-    if cancelled():
+    if execution_cancelled(cancelled):
         raise CancelledError()
 
 
+def native_beauty(name):
+    from . import photo_engine
+    execution = photo_engine._GUIDED_FILTER_EXECUTION.get()
+    native = getattr(photo_engine.ops_accel, name, None) if photo_engine._HAS_RUST_ACCEL else None
+    return native, execution[0] if execution is not None else 1
+
+
 def linear_lab(rgb):
+    native, threads = native_beauty("beauty_lab")
+    if native is not None:
+        return native(rgb, threads=threads)
     xyz = rgb @ _XYZ.T / _WHITE
     f = np.where(xyz > 216 / 24389, np.cbrt(xyz), (24389 / 27 * xyz + 16) / 116)
     return np.stack((116 * f[..., 1] - 16, 500 * (f[..., 0] - f[..., 1]),
@@ -58,6 +73,9 @@ def linear_lab(rgb):
 
 
 def lab_linear(lab):
+    native, threads = native_beauty("beauty_lab")
+    if native is not None:
+        return native(np.asarray(lab, dtype=np.float32), True, threads=threads)
     fy = (lab[..., 0] + 16) / 116
     f = np.stack((fy + lab[..., 1] / 500, fy, fy - lab[..., 2] / 200), axis=-1)
     xyz = np.where(f > 6 / 29, f ** 3, (116 * f - 16) / (24389 / 27)) * _WHITE
@@ -278,6 +296,12 @@ def displacement(regions, params):
 
 
 def remap_once(rgb, alpha, field, cancelled=lambda: False):
+    _check(cancelled)
+    native = remap_bicubic_native(rgb, alpha, field, cancelled)
+    return _remap_numpy(rgb, alpha, field, cancelled) if native is None else native
+
+
+def _remap_numpy(rgb, alpha, field, cancelled=lambda: False):
     height, width = rgb.shape[:2]
     output = rgb.copy()
     coverage = None if alpha is None else alpha.copy()
@@ -325,6 +349,66 @@ def remap_once(rgb, alpha, field, cancelled=lambda: False):
     return output, coverage
 
 
+def remap_region(source, field, bounds, cancelled=lambda: False):
+    from . import photo_engine
+    from .image_patches import native_patches
+    from .execution_memo import cancellation_callback
+    cancelled = cancellation_callback(cancelled)
+    native = getattr(photo_engine.ops_accel, "remap_bicubic_region", None) if photo_engine._HAS_RUST_ACCEL else None
+    left, top, right, bottom = bounds
+    if native is not None and source.pixels.flags.c_contiguous and (source.alpha is None or source.alpha.flags.c_contiguous):
+        execution = photo_engine._GUIDED_FILTER_EXECUTION.get()
+        try:
+            return native(source.pixels, source.alpha, native_patches(source), np.ascontiguousarray(field), left, top,
+                          threads=execution[0] if execution else 1, cancelled=cancelled)
+        except InterruptedError:
+            raise CancelledError() from None
+    height, width = source.pixels.shape[:2]
+    pixels, coverage = source.read_region(bounds, cancelled)
+    output = pixels.copy()
+    coverage = None if coverage is None else coverage.copy()
+    for start in range(top // 64 * 64, bottom, 64):
+        for block in range(left // 1024 * 1024, right, 1024):
+            _check(cancelled)
+            yt, yb, xl, xr = max(top, start), min(bottom, start + 64), max(left, block), min(right, block + 1024)
+            offsets = field[yt - top:yb - top, xl - left:xr - left]
+            active = np.any(offsets != 0, axis=-1)
+            if not active.any():
+                continue
+            xx, yy = np.meshgrid(np.arange(xl, xr, dtype=np.float32), np.arange(yt, yb, dtype=np.float32))
+            mx, my = np.clip(xx + offsets[..., 0], 0, width - 1), np.clip(yy + offsets[..., 1], 0, height - 1)
+            x0, y0 = max(0, int(mx.min()) - 2), max(0, int(my.min()) - 2)
+            x1, y1 = min(width, int(mx.max()) + 4), min(height, int(my.max()) + 4)
+            rgb, alpha = source.read_region((x0, y0, x1, y1), cancelled)
+            local_a = np.ones(rgb.shape[:2], np.float32) if alpha is None else alpha
+            px, py = mx - x0, my - y0
+            a = cv2.remap(local_a, px, py, cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+            weighted = cv2.remap(rgb * local_a[..., None], px, py, cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+            amin, amax = np.full(a.shape, np.inf, np.float32), np.full(a.shape, -np.inf, np.float32)
+            lo, hi = np.full(weighted.shape, np.inf, np.float32), np.full(weighted.shape, -np.inf, np.float32)
+            bx, by = np.floor(mx).astype(np.int32), np.floor(my).astype(np.int32)
+            for dy in (-1, 0, 1, 2):
+                for dx in (-1, 0, 1, 2):
+                    sx, sy = np.clip(bx + dx, 0, width - 1) - x0, np.clip(by + dy, 0, height - 1) - y0
+                    ca = local_a[sy, sx]
+                    np.minimum(amin, ca, out=amin)
+                    np.maximum(amax, ca, out=amax)
+                    crgb = rgb[sy, sx]
+                    np.minimum(lo, np.where(ca[..., None] > 1e-6, crgb, np.inf), out=lo)
+                    np.maximum(hi, np.where(ca[..., None] > 1e-6, crgb, -np.inf), out=hi)
+            np.clip(a, amin, amax, out=a)
+            lo[~np.isfinite(lo)] = 0
+            hi[~np.isfinite(hi)] = 0
+            np.clip(weighted, lo * a[..., None], hi * a[..., None], out=weighted)
+            np.divide(weighted, a[..., None], out=weighted, where=a[..., None] > 1e-6)
+            weighted[a <= 1e-6] = 0
+            output[yt - top:yb - top, xl - left:xr - left][active] = weighted[active]
+            if coverage is not None:
+                coverage[yt - top:yb - top, xl - left:xr - left][active] = a[active]
+    _check(cancelled)
+    return output, coverage
+
+
 def working_area(source, snapshot=None, *, bounds_factory=face_bounds):
     height, width = source.pixels.shape[:2]
     pixels = height * width
@@ -357,16 +441,14 @@ def working_memory(source, params, snapshot=None):
     roi = working_area(source, snapshot)
     if not roi:
         return 0
-    # 最终累计与输出、单脸区域/频段/供体、分块三次采样的同时存活上界。
-    saving = 0
     has_color = any(params[key] for key in ("skin_smooth", "skin_brighten", "skin_rosy", "sharpen",
                                            "teeth_whiten", "spot_remove", "eye_bag_remove"))
-    if snapshot is not None and has_color:
+    if snapshot is not None:
         left, top, right, bottom = composition_bounds(source, snapshot)
-        saving = (pixels - (right - left) * (bottom - top)) * 16
+        pixels = (right - left) * (bottom - top)
     filters = guided_filter_working_memory(roi) if has_color else 0
-    return (pixels * 48 - saving + roi * (264 if params["spot_remove"] else 200)
-            + width * min(height, 64) * 224 + 1024 * 1024 + filters)
+    return (pixels * 64 + roi * (264 if params["spot_remove"] else 200)
+            + min(width, 1024) * min(height, 64) * 224 + 1024 * 1024 + filters)
 
 
 def analyze_auto(source, snapshot, *, preset=False):
@@ -381,9 +463,9 @@ def analyze_auto(source, snapshot, *, preset=False):
         return values
     face = max((face for face in snapshot.faces if face.status == "ready"),
                key=lambda face: np.ptp(np.asarray(face.points), axis=0).prod())
-    regions = face_regions(face.points, (source.pixels.shape[1], source.pixels.shape[0]))
+    regions = face_regions(face.points, (source.pixels.shape[1], source.pixels.shape[0]), include_support=False)
     left, top, right, bottom = regions.bounds
-    rgb = source.pixels[top:bottom, left:right]
+    rgb, _ = source.read_region((left, top, right, bottom))
     selected = skin_weight(linear_lab(rgb), regions) > 0.5
     if selected.any():
         display = np.clip(linear_to_srgb(rgb[selected]), 0, 1) * 255
@@ -423,24 +505,38 @@ def execute(source, params, snapshot, *, cancelled=lambda: False, sampling=None,
                                            "teeth_whiten", "spot_remove", "eye_bag_remove"))
     has_warp = any(params[key] for key in ("face_slim", "eye_enlarge", "eye_distance", "nose_slim"))
     cl, ct, cr, cb = composition_bounds(source, snapshot, bounds_factory=color_bounds)
+    wl, wt, wr, wb = composition_bounds(source, snapshot)
+    left, top, right, bottom = ((min(cl, wl), min(ct, wt), max(cr, wr), max(cb, wb))
+                                if has_color and has_warp else
+                                (cl, ct, cr, cb) if has_color else (wl, wt, wr, wb))
+    bounds = left, top, right, bottom
+    if right <= left or bottom <= top:
+        return replace(source, effect_status=(*source.effect_status, status))
     total_delta = np.zeros((cb - ct, cr - cl, 3), source.pixels.dtype) if has_color else None
     color_weight = np.zeros((cb - ct, cr - cl), np.float32) if has_color else None
-    total_field = np.zeros((height, width, 2), np.float32) if has_warp else None
-    warp_weight = np.zeros((height, width), np.float32) if has_warp else None
+    total_field = np.zeros((bottom - top, right - left, 2), np.float32) if has_warp else None
+    warp_weight = np.zeros((bottom - top, right - left), np.float32) if has_warp else None
+    bl, bt, _, _ = bounds
     skipped = 0
     for face in snapshot.faces:
         _check(cancelled)
         if face.status != "ready":
             continue
-        regions = face_regions(face.points, (width, height))
+        regions = memo("face.regions", (face.points, (width, height), has_warp),
+                       lambda: face_regions(face.points, (width, height), include_support=has_warp))
         left, top, right, bottom = regions.bounds
         if right <= left or bottom <= top:
             continue
         if has_color:
-            colors = regions if color_regions is None else color_regions(face.points, (width, height), regions)
+            colors = regions if color_regions is None else memo("face.color_regions",
+                (face.points, (width, height), has_warp), lambda regions=regions: color_regions(face.points, (width, height), regions))
             left, top, right, bottom = colors.bounds
             processor = color_delta if color_processor is None else color_processor
-            delta, support, missed = processor(source.pixels[top:bottom, left:right], colors, params, cancelled)
+            with domain((face.points, (width, height), colors.bounds)):
+                color_key = tuple(params[key] for key in ("skin_smooth", "skin_brighten", "skin_rosy", "sharpen",
+                                                          "teeth_whiten", "spot_remove", "eye_bag_remove"))
+                delta, support, missed = memo("face.color_contribution", color_key,
+                    lambda: processor(source.read_region(colors.bounds, cancelled)[0], colors, params, cancelled), image=True)
             # delta 已包含各区域权重；以整体支持度作重叠归一化。
             total_delta[top - ct:bottom - ct, left - cl:right - cl] += delta
             color_weight[top - ct:bottom - ct, left - cl:right - cl] += support
@@ -448,15 +544,18 @@ def execute(source, params, snapshot, *, cancelled=lambda: False, sampling=None,
             del delta, support, colors
         if has_warp:
             left, top, right, bottom = regions.bounds
-            field, support = displacement(regions, params)
-            total_field[top:bottom, left:right] += field * support[..., None]
-            warp_weight[top:bottom, left:right] += support
+            field, support = memo("face.warp", (face.points, (width, height),
+                tuple(params[name] for name in ("face_slim", "eye_enlarge", "eye_distance", "nose_slim"))),
+                lambda regions=regions: displacement(regions, params))
+            total_field[top - bt:bottom - bt, left - bl:right - bl] += field * support[..., None]
+            warp_weight[top - bt:bottom - bt, left - bl:right - bl] += support
             del field, support
         del regions
     _check(cancelled)
-    pixels, alpha = source.pixels, source.alpha
+    composed = source
     if has_color:
-        pixels = source.pixels.copy()
+        pixels, _ = source.read_region((cl, ct, cr, cb), cancelled)
+        pixels = pixels.copy()
         delta = active = original = None
         for block_top in range(ct // 64 * 64, cb, 64):
             for block_left in range(cl // 1024 * 1024, cr, 1024):
@@ -466,16 +565,29 @@ def execute(source, params, snapshot, *, cancelled=lambda: False, sampling=None,
                 delta = total_delta[top - ct:bottom - ct, left - cl:right - cl] / np.maximum(
                     1, color_weight[top - ct:bottom - ct, left - cl:right - cl])[..., None]
                 active = np.any(delta != 0, axis=-1)
-                original = source.pixels[top:bottom, left:right]
-                pixels[top:bottom, left:right][active] = _gamut(original[active] + delta[active])
+                original = pixels[top - ct:bottom - ct, left - cl:right - cl]
+                original[active] = _gamut(original[active] + delta[active])
         del delta, active, original
         del total_delta, color_weight
+        pixels.setflags(write=False)
+        composed = replace(source, patches=(*source.patches,
+            ImagePatch((cl, ct, cr, cb), pixels, None, source.orig_size)))
     if has_warp:
         total_field /= np.maximum(1, warp_weight)[..., None]
         del warp_weight
-        pixels, alpha = remap_once(pixels, alpha, total_field, cancelled)
+        pixels, alpha = remap_region(composed, total_field, bounds, cancelled)
         if sampling is not None and sampling.active:
-            sampling.beauty_detail(total_field, cancelled)
+            sampling.beauty_detail(total_field, cancelled, bounds=bounds)
+        pixels.setflags(write=False)
+        if alpha is not None:
+            alpha.setflags(write=False)
+        composed = replace(source, patches=(*source.patches, ImagePatch(bounds, pixels, alpha, source.orig_size)))
     _check(cancelled)
-    return replace(source, pixels=pixels, alpha=alpha,
+    scope = current_memo.get()
+    identity = source.patch_base_identity or ((scope.namespace, scope.input_identity) if scope is not None else ())
+    patch = composed.patches[-1]
+    logger.debug("美颜补丁 bounds=%s reference=%s bytes=%s full_rgb_bytes=%s",
+                 patch.bounds, patch.reference_size,
+                 patch.pixels.nbytes + (patch.alpha.nbytes if patch.alpha is not None else 0), source.pixels.nbytes)
+    return replace(composed, patch_base_identity=identity,
                    effect_status=(*source.effect_status, replace(status, spots_skipped=skipped)))

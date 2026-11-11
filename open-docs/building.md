@@ -2,6 +2,16 @@
 
 [简体中文](building.md) | [English](building.en.md) | [Français](building.fr.md)
 
+## 独立候选构建
+
+工作区审阅候选使用 `tools/build_review_candidate.py`，传入与原生 release 模块匹配的源码及产物摘要清单：
+
+```powershell
+.venv\Scripts\python.exe -B tools/build_review_candidate.py --native-sources path/to/native-sources.json --native-artifacts path/to/artifacts.json
+```
+
+输出保存在独立的 `dist/candidate-<version>/`，包含候选安装器、源码 ZIP、工作区快照、依赖与产物摘要。构建使用固定源码副本；程序目录中的 `components.json` 和 `SOURCE.txt` 指向随包交付的源码。安装器文件名包含 `candidate`。正式构建继续要求已提交且干净的候选源码，按既有手动验收后交付。图像插件开发见[接口文档](image-plugins.md)。
+
 [返回首页](../README.md)
 
 ## 源码运行
@@ -26,7 +36,7 @@ pip install -r requirements-beauty.txt
 python main.py
 ```
 
-Rust 加速模块是可选的。需要时安装 Rust 工具链后构建，并把产物复制到仓库根目录：
+Rust 加速模块是可选的。构建需要 Rust、MSVC C++ Build Tools 和 Windows SDK；默认的静态 DXC 还需要“C++ ATL for x64/x86”组件。首次构建会下载并校验固定版本的 DXC 静态库。安装好工具链后构建，并把产物复制到仓库根目录：
 
 ```powershell
 cd native\ops_accel
@@ -34,6 +44,8 @@ cargo build --release --locked
 copy target\release\ops_accel.dll ..\..\ops_accel.pyd
 cd ..\..
 ```
+
+已单独准备 ATL 构建库时，可将进程环境变量 `OPS_ATL_LIB` 指向包含 `atls.lib` 的目录。`cargo build --release --locked --no-default-features` 构建只含 FXC 的原生模块。应用运行不需要安装这些构建工具。
 
 ## 构建
 

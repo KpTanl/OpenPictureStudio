@@ -19,16 +19,23 @@
 #define AppName "OpenPictureStudio"
 #define AppPublisher "OpenPictureStudio"
 #define AppExeName "OpenPictureStudio.exe"
+#ifdef ReviewCandidate
+  #define BuildSuffix " Candidate"
+  #define PackageSuffix "-candidate"
+#else
+  #define BuildSuffix ""
+  #define PackageSuffix ""
+#endif
 
 [Setup]
 ; Fixed AppId so future beta builds upgrade in place instead of installing twice.
 AppId={{8F2C4B7A-1D3E-4C9A-9B6F-A0B1C2D3E4F5}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppVerName={#AppName} {#AppVersion} (Beta)
+AppVerName={#AppName} {#AppVersion}{#BuildSuffix}
 AppPublisher={#AppPublisher}
 VersionInfoVersion={#AppVersion}
-VersionInfoDescription={#AppName} Beta Installer
+VersionInfoDescription={#AppName}{#BuildSuffix} Installer
 
 ; Per-user install — no admin prompt, friendliest for beta testers.
 PrivilegesRequired=lowest
@@ -44,10 +51,10 @@ RestartApplications=no
 
 SourceDir={#RepoRoot}
 OutputDir=dist\installer
-OutputBaseFilename={#AppName}-{#AppVersion}-beta-setup
+OutputBaseFilename={#AppName}-{#AppVersion}{#PackageSuffix}-setup
 SetupIconFile=resources\icons\app.ico
 UninstallDisplayIcon={app}\{#AppExeName}
-UninstallDisplayName={#AppName} {#AppVersion} (Beta)
+UninstallDisplayName={#AppName} {#AppVersion}{#BuildSuffix}
 
 Compression=lzma2
 SolidCompression=yes

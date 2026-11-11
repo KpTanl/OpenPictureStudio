@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import os
+import hashlib
 from collections import OrderedDict
 from dataclasses import dataclass
 from threading import Event, Lock
 
+from ..core.contracts.execution import CPU_BACKEND_IDENTITY
+from ..core.contracts.image_display import PreviewDisplaySpec
 
-def preview_variant(workflow, tool_generation):
-    return f"{workflow.workflow_hash()}:{tool_generation}"
+
+def backend_tag(identity):
+    return hashlib.sha256(repr(identity).encode("utf-8")).hexdigest()[:24]
+
+
+def preview_variant(workflow, tool_generation, display_spec=PreviewDisplaySpec(1600), backend_identity=CPU_BACKEND_IDENTITY):
+    return f"{workflow.workflow_hash()}:{tool_generation}:{backend_tag(backend_identity)}:integer-source-v1:{display_spec.resampling}:{display_spec.max_dimension}"
 
 
 @dataclass(frozen=True)
@@ -16,16 +24,17 @@ class PreviewKey:
     mtime_ns: int
     file_size: int
     variant: str
+    backend_identity: tuple = CPU_BACKEND_IDENTITY
 
     @classmethod
-    def capture(cls, path, variant):
+    def capture(cls, path, variant, backend_identity=CPU_BACKEND_IDENTITY):
         path = os.path.normcase(os.path.abspath(path))
         stat = os.stat(path)
-        return cls(path, stat.st_mtime_ns, stat.st_size, variant)
+        return cls(path, stat.st_mtime_ns, stat.st_size, variant, backend_identity)
 
     def matches_file(self):
         try:
-            return self == self.capture(self.path, self.variant)
+            return self == self.capture(self.path, self.variant, self.backend_identity)
         except OSError:
             return False
 
@@ -39,6 +48,8 @@ class PreviewFrame:
     effect_status: tuple = ()
     input_size: tuple[int, int] | None = None
     input_is_proxy: bool | None = None
+    display_spec: PreviewDisplaySpec | None = None
+    backend_identity: tuple = CPU_BACKEND_IDENTITY
 
 
 @dataclass(frozen=True)
@@ -91,6 +102,8 @@ class StudioPreviewCache:
     def put(self, key, frame, *, is_cancelled=lambda: False):
         """写入一帧。放不进留存额度或内存准入不过时不进缓存，预览照常显示，下次回到这个状态重新渲染。"""
         if self._closed.is_set() or is_cancelled() or not key.matches_file():
+            return
+        if frame.backend_identity != key.backend_identity:
             return
         size = len(frame.rgba)
         if size > self._pool.policy.preview_cache_bytes or not self._pool.store(self._name(key), "preview", frame, size):

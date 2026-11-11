@@ -103,9 +103,9 @@ Les CPU qui prennent en charge AVX2 activent automatiquement les noyaux d’acc�
 
 ### Accélération sur plusieurs matériels
 
-En complément de la puissance du CPU, on explore un moteur de calcul d’image GPU fondé sur wgpu, en évaluant d’abord le gain réel sur les environnements Windows Intel, AMD et NVIDIA, tout en gardant un chemin d’exécution CPU fiable.
+À partir du moteur d’image wgpu/D3D12 existant, étendre la couverture des matériels Windows Intel, AMD et NVIDIA, relever la qualité numérique et les gains réels pour chaque qualification d’outil, de modèle et d’appareil, tout en gardant un chemin CPU fiable.
 
-À mesure que les interfaces d’opérations d’image et la gestion des ressources se complètent, on poursuivra l’étude de l’adaptation à davantage de matériels et de plateformes. DirectML, aujourd’hui utilisé pour l’inférence IA, et le traitement d’image GPU prévu évoluent séparément, et servent ensemble l’expérience de retouche.
+À mesure que les interfaces d’opérations d’image et la gestion des ressources se complètent, poursuivre l’adaptation à davantage de matériels et de plateformes. L’inférence DirectML et le traitement d’image GPU se coordonnent par le contrat d’exécution commun au service de la retouche.
 
 ### RAW et traitement des couleurs
 

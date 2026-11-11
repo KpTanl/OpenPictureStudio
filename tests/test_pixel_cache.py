@@ -23,6 +23,12 @@ def graph(exposure):
     return WorkflowGraph.single_node("color_adjust", {"exposure": exposure})
 
 
+def source_usage(resources):
+    with resources._lock:
+        sizes, counts = resources._costs()
+        return sizes["source"], counts["source"]
+
+
 @pytest.mark.parametrize("limits", [(0, 4), (512, 4), (10000, 0)])
 def test_oversized_or_disabled_cache_still_renders_and_exports(tmp_path, limits):
     engine = ImageEngineAdapter()
@@ -41,7 +47,8 @@ def test_oversized_or_disabled_cache_still_renders_and_exports(tmp_path, limits)
     with Image.open(output) as image:
         assert image.size == (12, 10)
     usage = sources.resources.usage()
-    assert usage["bytes"] == usage["reserved_bytes"] == usage["borrowers"] == 0
+    assert source_usage(sources.resources) == (0, 0)
+    assert usage["reserved_bytes"] == usage["borrowers"] == 0
 
 
 def test_eviction_preserves_history_and_reloads_identical_pixels(tmp_path):
@@ -70,9 +77,12 @@ def test_eviction_preserves_history_and_reloads_identical_pixels(tmp_path):
     history = core.history_state(sid, include_revisions=True).unwrap()
     for index in range(12):
         open_session(core, tmp_path / f"other-{index}.png")
-        usage = sources.resources.usage()
-        assert usage["bytes"] <= 1440
-        assert usage["entries"] <= 1
+        size, count = source_usage(sources.resources)
+        assert size <= 1440
+        assert count <= 1
+    for key, entry in tuple(sources.resources._entries.items()):
+        if entry.category == "intermediate":
+            sources.resources.discard(key)
     assert core.history_state(sid, include_revisions=True).unwrap() == history
     core.undo(sid).unwrap()
     assert core.get_session(sid).unwrap().draft_workflow == graph(0.2)

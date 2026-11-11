@@ -346,7 +346,8 @@ class BaseToolPanel(QWidget, ThemedI18nMixin):
         job_id = self._ensure_preview_runner().submit_source(generation, path, finished,
             source_service=self._image_source_service, proxy_only=self.external_preview,
             identity=self._source_identity if self.external_preview else None,
-            half_size=self.external_preview and self._source_preview.half_size)
+            half_size=self.external_preview and self._source_preview.half_size,
+            metadata_only=self.external_preview)
         self._source_job_id = job_id
         return job_id
 

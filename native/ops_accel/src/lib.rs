@@ -3,13 +3,21 @@ use pyo3::types::{PyBool, PyDict};
 use numpy::{PyArray1, PyArray3, PyReadonlyArray2, PyReadonlyArray3, PyUntypedArrayMethods, PyArrayMethods};
 
 mod color_space;
+mod beauty;
 mod display;
+mod display_output;
+mod remap;
+mod image_view;
+mod gpu;
+mod cancellation;
+mod color_details;
 mod guided_filter;
 mod guided_filter_exact;
 mod color_mixer;
 mod tone;
 mod pipeline;
 mod raw_source;
+mod source_cache;
 mod thread_pools;
 mod local_color;
 mod simd;
@@ -96,7 +104,7 @@ fn render_pipeline_fast<'py>(
     params: &Bound<'_, PyDict>,
     threads: Option<usize>,
 ) -> PyResult<Bound<'py, PyArray3<f32>>> {
-    Ok(render_pipeline_internal(py, pixels, params, threads, false)?.0)
+    Ok(render_pipeline_internal(py, pixels, params, threads, false, false)?.0)
 }
 
 #[pyfunction]
@@ -107,7 +115,7 @@ fn render_pipeline_fast_with_mixer_input<'py>(
     params: &Bound<'_, PyDict>,
     threads: Option<usize>,
 ) -> PyResult<(Bound<'py, PyArray3<f32>>, Bound<'py, PyArray3<f32>>)> {
-    let (output, sample) = render_pipeline_internal(py, pixels, params, threads, true)?;
+    let (output, sample) = render_pipeline_internal(py, pixels, params, threads, true, false)?;
     Ok((output, sample.expect("mixer input capture was requested")))
 }
 
@@ -117,6 +125,7 @@ fn render_pipeline_internal<'py>(
     params: &Bound<'_, PyDict>,
     threads: Option<usize>,
     capture: bool,
+    prefix_only: bool,
 ) -> PyResult<(Bound<'py, PyArray3<f32>>, Option<Bound<'py, PyArray3<f32>>>)> {
     let shape = pixels.shape();
     if shape.len() != 3 || shape[2] != 3 {
@@ -224,7 +233,9 @@ fn render_pipeline_internal<'py>(
     let mut mixer_input = capture.then(|| vec![0.0; input.len()]);
     py.allow_threads(|| {
         thread_pools::install(threads, || {
-            if let Some(sample) = mixer_input.as_deref_mut() {
+            if prefix_only {
+                pipeline::render_pipeline_stages(input, &mut buffer, width, height, &r_params, None, true);
+            } else if let Some(sample) = mixer_input.as_deref_mut() {
                 render_pipeline_with_mixer_input(input, &mut buffer, width, height, &r_params, Some(sample));
             } else {
                 render_pipeline(input, &mut buffer, width, height, &r_params);
@@ -321,7 +332,42 @@ fn ops_accel(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(render_pipeline_fast, m)?)?;
     m.add_function(wrap_pyfunction!(render_pipeline_fast_with_mixer_input, m)?)?;
     m.add_function(wrap_pyfunction!(linear_to_display_rgba8, m)?)?;
+    m.add_function(wrap_pyfunction!(display_output::render_display_rgba8, m)?)?;
+    m.add_function(wrap_pyfunction!(display_output::resize_display_rgba8, m)?)?;
+    m.add_function(wrap_pyfunction!(display_output::update_display_patches, m)?)?;
+    m.add_function(wrap_pyfunction!(gpu::gpu_adapters, m)?)?;
+    m.add_class::<gpu::GpuDevice>()?;
+    m.add_class::<gpu::GpuImage>()?;
+    #[cfg(windows)]
+    m.add_class::<gpu::GpuModel>()?;
+    #[cfg(windows)]
+    m.add_class::<gpu::GpuTensor>()?;
+    m.add("GpuError", _py.get_type_bound::<gpu::GpuError>())?;
+    m.add("GPU_REVISION", gpu::REVISION)?;
+    m.add_function(wrap_pyfunction!(remap::remap_bicubic, m)?)?;
+    m.add_function(wrap_pyfunction!(remap::remap_bicubic_region, m)?)?;
+    m.add_function(wrap_pyfunction!(render_color_prefix, m)?)?;
+    m.add_function(wrap_pyfunction!(color_details::detail_luma, m)?)?;
+    m.add_function(wrap_pyfunction!(color_details::detail_filter, m)?)?;
+    m.add_function(wrap_pyfunction!(color_details::finish_color_details, m)?)?;
+    m.add_function(wrap_pyfunction!(color_details::color_detail_parameters, m)?)?;
+    m.add_function(wrap_pyfunction!(local_color::render_local_prefix, m)?)?;
+    m.add_function(wrap_pyfunction!(local_color::local_detail_filter, m)?)?;
+    m.add_function(wrap_pyfunction!(local_color::finish_local_details, m)?)?;
+    m.add("DISPLAY_RESAMPLING", "area-rgba8-premultiplied-v1")?;
     m.add_function(wrap_pyfunction!(raw_xyz_to_linear_srgb, m)?)?;
+    m.add_function(wrap_pyfunction!(source_cache::source_compress_blocks, m)?)?;
+    m.add_function(wrap_pyfunction!(source_cache::source_decompress_blocks, m)?)?;
+    m.add_function(wrap_pyfunction!(source_cache::source_unfilter_png, m)?)?;
     m.add_function(wrap_pyfunction!(guided_filter_exact::guided_filter_exact, m)?)?;
+    m.add_function(wrap_pyfunction!(beauty::beauty_lab, m)?)?;
+    m.add_function(wrap_pyfunction!(beauty::beauty_skin_delta, m)?)?;
     Ok(())
+}
+
+#[pyfunction]
+#[pyo3(signature = (pixels, params, threads=None))]
+fn render_color_prefix<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>,
+    params: &Bound<'_, PyDict>, threads: Option<usize>) -> PyResult<Bound<'py, PyArray3<f32>>> {
+    Ok(render_pipeline_internal(py, pixels, params, threads, false, true)?.0)
 }

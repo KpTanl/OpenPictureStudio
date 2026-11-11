@@ -9,9 +9,10 @@ import numpy as np
 from .beauty_detail_v2 import (CALIBRATION as SMOOTH_CALIBRATION, color_delta as previous_color_delta,
                              execute as previous_execute, working_memory as previous_working_memory)
 from .beauty_v2 import (CALIBRATION as BASE_CALIBRATION, _gamut, composition_bounds,
-                       execute as execute_detail, lab_linear, linear_lab, skin_weight, working_area)
+                       execute as execute_detail, lab_linear, linear_lab, skin_weight, working_area, native_beauty)
 from .face_regions import BROWS, EYES, LIPS, NOSTRILS, OVAL, FaceRegions, eye_geometry, face_bounds
 from .photo_engine import guided_filter, guided_filter_working_memory, linear_luma
+from .execution_memo import memo, cancelled as execution_cancelled
 
 
 @dataclass(frozen=True)
@@ -56,7 +57,7 @@ class ColorRegions:
 
 
 def _check(cancelled):
-    if cancelled():
+    if execution_cancelled(cancelled):
         raise CancelledError()
 
 
@@ -186,24 +187,61 @@ def skin_weights(lab, regions, cancelled):
 
 
 def _skin_delta(rgb, lab, skin, distance, params, cancelled):
+    native, threads = native_beauty("beauty_skin_delta")
+    if native is None:
+        return _skin_delta_numpy(rgb, lab, skin, distance, params, cancelled)
+    cfg = BASE_CALIBRATION
+    y = np.clip(linear_luma(rgb), 0, 1)
+    fine = base = mass = y
+    chroma = lab[..., 1:]
+    if params["skin_smooth"] or params["skin_brighten"]:
+        radius = max(1, round(cfg.coarse_radius*distance))
+        base = memo("skin.base", (radius, cfg.coarse_eps), lambda: guided_filter(y, y, radius, cfg.coarse_eps), image=True)
+        _check(cancelled)
+    if params["skin_smooth"]:
+        radius = max(1, round(cfg.fine_radius*distance))
+        fine = memo("skin.fine", (radius, cfg.fine_eps), lambda: guided_filter(y, y, radius, cfg.fine_eps), image=True)
+        _check(cancelled)
+        sigma = max(1., cfg.spot_coarse*distance)
+        mass = memo("skin.mass", sigma, lambda: cv2.GaussianBlur(skin, (0, 0), sigma), image=True)
+        values = []
+        for channel in (1, 2):
+            _check(cancelled)
+            values.append(memo("skin.chroma", (sigma, channel),
+                lambda channel=channel: cv2.GaussianBlur(lab[..., channel]*skin, (0, 0), sigma), image=True))
+        chroma = np.stack(values, axis=-1)
+    from .execution_memo import cancellation_callback
+    try:
+        return native(rgb, lab, skin, fine, base, mass, chroma,
+            *(params[key]/100 for key in SKIN_PARAMETERS), threads=threads, cancelled=cancellation_callback(cancelled))
+    except InterruptedError:
+        raise CancelledError() from None
+
+
+def _skin_delta_numpy(rgb, lab, skin, distance, params, cancelled):
     cfg, legacy = SMOOTH_CALIBRATION, BASE_CALIBRATION
     y = np.clip(linear_luma(rgb), 0, 1)
     delta = np.zeros_like(rgb)
     dy = np.zeros_like(y)
     if params["skin_smooth"] or params["skin_brighten"]:
-        base = guided_filter(y, y, max(1, round(legacy.coarse_radius * distance)), legacy.coarse_eps)
+        radius = max(1, round(legacy.coarse_radius * distance))
+        base = memo("skin.base", (radius, legacy.coarse_eps),
+                    lambda: guided_filter(y, y, radius, legacy.coarse_eps), image=True)
         _check(cancelled)
     if params["skin_smooth"]:
         t = params["skin_smooth"] / 100
-        fine = guided_filter(y, y, max(1, round(legacy.fine_radius * distance)), legacy.fine_eps)
+        radius = max(1, round(legacy.fine_radius * distance))
+        fine = memo("skin.fine", (radius, legacy.fine_eps),
+                    lambda: guided_filter(y, y, radius, legacy.fine_eps), image=True)
         dy -= cfg.smooth * t * (0.6 + 0.4 * t) * skin * (fine - base)
         dy -= cfg.fine_detail * max(0, (t - 0.5) * 2) ** 2 * skin * (y - fine)
         sigma = max(1.0, legacy.spot_coarse * distance)
-        mass = cv2.GaussianBlur(skin, (0, 0), sigma)
+        mass = memo("skin.mass", sigma, lambda: cv2.GaussianBlur(skin, (0, 0), sigma), image=True)
         changed = lab.copy()
         for channel in (1, 2):
             _check(cancelled)
-            local = cv2.GaussianBlur(lab[..., channel] * skin, (0, 0), sigma)
+            local = memo("skin.chroma", (sigma, channel),
+                         lambda: cv2.GaussianBlur(lab[..., channel] * skin, (0, 0), sigma), image=True).copy()
             np.divide(local, mass, out=local, where=mass > 1e-6)
             changed[..., channel] += (np.clip(local - lab[..., channel], -cfg.chroma_limit, cfg.chroma_limit)
                                       * cfg.chroma * t * t * skin)
@@ -298,16 +336,18 @@ def color_delta(rgb, regions, params, cancelled):
     support = np.zeros(rgb.shape[:2], np.float32)
     skipped = 0
     if any(remaining[key] for key in ("sharpen", "teeth_whiten", "spot_remove")):
-        original_delta, original_support, skipped = previous_color_delta(
-            rgb[regions.legacy_slice], regions.legacy, remaining, cancelled)
+        original_delta, original_support, skipped = memo("face.independent_color",
+            tuple(remaining[key] for key in ("sharpen", "teeth_whiten", "spot_remove")),
+            lambda: previous_color_delta(rgb[regions.legacy_slice], regions.legacy, remaining, cancelled), image=True)
         delta[regions.legacy_slice] = original_delta
         support[regions.legacy_slice] = original_support
         del original_delta, original_support
     _check(cancelled)
-    lab = linear_lab(rgb)
-    skin, healthy, protection = skin_weights(lab, regions, cancelled)
+    lab = memo("face.lab", (), lambda: linear_lab(rgb), image=True)
+    skin, healthy, protection = memo("face.skin_weights", (), lambda: skin_weights(lab, regions, cancelled), image=True)
     if any(params[key] for key in SKIN_PARAMETERS):
-        delta += _skin_delta(rgb, lab, skin, regions.distance, params, cancelled)
+        delta += memo("face.skin_contribution", tuple(params[key] for key in SKIN_PARAMETERS),
+            lambda: _skin_delta(rgb, lab, skin, regions.distance, params, cancelled), image=True)
         support = np.maximum(support, skin)
     if params["eye_bag_remove"]:
         candidate = rgb.copy()
@@ -334,7 +374,7 @@ def working_memory(source, params, snapshot=None):
         left, top, right, bottom = composition_bounds(source, snapshot)
         old = (right - left) * (bottom - top)
         left, top, right, bottom = composition_bounds(source, snapshot, bounds_factory=color_bounds)
-        extra_composition = max(0, (right - left) * (bottom - top) - old) * 16
+        extra_composition = max(0, (right - left) * (bottom - top) - old) * 64
     filters = guided_filter_working_memory(max(0, area - working_area(source, snapshot)))
     return base + area * 384 + extra_composition + filters
 

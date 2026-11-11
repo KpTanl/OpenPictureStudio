@@ -42,7 +42,7 @@ class PluginService:
         root = root.resolve()
         manifest_bytes = relative_file(root, "plugin.json").read_bytes()
         manifest = json.loads(manifest_bytes)
-        if manifest.get("manifest_version") != "1.0" or manifest.get("runtime") != "subprocess_python":
+        if manifest.get("manifest_version") not in ("1.0", "2.0") or manifest.get("runtime") != "subprocess_python":
             raise ValueError("不支持的插件协议")
         if not isinstance(manifest.get("plugin_id"), str) or not manifest["plugin_id"] or not isinstance(manifest.get("version"), str) or not manifest["version"]:
             raise ValueError("缺少插件标识或版本")
@@ -90,6 +90,8 @@ class PluginService:
         result = CoreResult.fail("PLUGIN_CRASH", "error.plugin.failed")
         try:
             manifest, contents, resource_hash = self._snapshot(directory)
+            if manifest["manifest_version"] != "1.0":
+                raise ValueError("文件插件传输版本无效")
             self._audit.append("plugin.identity", request_id=request_id, resource_hash=resource_hash,
                                plugin_id=manifest["plugin_id"], version=manifest["version"])
             if resource_hash not in self._trusted:

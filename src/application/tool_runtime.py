@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from contextlib import contextmanager, ExitStack, nullcontext
+from contextlib import contextmanager, ExitStack
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
@@ -9,6 +9,7 @@ from threading import RLock
 from concurrent.futures import CancelledError
 
 from ..core.contracts.result import CoreOperationError, CoreResult, ErrorCode, memory_error_key
+from ..core.contracts.execution import ExecutionRequirement, current_execution, dependency_cancellation
 from ..core.contracts.tools import ImageCapabilities, ToolDescriptor, ToolReference
 from ..core.contracts.tool_resources import (ModelRequirement, RequiredResource, ResourceFeature, ToolResourceSnapshot,
                                            ToolParameterRequest)
@@ -169,7 +170,8 @@ class RuntimeSnapshot:
 
     @property
     def executor(self):
-        return WorkflowExecutor(self.registry)
+        return WorkflowExecutor(self.registry, coordinator=self.runtime.execution, generation=self.generation,
+                                is_current=lambda: self.runtime.is_current(self.generation))
 
     def required_threads(self, workflow):
         requirements = [1]
@@ -213,6 +215,7 @@ class ToolRuntime:
                     latest[descriptor.tool_id] = self._catalog.resolve(descriptor.reference).data
             self._resource_definitions = tuple(latest.values())
         self._bindings = dict(default_bindings if bindings is None else bindings)
+        self._legacy_bindings = frozenset(self._bindings)
         self._resources = dict(resources or {})
         self._disabled = set()
         self._generation = 0
@@ -220,15 +223,20 @@ class ToolRuntime:
         self._lock = RLock()
         self._ai_model_prepare_lock = RLock()
         self._closed = False
+        self._plugin_packages = {}
         self._execution_threads = execution_threads
         self._compute = compute
         self._memory_threads = memory_threads
-        self._resource_budget = resource_budget
-        from .mask_assets import MaskAssetStore
-        self.mask_assets = MaskAssetStore(resource_budget)
-        from .beauty_preparation import BeautyPreparationService
-        self._input_preparation = BeautyPreparationService(resource_budget)
         self._executors = ToolExecutorPool(executor_capacity)
+        from .execution_coordinator import ExecutionCoordinator
+        self.execution = ExecutionCoordinator(self._compute, self._executors, resource_budget)
+        self.inference.gpu = self.execution.gpu
+        self.inference.device_runtime_changed = self._device_runtime_changed
+        self._resource_budget = self.execution.resources
+        from .mask_assets import MaskAssetStore
+        self.mask_assets = MaskAssetStore(self._resource_budget)
+        from .beauty_preparation import BeautyPreparationService
+        self._input_preparation = BeautyPreparationService(store=self.execution.results)
         self.models = model_service
         self._owns_models = model_service is None and builtin
         if self._owns_models:
@@ -253,6 +261,69 @@ class ToolRuntime:
             for tool_id, module in MODULES.items():
                 self.effect_reference(tool_id, module.parameters.defaults(module.parameters.version))
 
+    def register_tool(self, definition, *, resources=None):
+        if definition.descriptor.tool_id in ("tool", "source", "export"):
+            raise ValueError("工具标识与结构节点冲突")
+        with self._lock:
+            if self._closed:
+                raise CancelledError()
+            catalog = self._catalog.copy()
+            catalog.register(definition)
+            self._catalog = catalog
+            self._bindings[definition.descriptor.tool_id] = definition.descriptor.reference
+            self._resources.update(resources or {})
+            self._resource_definitions = (*self._resource_definitions, definition)
+            self._generation += 1
+        return definition.descriptor.reference
+
+    def register_image_plugin(self, directory, *, trusted_hash, auxiliaries=None):
+        from .image_plugins import ImagePluginPackage
+        from ..core.contracts.image_plugins import IMAGE_PLUGIN_RESOURCE
+        package = ImagePluginPackage(directory, trusted_hash, auxiliaries)
+        try:
+            with self._lock:
+                if self._closed:
+                    raise CancelledError()
+                catalog = self._catalog.copy()
+                for definition in package.definitions:
+                    catalog.register(definition)
+                self._catalog = catalog
+                self._plugin_packages[package.digest] = package
+                self._resources[(IMAGE_PLUGIN_RESOURCE, package.digest)] = str(package.resource_path)
+                for node in package.manifest["declared_nodes"]:
+                    for item in node.get("auxiliary", ()):
+                        for role, digest, path in package.auxiliaries[item["capability"]].resources:
+                            self._resources[("aux:"+item["name"]+":"+role, digest)] = str(path)
+                for definition in package.definitions:
+                    self._bindings[definition.descriptor.tool_id] = definition.descriptor.reference
+                self._resource_definitions = (*self._resource_definitions, *package.definitions)
+                self._generation += 1
+            return tuple(definition.descriptor.reference for definition in package.definitions)
+        except BaseException:
+            package.close()
+            raise
+
+    def unregister_image_plugin(self, digest):
+        from ..core.contracts.image_plugins import IMAGE_PLUGIN_RESOURCE
+        with self._lock:
+            package = self._plugin_packages.get(digest)
+            if package is None:
+                return
+            removed = {item.reference for item in self._catalog.descriptors()
+                       if (IMAGE_PLUGIN_RESOURCE, digest) in item.resources}
+            self._catalog = ToolCatalog(self._catalog.resolve(item.reference).data for item in self._catalog.descriptors()
+                                        if item.reference not in removed)
+            self._bindings = {key: value for key, value in self._bindings.items() if value not in removed}
+            self._resource_definitions = tuple(item for item in self._resource_definitions
+                                              if item.descriptor.reference not in removed)
+            remaining_resources = {resource for item in self._catalog.descriptors() for resource in item.resources}
+            for resource in {resource for item in removed for resource in item.resources} - remaining_resources:
+                self._resources.pop(resource, None)
+            del self._plugin_packages[digest]
+            self._generation += 1
+        self._executors.invalidate({item.tool_id for item in removed})
+        package.close()
+
     def _module_reference(self, tool_id, settings):
         from .tool_modules import module_for, create_module_executor
         module = module_for(tool_id, settings)
@@ -271,6 +342,8 @@ class ToolRuntime:
                                     if module.working_memory is not None else None),
                     resource_features=module.resource_features, collect_resources=module.collect_resources,
                     sampling_behavior=module.sampling_behavior,
+                    output_size=module.output_size, region_input=module.region_input,
+                    execute_region=module.execute_region, region_memory=module.region_memory,
                     prepare_execution=self.mask_assets.prepare if tool_id == "color_adjust" and module.parameters.version in (6, 7) else None))
                 self._generation += 1
         return CoreResult.ok(descriptor.reference)
@@ -701,14 +774,16 @@ class ToolRuntime:
         return resources
 
     @contextmanager
-    def _borrow_executor(self, reference, definition, resources, generation, is_cancelled, *, threads=None):
+    def _borrow_executor(self, reference, definition, resources, generation, is_cancelled, *, threads=None,
+                         memory_bytes=0, budget=None, stage="execute", demand=None):
         cancelled = lambda: not self.is_current(generation) or is_cancelled()
+        if hasattr(is_cancelled, "priority"):
+            cancelled.priority = is_cancelled.priority
         paths = {(identity, digest): resources[identity] for identity, digest in reference.resources}
-        def create():
+        def create(hold):
             stack = ExitStack()
             try:
-                if definition.executor_memory is not None and self._resource_budget is not None:
-                    hold = self._hold_processor_memory(definition.executor_memory(resources), cancelled)
+                if hold is not None:
                     stack.callback(hold.close)
                 if self.models is not None:
                     keys = {found[0] for _, digest in reference.resources
@@ -721,32 +796,26 @@ class ToolRuntime:
             except BaseException:
                 stack.close()
                 raise
-        with ExitStack() as operations, self._compute.borrow(cancelled, threads=threads) as compute:
+        with ExitStack() as operations:
             if self.models is not None:
                 keys = {found[0] for _, digest in reference.resources
                         if (found := self.models.resolve_digest(digest)) is not None}
                 for key in keys:
                     operations.enter_context(self.models.borrow(key))
-            if definition.reusable_executor:
-                key = (reference, tuple(sorted(resources.items())), self._execution_threads, self.inference.target())
-                with self._executors.borrow(key, reference.tool_id, create, cancelled,
-                        digests=frozenset(digest for _, digest in reference.resources)) as executor:
-                    self._verified_resources(reference, paths, cancelled)
-                    yield executor, compute
-                    self._verified_resources(reference, paths, cancelled)
-            else:
-                if cancelled():
-                    raise CancelledError()
-                executor = create()
-                try:
-                    yield executor, compute
-                    self._verified_resources(reference, paths, cancelled)
-                finally:
-                    executor.close()
+            key = (reference, tuple(sorted(resources.items())), self._execution_threads, "cpu")
+            executor_memory = definition.executor_memory(resources) if definition.executor_memory is not None else 0
+            with self.execution.borrow(key, reference.tool_id, create, cancelled,
+                    reusable=definition.reusable_executor, threads=threads, memory_bytes=memory_bytes,
+                    executor_memory=executor_memory, resources=budget, stage=stage,
+                    demand=demand,
+                    digests=frozenset(digest for _, digest in reference.resources)) as (executor, compute):
+                self._verified_resources(reference, paths, cancelled)
+                yield executor, compute
+                self._verified_resources(reference, paths, cancelled)
 
     @contextmanager
     def borrow_processor(self, tool_id, implementation_id, factory, *, resources=None,
-                         is_cancelled=lambda: False, memory_bytes=0):
+                         is_cancelled=lambda: False, memory_bytes=0, working_bytes=0):
         with self._lock:
             generation = self._generation
         available = self.check_enabled(tool_id)
@@ -762,37 +831,27 @@ class ToolRuntime:
                 raise CoreOperationError(CoreResult.fail(ErrorCode.TOOL_RESOURCE_MISSING,
                     "error.tool.resource_missing", details={"tool_id": tool_id, "resource_id": identity}).error)
             identities.append((identity, resolved, digest))
-        key = (tool_id, implementation_id, tuple(identities), self._execution_threads, self.inference.target())
+        key = (tool_id, implementation_id, tuple(identities), self._execution_threads, "cpu")
         def verify():
             for identity, path, digest in identities:
                 self._verified_resources(
                     ToolReference(tool_id, 1, implementation_id, "legacy-1", ((identity, digest),)),
                     {(identity, digest): path}, cancelled)
-        with self._compute.borrow(cancelled):
-            def create():
-                verify()
-                hold = self._hold_processor_memory(memory_bytes, cancelled) if memory_bytes and self._resource_budget is not None else None
-                try:
-                    processor = factory(self._execution_threads)
-                    return LeasedProcessor(processor, hold) if hold is not None else processor
-                except BaseException:
-                    if hold is not None:
-                        hold.close()
-                    raise
-            with self._executors.borrow(key, tool_id, create, cancelled,
-                    digests=frozenset(digest for _, _, digest in identities)) as processor:
-                verify()
-                yield processor
-                verify()
-                if cancelled():
-                    raise CancelledError()
-
-    def _hold_processor_memory(self, size, cancelled):
-        try:
-            return self._resource_budget.hold_memory(size, cancelled)
-        except MemoryError:
-            self._executors.trim_idle()
-            return self._resource_budget.hold_memory(size, cancelled)
+        def create(hold):
+            verify()
+            try:
+                processor = factory(self._execution_threads)
+                return LeasedProcessor(processor, hold) if hold is not None else processor
+            except BaseException:
+                if hold is not None:
+                    hold.close()
+                raise
+        with self.execution.borrow(key, tool_id, create, cancelled, executor_memory=memory_bytes,
+                memory_bytes=working_bytes,
+                digests=frozenset(digest for _, _, digest in identities)) as (processor, _):
+            verify()
+            yield processor
+            verify()
 
     def analyze(self, tool_id, image, settings, *, is_cancelled=lambda: False, purpose="parameters",
                 reference=None, context=None, preset=False):
@@ -818,46 +877,48 @@ class ToolRuntime:
             resources = self._resource_paths(reference.data, paths)
             if definition.prepare_input is not None:
                 from ..core.photo_engine import RenderSource, _src_from_pil
-                with ExitStack() as preparation:
-                    if not isinstance(image, RenderSource) and self._resource_budget is not None:
-                        preparation.enter_context(self._resource_budget.working_memory(image.width * image.height * 64, cancelled))
-                    source = image if isinstance(image, RenderSource) else _src_from_pil(image)
-                    if source.is_proxy:
-                        from .canonical_input import CanonicalInputUnavailable
-                        raise CanonicalInputUnavailable()
-                    execution_context = {**(context or {}), "is_cancelled": cancelled}
-                    key = definition.prepare_input(source, execution_context, reference.data)
-                    def load_preparation(abandoned):
-                        memory = (self._resource_budget.working_memory(definition.preparation_memory(source), abandoned)
-                                  if self._resource_budget is not None and definition.preparation_memory is not None else nullcontext())
-                        with memory, self._borrow_executor(reference.data, definition, resources, generation, abandoned) as (executor, _):
-                            return executor.prepare(source, key, abandoned)
-                    with self._input_preparation.borrow(key, load_preparation, cancelled) as prepared:
-                        if purpose == "snapshot":
-                            return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled") if cancelled() else CoreResult.ok(prepared)
-                        if purpose == "parameters" and reference.data.implementation_id == "beauty.detail":
-                            from ..core.contracts.beauty import FaceAnalysisSnapshot
-                            if (isinstance(prepared, FaceAnalysisSnapshot) and not prepared.processed
-                                    and prepared.status in ("no_face", "face_too_small", "insufficient_landmarks")):
-                                return (CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled") if cancelled() else
-                                    CoreResult.fail(ErrorCode.INVALID_INPUT, "beauty.detail." + prepared.status,
-                                        details={"tool_id": "beauty", "processed": 0, "skipped": prepared.skipped}))
-                        if purpose == "parameters" and self._resource_budget is not None and definition.working_memory is not None:
-                            maximum = {key: max(1, value) if type(value) is int else value for key, value in checked.data.items()}
-                            preparation.enter_context(self._resource_budget.working_memory(
-                                definition.working_memory(source, maximum, prepared), cancelled))
-                        with self._borrow_executor(reference.data, definition, resources, generation, is_cancelled) as (executor, _):
-                            result = (executor.regions(source, prepared) if purpose == "regions"
-                                      else executor.analyze(source, prepared, preset=preset))
-                            if purpose == "parameters":
-                                candidate = executor.execute(source, {**checked.data, **result},
-                                    {**execution_context, "prepared_input": prepared, "threads": self._execution_threads})
-                                if not candidate.success:
-                                    return candidate
-                    return (CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled") if cancelled() else CoreResult.ok(result))
+                if isinstance(image, RenderSource):
+                    source = image
+                else:
+                    with self.execution.operation("analysis.input", cancelled,
+                            memory_bytes=image.width * image.height * 64):
+                        source = self.execution.protect(_src_from_pil(image))
+                if source.is_proxy:
+                    from .canonical_input import CanonicalInputUnavailable
+                    raise CanonicalInputUnavailable()
+                execution_context = {**(context or {}), "is_cancelled": cancelled}
+                key = definition.prepare_input(source, execution_context, reference.data)
+                def load_preparation(abandoned):
+                    memory = definition.preparation_memory(source) if definition.preparation_memory is not None else 0
+                    with self._borrow_executor(reference.data, definition, resources, generation, abandoned,
+                            memory_bytes=memory + (source.pixels.nbytes * 2 if source.patches else 0), stage="prepare") as (executor, _):
+                        return executor.prepare(source.materialize(abandoned), key, abandoned)
+                with self._input_preparation.borrow(key, load_preparation, cancelled) as prepared:
+                    if purpose == "snapshot":
+                        return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled") if cancelled() else CoreResult.ok(prepared)
+                    if purpose == "parameters" and reference.data.implementation_id == "beauty.detail":
+                        from ..core.contracts.beauty import FaceAnalysisSnapshot
+                        if (isinstance(prepared, FaceAnalysisSnapshot) and not prepared.processed
+                                and prepared.status in ("no_face", "face_too_small", "insufficient_landmarks")):
+                            return (CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled") if cancelled() else
+                                CoreResult.fail(ErrorCode.INVALID_INPUT, "beauty.detail." + prepared.status,
+                                    details={"tool_id": "beauty", "processed": 0, "skipped": prepared.skipped}))
+                    memory = 0
+                    if purpose == "parameters" and definition.working_memory is not None:
+                        maximum = {key: max(1, value) if type(value) is int else value for key, value in checked.data.items()}
+                        memory = definition.working_memory(source, maximum, prepared)
+                    with self._borrow_executor(reference.data, definition, resources, generation, is_cancelled,
+                            memory_bytes=memory, stage="analyze") as (executor, _):
+                        result = (executor.regions(source, prepared) if purpose == "regions"
+                                  else executor.analyze(source, prepared, preset=preset))
+                return (CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled") if cancelled() else CoreResult.ok(result))
             from ..core.photo_engine import RenderSource, _pil_from
             if isinstance(image, RenderSource):
-                with _pil_from(image) as converted:
+                with ExitStack() as display_resources:
+                    with self.execution.operation("analysis.display", cancelled,
+                            memory_bytes=image.pixels.nbytes * 4) as (_, compute):
+                        converted = display_resources.enter_context(_pil_from(image, parallelism=compute.threads))
+                        display_resources.callback(self._resource_budget.hold_memory(converted.width * converted.height * 4, cancelled).close)
                     return self.analyze(tool_id, converted, settings, is_cancelled=is_cancelled,
                                         purpose=purpose, reference=reference.data, preset=preset)
             with self._borrow_executor(reference.data, definition, resources, generation, is_cancelled) as (executor, _):
@@ -881,8 +942,12 @@ class ToolRuntime:
             self._closed = True
             self._generation += 1
             self._snapshot_catalog = None
+            packages, self._plugin_packages = self._plugin_packages, {}
             self._executors.close()
         self._input_preparation.close()
+        self.execution.close()
+        for package in packages.values():
+            package.close()
         if self._model_unsubscribe is not None:
             self._model_unsubscribe()
         if self._owns_models:
@@ -991,6 +1056,69 @@ class ToolRuntime:
                     return True
         return False
 
+    def preview_output_size(self, workflow, size):
+        from ..core.workflow.preview import output_size
+        with self._lock:
+            catalog, bindings = self._catalog, dict(self._bindings)
+        def describe(node, incoming):
+            if node.node_type in ("source", "export"):
+                return incoming
+            reference = ToolReference.from_dict(node.params) if node.node_type == "tool" else bindings.get(node.node_type)
+            if reference is None:
+                return None
+            resolved = catalog.resolve(reference)
+            if not resolved.success:
+                return None
+            definition = resolved.data
+            settings = node.params["settings"] if node.node_type == "tool" else node.params
+            normalized = definition.parameters.normalize(settings, reference.params_version)
+            if not normalized.success:
+                raise CoreOperationError(normalized.error)
+            if definition.output_size is not None:
+                return definition.output_size(normalized.data, incoming)
+            return incoming if definition.descriptor.image.geometry == "preserve" else None
+        return output_size(workflow, size, describe)
+
+    def execute_output(self, snapshot, source, workflow, *, is_cancelled=lambda: False, resize=None, boundary="export"):
+        from ..core.contracts.gpu import ImageOutputSpec, GpuExecutionError, display_request, recover_cpu
+        from ..core.image_resize import apply_resize, plan_resize, resize_memory
+        from contextlib import nullcontext
+        cancelled = lambda: snapshot.is_cancelled() or is_cancelled()
+        if source.is_proxy:
+            return CoreResult.fail(ErrorCode.INVALID_INPUT, "error.tool.image_contract")
+        reason = None
+        for _ in range(2):
+            rendered = None
+            recovery = recover_cpu(reason) if reason is not None else nullcontext()
+            try:
+                with display_request(ImageOutputSpec(resize, boundary)), recovery:
+                    result = snapshot.executor.execute(source, workflow, is_cancelled=cancelled)
+                    if not result.success:
+                        return result
+                    rendered = result.data
+                    result = None
+                    if rendered.gpu_image is not None:
+                        rendered = self.execution.gpu.output(rendered, cancelled, resize)
+                        with self.execution.operation(boundary+".readback", cancelled):
+                            rendered = rendered.materialize(cancelled)
+                    elif resize is not None:
+                        plan = plan_resize(rendered.pixels.shape[1::-1], resize)
+                        changes = plan.content_size != plan.source_size or plan.crop_box is not None or any(plan.padding)
+                        if changes:
+                            with self.execution.operation(boundary+".resize", cancelled, memory_bytes=resize_memory(plan)):
+                                rendered = self.execution.protect(apply_resize(rendered, plan))
+                    if cancelled():
+                        raise CancelledError()
+                    return CoreResult.ok(rendered)
+            except GpuExecutionError as error:
+                if reason is not None:
+                    raise
+                reason = error.code
+                error.__traceback__ = error.__cause__ = error.__context__ = None
+                rendered = None
+            except CancelledError:
+                return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
+
     def execute_preview(self, snapshot, source, workflow, *, is_cancelled=lambda: False,
                         full_source=None, temporary_workflow=None, sampling=None, resources=None, describe=False):
         from .canonical_input import CanonicalInputPreparer
@@ -1004,13 +1132,11 @@ class ToolRuntime:
         if (not result.success and result.error.details.get("requires_full_input")
                 and full_source is not None and not cancelled()):
             try:
-                with full_source(cancelled) as lease:
-                    memory = (budget.working_memory(lease.value.pixels.nbytes * 4, cancelled)
-                              if budget is not None else nullcontext())
-                    with memory:
-                        result = snapshot.executor.execute(lease.value, workflow, is_cancelled=cancelled,
-                                                           sampling=sampling, input_preparer=preparer)
-                        actual_input = lease.value
+                full_lease = full_source(cancelled)
+                with full_lease as lease:
+                    result = snapshot.executor.execute(lease.value, workflow, is_cancelled=cancelled,
+                                                       sampling=sampling, input_preparer=preparer)
+                    actual_input = lease.value
             except CancelledError:
                 return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
             except MemoryError as error:
@@ -1076,6 +1202,31 @@ class ToolRuntime:
         """工作内存的上限（字节），供工具在执行前判断做不做得了；没有资源预算时为 None。"""
         return self._resource_budget.policy.memory_bytes if self._resource_budget is not None else None
 
+    def cacheable_workflow(self, workflow):
+        with self._lock:
+            for node in workflow.nodes:
+                if node.node_type == "tool":
+                    resolved = self._catalog.resolve(ToolReference.from_dict(node.params))
+                    if not resolved.success or resolved.data.cacheable is not None and not resolved.data.cacheable(node.params["settings"]):
+                        return False
+            return True
+
+    def preview_backend(self, path, workflow, display_spec):
+        return self.execution.gpu.hint(path, workflow, display_spec)
+
+    def configure_image_compute(self, settings):
+        if self.execution.gpu.settings == settings:
+            return
+        with self._lock:
+            self._generation += 1
+            self._snapshot_catalog = None
+        self.execution.gpu.configure(settings)
+
+    def _device_runtime_changed(self):
+        with self._lock:
+            self._generation += 1
+            self._snapshot_catalog = None
+
     @property
     def generation(self):
         with self._lock:
@@ -1116,8 +1267,9 @@ class ToolRuntime:
                        for file in snapshot.descriptor.files if file.name in dict(snapshot.paths)} if self.models else {}
         registry = NodeRegistry()
 
-        def inspect_reference(reference, settings, *, check_legacy=False):
-            if is_cancelled():
+        def inspect_reference(reference, settings, *, check_legacy=False, cancelled=None):
+            cancelled = cancelled or dependency_cancellation.get() or is_cancelled
+            if cancelled():
                 raise CancelledError()
             resolved = catalog.resolve(reference)
             if not resolved.success:
@@ -1151,7 +1303,7 @@ class ToolRuntime:
                     try:
                         with open(path, "rb") as stream:
                             for chunk in iter(lambda: stream.read(1 << 20), b""):
-                                if is_cancelled():
+                                if cancelled():
                                     raise CancelledError()
                                 actual.update(chunk)
                     except OSError:
@@ -1193,7 +1345,7 @@ class ToolRuntime:
             return normalized
 
         def run(reference, incoming, settings, context):
-            checked = inspect_reference(reference, settings)
+            checked = inspect_reference(reference, settings, cancelled=context["is_cancelled"])
             if not checked.success:
                 return checked
             if not self.is_current(generation):
@@ -1201,21 +1353,27 @@ class ToolRuntime:
             definition = catalog.resolve(reference).data
             try:
                 cancelled = lambda: not self.is_current(generation) or context["is_cancelled"]()
+                if hasattr(context["is_cancelled"], "priority"):
+                    cancelled.priority = context["is_cancelled"].priority
                 execution_reference = replace(reference, resources=definition.resource_references(checked.data))
                 paths = dict(resource_paths)
                 for identity, digest in execution_reference.resources:
                     if (identity, digest) not in paths and digest in model_paths:
                         paths[(identity, digest)] = model_paths[digest]
                 resources = self._resource_paths(execution_reference, paths)
-                checked_image = validate_image(incoming, ImageCapabilities(), incoming)
-                if not checked_image.success:
-                    return checked_image
-                pixels = incoming.pixels.view()
-                pixels.setflags(write=False)
-                alpha = None if incoming.alpha is None else incoming.alpha.view()
-                if alpha is not None:
-                    alpha.setflags(write=False)
-                borrowed = replace(incoming, pixels=pixels, alpha=alpha)
+                execution = current_execution.get()
+                use_gpu = execution is not None and execution.engine == "gpu"
+                borrowed = incoming
+                if not use_gpu:
+                    checked_image = validate_image(incoming, ImageCapabilities(), incoming)
+                    if not checked_image.success:
+                        return checked_image
+                    pixels = incoming.pixels.view()
+                    pixels.setflags(write=False)
+                    alpha = None if incoming.alpha is None else incoming.alpha.view()
+                    if alpha is not None:
+                        alpha.setflags(write=False)
+                    borrowed = replace(incoming, pixels=pixels, alpha=alpha)
                 neutral = definition.parameters.is_neutral(checked.data, reference.params_version)
                 if neutral and definition.prepare_input is not None:
                     return CoreResult.ok(incoming)
@@ -1224,50 +1382,93 @@ class ToolRuntime:
                     raise CanonicalInputUnavailable()
                 input_preparer = context.get("input_preparer")
                 budget = input_preparer.resources if input_preparer is not None else self._resource_budget
-                memory = (budget.working_memory(definition.working_memory(borrowed, checked.data), cancelled)
-                          if budget is not None and definition.working_memory is not None
-                          and definition.prepare_input is None else nullcontext())
+                memory = (definition.working_memory(borrowed, checked.data)
+                          if definition.working_memory is not None and definition.prepare_input is None
+                          else borrowed.pixels.nbytes * 8 if definition.prepare_input is None else 0)
                 threads = (definition.minimum_threads(checked.data, self._execution_threads)
                            if definition.minimum_threads is not None else self._execution_threads)
                 with ExitStack() as preparation:
+                    if not use_gpu and borrowed.patches and not definition.supports_patches:
+                        borrowed = preparation.enter_context(self.execution.materialized(borrowed, cancelled, resources=budget))
                     execution_context = {**context, "is_cancelled": cancelled}
-                    if definition.prepare_execution is not None:
+                    demand = None
+                    if definition.prepare_execution is not None and not use_gpu:
                         execution_context["execution_input"] = preparation.enter_context(
                             definition.prepare_execution(borrowed, checked.data, cancelled))
-                    preparation.enter_context(memory)
-                    if definition.prepare_input is not None:
-                        key = definition.prepare_input(borrowed, execution_context, reference)
-                        def prepare_full(full_input, identity, abandoned):
-                            preparation_memory = (budget.working_memory(definition.preparation_memory(full_input), abandoned)
-                                if budget is not None and definition.preparation_memory is not None else nullcontext())
-                            with preparation_memory, self._borrow_executor(execution_reference, definition, resources, generation,
-                                    abandoned, threads=threads) as (preparer, _):
-                                return preparer.prepare(full_input, identity, abandoned)
-                        def load_preparation(abandoned):
-                            if not borrowed.is_proxy:
-                                return prepare_full(borrowed, key, abandoned)
-                            if input_preparer is None:
-                                from .canonical_input import CanonicalInputUnavailable
-                                raise CanonicalInputUnavailable()
-                            return input_preparer.prepare(borrowed, execution_context, reference, key,
-                                                          definition.prepare_input, prepare_full, abandoned)
-                        prepared = None
-                        if borrowed.is_proxy and input_preparer is not None:
-                            temporary_key = input_preparer.temporary_key(borrowed, execution_context, reference,
-                                                                        definition.prepare_input)
-                            if temporary_key is not None:
-                                prepared = preparation.enter_context(
-                                    self._input_preparation.borrow_cached(temporary_key, cancelled))
-                        if prepared is None:
-                            prepared = preparation.enter_context(self._input_preparation.borrow(key, load_preparation, cancelled))
-                        execution_context["prepared_input"] = prepared
-                        if budget is not None and definition.working_memory is not None:
-                            preparation.enter_context(budget.working_memory(
-                                definition.working_memory(borrowed, checked.data, execution_context["prepared_input"]), cancelled))
+                    with self.execution.preparation(cancelled):
+                        if definition.prepare_input is not None:
+                            stage = next((item for item in execution.stages if item.node_id == context["node_id"]), None)
+                            if borrowed.is_proxy and stage is not None and stage.preparation_stages:
+                                required = {item.node_id: item for item in execution.requirements}
+                                execution_context["upstream_dependencies"] = (
+                                    context["upstream_dependencies"][0],
+                                    *((required.get(item.node_id), item.identity) for item in stage.preparation_stages
+                                      if item.node_id is not None))
+                            key = definition.prepare_input(borrowed, execution_context, reference)
+                            prepared = None
+                            if definition.reusable_executor and definition.create_prepared_executor is None:
+                                executor_key = (execution_reference, tuple(sorted(resources.items())), self._execution_threads, "cpu")
+                                demand = preparation.enter_context(self.execution.demand(executor_key, reference.tool_id,
+                                    lambda: prepared is not None or self._input_preparation.ready(key), cancelled,
+                                    digests=frozenset(digest for _, digest in execution_reference.resources)))
+                            def prepare_full(full_input, identity, abandoned):
+                                preparation_memory = (definition.preparation_memory(full_input)
+                                    if definition.preparation_memory is not None else 0)
+                                if full_input.patches or full_input.gpu_image is not None and not definition.prepare_gpu_input:
+                                    full_input = full_input.materialize(abandoned)
+                                with self._borrow_executor(execution_reference, definition, resources, generation,
+                                        abandoned, threads=threads,
+                                        memory_bytes=preparation_memory + (full_input.pixels.nbytes * 2 if full_input.patches else 0),
+                                        budget=budget, stage="prepare") as (preparer, _):
+                                    return preparer.prepare(full_input, identity, abandoned)
+                            def load_preparation(abandoned):
+                                if not borrowed.is_proxy:
+                                    return prepare_full(borrowed, key, abandoned)
+                                if input_preparer is None:
+                                    from .canonical_input import CanonicalInputUnavailable
+                                    raise CanonicalInputUnavailable()
+                                return input_preparer.prepare(borrowed, execution_context, reference, key,
+                                                              definition.prepare_input, prepare_full, abandoned)
+                            if borrowed.is_proxy and input_preparer is not None:
+                                temporary_key = input_preparer.temporary_key(borrowed, execution_context, reference,
+                                                                            definition.prepare_input)
+                                if temporary_key is not None:
+                                    prepared = preparation.enter_context(
+                                        self._input_preparation.borrow_cached(temporary_key, cancelled))
+                            if prepared is None:
+                                prepared = preparation.enter_context(self._input_preparation.borrow(key, load_preparation, cancelled))
+                            execution_context["prepared_input"] = prepared
+                            if definition.working_memory is not None:
+                                memory = definition.working_memory(borrowed, checked.data, prepared)
+                    if use_gpu:
+                        return CoreResult.ok(self.execution.gpu.execute_tool(execution_reference, borrowed, checked.data,
+                            context["upstream_identity"], cancelled, assets=self.mask_assets, context=execution_context))
+                    if definition.create_prepared_executor is not None and definition.prepare_input is not None:
+                        definition = replace(definition, create_executor=definition.create_prepared_executor,
+                                             reusable_executor=False, executor_memory=None)
+                    from .shared_stages import MemoScope
+                    namespace = (execution_reference, current_execution.get().backend_identity,
+                        next((item for item in current_execution.get().requirements if item.node_id == context["node_id"]), None))
+                    scope = MemoScope(self.execution.results, namespace,
+                        (context["upstream_identity"], context.get("upstream_dependencies", ()), tuple(borrowed.pixels.shape), borrowed.orig_size,
+                         borrowed.is_proxy, borrowed.colorspace, borrowed.color_pipeline), cancelled,
+                        getattr(cancelled, "priority", current_execution.get().priority),
+                        self.execution.memo_enabled and bool(context["upstream_identity"][0])
+                        and (definition.cacheable is None or definition.cacheable(checked.data))
+                        and context.get("cacheable_input", True)
+                        and not context.get("approximate", False))
                     with self._borrow_executor(execution_reference, definition, resources, generation,
-                            context["is_cancelled"], threads=threads) as (executor, compute):
+                            context["is_cancelled"], threads=threads, memory_bytes=memory, budget=budget,
+                            demand=demand) as (executor, compute), scope.activate():
                         result = executor.execute(borrowed, checked.data,
-                                                  {**execution_context, "threads": compute.threads})
+                            {**execution_context, "threads": compute.threads, "execution": current_execution.get(),
+                             "memo": scope.memo})
+                        if isinstance(result, CoreResult) and result.success:
+                            if (incoming.patches and not definition.supports_patches
+                                    and result.data.pixels is borrowed.pixels and result.data.alpha is borrowed.alpha):
+                                result = CoreResult.ok(replace(result.data, pixels=incoming.pixels, alpha=incoming.alpha,
+                                    patches=incoming.patches, patch_base_identity=incoming.patch_base_identity))
+                            result = CoreResult.ok(self.execution.protect(result.data))
                     if cancelled():
                         return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
                     if not isinstance(result, CoreResult):
@@ -1305,27 +1506,112 @@ class ToolRuntime:
             resolved = catalog.resolve(reference)
             return resolved.data.sampling_behavior if resolved.success else "unsupported"
 
+        def cacheable(reference, settings):
+            definition = catalog.resolve(reference).data
+            normalized = definition.parameters.normalize(settings, reference.params_version).data
+            return definition.cacheable is None or definition.cacheable(normalized)
+
+        def output_size(reference, settings, size):
+            definition = catalog.resolve(reference).data
+            if definition.output_size is not None:
+                normalized = definition.parameters.normalize(settings, reference.params_version).data
+                return definition.output_size(normalized, size)
+            return size if definition.descriptor.image.geometry == "preserve" else None
+
+        def region_input(reference, settings, bounds, size):
+            definition = catalog.resolve(reference).data
+            normalized = definition.parameters.normalize(settings, reference.params_version).data
+            return definition.region_input(normalized, bounds, size) if definition.region_input else None
+
+        def run_region(reference, incoming, settings, context):
+            checked = inspect_reference(reference, settings, cancelled=context["is_cancelled"])
+            if not checked.success:
+                return checked
+            definition = catalog.resolve(reference).data
+            from .shared_stages import MemoScope
+            execution = current_execution.get()
+            scope = MemoScope(self.execution.results, (reference, execution.backend_identity, "region",
+                next((item for item in execution.requirements if item.node_id == context["node_id"]), None)),
+                (context["upstream_identity"], context.get("upstream_dependencies", ()), execution.target,
+                 context["input_bounds"], context["full_input_size"]),
+                context["is_cancelled"], execution.priority, self.execution.memo_enabled
+                and bool(context["upstream_identity"][0]) and cacheable(reference, checked.data)
+                and context.get("cacheable_input", True))
+            with self.execution.operation("region", context["is_cancelled"], threads=self._execution_threads,
+                    memory_bytes=incoming.pixels.nbytes*8+(definition.region_memory(checked.data, context["full_input_size"])
+                        if definition.region_memory else 0)) as (_, compute), scope.activate():
+                result = definition.execute_region(incoming, checked.data, {**context, "threads": compute.threads})
+                if isinstance(result, CoreResult):
+                    if not result.success:
+                        return result
+                    result = result.data
+                valid = validate_image(result, replace(definition.descriptor.image, geometry="tool_defined"), incoming)
+                return CoreResult.ok(self.execution.protect(result)) if valid.success else valid
+
+        def execution_requirements(reference, settings, node_id):
+            definition = catalog.resolve(reference).data
+            normalized = definition.parameters.normalize(settings, reference.params_version).data
+            actual = replace(reference, resources=definition.resource_references(normalized))
+            paths = dict(resource_paths)
+            for role, digest in actual.resources:
+                if (role, digest) not in paths and digest in model_paths:
+                    paths[(role, digest)] = model_paths[digest]
+            self._verified_resources(actual, paths, dependency_cancellation.get() or is_cancelled)
+            dependencies = [("resource", role, digest) for role, digest in definition.resource_references(normalized)]
+            dependencies.extend(("model", item.role, item.runtime) for item in definition.required_resources(normalized))
+            if definition.prepare_input is not None:
+                dependencies.append(("preparation", reference.implementation_id))
+            if definition.prepare_execution is not None:
+                dependencies.append(("input", reference.implementation_id))
+            if definition.execution_dependencies is not None:
+                dependencies.extend(definition.execution_dependencies(normalized))
+            implementation = (reference.tool_id, reference.params_version, reference.implementation_id, reference.implementation_version)
+            resources = self._resource_paths(actual, paths)
+            route = self.execution.gpu.routes.bind(actual, normalized, definition, resources, self.models, self.inference, tuple(dependencies))
+            if route is not None:
+                dependencies.append(("gpu_route", route))
+            engines = (("cpu", "gpu") if self.execution.gpu.tool_capable(implementation, normalized)
+                       or self.execution.gpu.routes.supports(implementation, tuple(dependencies))
+                       else definition.execution_engines)
+            return ExecutionRequirement(node_id, implementation, tuple(dependencies), engines)
 
         registry.register(NodeSpec("tool", execute=lambda incoming, params, *, context: run(
             ToolReference.from_dict(params), incoming, params["settings"], context), inspect_params=inspect_tool,
             accepts_context=True, required_threads=lambda params: required_threads(
                 ToolReference.from_dict(params), params["settings"]),
-            sampling_behavior=lambda params: sampling_behavior(ToolReference.from_dict(params))))
+            sampling_behavior=lambda params: sampling_behavior(ToolReference.from_dict(params)),
+            cacheable=lambda params: cacheable(ToolReference.from_dict(params), params["settings"]),
+            output_size=lambda params, size: output_size(ToolReference.from_dict(params), params["settings"], size),
+            region_input=lambda params, bounds, size: region_input(ToolReference.from_dict(params), params["settings"], bounds, size),
+            execute_region=lambda incoming, params, *, context: run_region(ToolReference.from_dict(params), incoming, params["settings"], context),
+            execution_requirements=lambda params, node_id: execution_requirements(
+                ToolReference.from_dict(params), params["settings"], node_id)))
         for kind, reference in self._bindings.items():
-            if not isinstance(kind, str):
+            if not isinstance(kind, str) or kind not in self._legacy_bindings:
                 continue
             registry.register(NodeSpec(kind, execute=lambda incoming, params, ref=reference, *, context: run(ref, incoming, params, context),
                 inspect_params=lambda params, ref=reference: inspect_reference(ref, params), accepts_context=True,
                 required_threads=lambda params, ref=reference: required_threads(ref, params),
-                sampling_behavior=lambda params, ref=reference: sampling_behavior(ref)))
+                sampling_behavior=lambda params, ref=reference: sampling_behavior(ref),
+                cacheable=lambda params, ref=reference: cacheable(ref, params),
+                output_size=lambda params, size, ref=reference: output_size(ref, params, size),
+                region_input=lambda params, bounds, size, ref=reference: region_input(ref, params, bounds, size),
+                execute_region=lambda incoming, params, ref=reference, *, context: run_region(ref, incoming, params, context),
+                execution_requirements=lambda params, node_id, ref=reference: execution_requirements(ref, params, node_id)))
 
         def empty(params):
             if params:
                 raise ValueError("结构节点不接受参数")
         registry.register(NodeSpec("source", execute=source, validate_params=empty, required_threads=lambda params: 1,
-                                   sampling_behavior=lambda params: "preserve"))
+                                   sampling_behavior=lambda params: "preserve",
+                                   output_size=lambda params, size: size, region_input=lambda params, bounds, size: bounds,
+                                   execute_region=lambda incoming, params, *, context: incoming,
+                                   execution_requirements=lambda params, node_id: ExecutionRequirement(node_id, ("source", "1"), engines=("cpu", "gpu"))))
         registry.register(NodeSpec("export", execute=export, validate_params=empty, required_threads=lambda params: 1,
-                                   sampling_behavior=lambda params: "preserve"))
+                                   sampling_behavior=lambda params: "preserve",
+                                   output_size=lambda params, size: size, region_input=lambda params, bounds, size: bounds,
+                                   execute_region=lambda incoming, params, *, context: incoming,
+                                   execution_requirements=lambda params, node_id: ExecutionRequirement(node_id, ("export", "1"), engines=("cpu", "gpu"))))
         return RuntimeSnapshot(self, generation, registry, self._execution_threads)
 
     def sampling_capability(self, workflow, request):
@@ -1407,9 +1693,29 @@ def validate_image(source, capability, incoming):
             or source.alpha.dtype != np.float32 or not np.all(np.isfinite(source.alpha))
             or np.any(source.alpha < 0) or np.any(source.alpha > 1)):
         return CoreResult.fail(ErrorCode.INVALID_INPUT, "error.tool.image_contract")
+    from ..core.image_patches import ImagePatch
+    for patch in getattr(source, "patches", ()):
+        if not isinstance(patch, ImagePatch):
+            return CoreResult.fail(ErrorCode.INVALID_INPUT, "error.tool.image_contract")
+        left, top, right, bottom = patch.bounds
+        if (not all(type(value) is int for value in patch.bounds)
+                or not 0 <= left < right <= source.pixels.shape[1]
+                or not 0 <= top < bottom <= source.pixels.shape[0]
+                or patch.reference_size != source.orig_size
+                or patch.pixels.shape != (bottom - top, right - left, 3)
+                or patch.pixels.dtype != np.float32 or not np.isfinite(patch.pixels).all()
+                or patch.alpha is not None and (source.alpha is None
+                    or patch.alpha.shape != (bottom - top, right - left) or patch.alpha.dtype != np.float32
+                    or not np.isfinite(patch.alpha).all() or np.any(patch.alpha < 0) or np.any(patch.alpha > 1))):
+            return CoreResult.fail(ErrorCode.INVALID_INPUT, "error.tool.image_contract")
     if capability.geometry == "preserve" and source.pixels.shape != incoming.pixels.shape:
         return CoreResult.fail(ErrorCode.INVALID_INPUT, "error.tool.image_contract")
-    if capability.alpha == "preserve" and ((source.alpha is None) != (incoming.alpha is None)
-            or source.alpha is not None and not np.array_equal(source.alpha, incoming.alpha)):
-        return CoreResult.fail(ErrorCode.INVALID_INPUT, "error.tool.image_contract")
+    if capability.alpha == "preserve":
+        if (source.alpha is None) != (incoming.alpha is None):
+            return CoreResult.fail(ErrorCode.INVALID_INPUT, "error.tool.image_contract")
+        if source.alpha is not None:
+            for top in range(0, source.pixels.shape[0], 64):
+                bounds = (0, top, source.pixels.shape[1], min(top + 64, source.pixels.shape[0]))
+                if not np.array_equal(source.read_region(bounds)[1], incoming.read_region(bounds)[1]):
+                    return CoreResult.fail(ErrorCode.INVALID_INPUT, "error.tool.image_contract")
     return CoreResult.ok(None)

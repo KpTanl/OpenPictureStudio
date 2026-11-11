@@ -14,6 +14,7 @@ from .looks import look_stages
 from .tools.color import validate_legacy_params
 from .local_masks import (LOCAL_KEYS as KEYS, EFFECTIVE_RANGES, MASK_BAND_ROWS as BAND_ROWS,
                           mask_weight as weight, prepare_masks)
+from .execution_memo import cancelled as execution_cancelled
 
 
 LOGGER = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ LUMA = np.array((0.2126, 0.7152, 0.0722), dtype=np.float32)
 
 
 def check_cancelled(cancelled):
-    if cancelled():
+    if execution_cancelled(cancelled):
         raise CancelledError()
 
 
@@ -262,6 +263,7 @@ def working_memory(source, params, *, threads=1):
 def render(source, params, *, backend="native", threads=1, reference_size=None,
            cancelled=lambda: False, sampling=None, prepared_masks=None):
     check_cancelled(cancelled)
+    source = source.materialize(cancelled)
     if backend not in ("python", "native") or type(threads) is not int or threads < 1:
         raise ValueError("调色后端或线程额度无效")
     if reference_size is not None and (len(reference_size) != 2 or any(type(value) is not int or value < 1 for value in reference_size)):
@@ -309,9 +311,14 @@ def render(source, params, *, backend="native", threads=1, reference_size=None,
                 with sampling.memory(source.pixels.nbytes) if sampling is not None else nullcontext():
                     render_native = native.render_component_pipeline if component_mode else native.render_local_pipeline
                     extra = ([mask.raster for mask in masks],) if component_mode else ()
-                    output, captured = render_native(np.ascontiguousarray(source.pixels), native_params, encoded,
-                                                     reference_size or (source.pixels.shape[1], source.pixels.shape[0]),
-                                                     threads, cancelled, sampling is not None, *extra)
+                    output = None
+                    if sampling is None:
+                        from .color_memo import render_local_incremental
+                        output = render_local_incremental(np.ascontiguousarray(source.pixels), native_params,
+                            masks, encoded, reference_size, native, threads, cancelled, extra[0] if extra else None)
+                    if output is None:
+                        output, captured = render_native(np.ascontiguousarray(source.pixels), native_params, encoded,
+                            reference_size, threads, cancelled, sampling is not None, *extra)
                     check_cancelled(cancelled)
                     if sampling is not None:
                         sampling.capture(captured, source.alpha, "rust")

@@ -36,6 +36,9 @@ import PIL
 from PIL import Image
 
 from .constants import RAW_EXTENSIONS
+from .contracts.image_display import PreviewDisplaySpec
+from .contracts.execution import CPU_BACKEND_IDENTITY
+from .execution_memo import cancellation_callback, cancelled as execution_cancelled
 from .mixer_sampling import (MIXER_CENTERS as _COLOR_MIXER_CENTERS,
                              MIXER_WIDTHS as _COLOR_MIXER_WIDTHS,
                              linear_to_srgb, mixer_weights, rgb_to_hsl as _rgb_to_hsl)
@@ -245,7 +248,8 @@ def guided_filter(guide: np.ndarray, src: np.ndarray, radius: int, eps: float) -
     if native is not None and guide.size:
         threads, cancelled = execution
         try:
-            return native(guide, src, max(0, int(radius)), eps, threads=threads, cancelled=cancelled)
+            return native(guide, src, max(0, int(radius)), eps, threads=threads,
+                          cancelled=cancellation_callback(cancelled))
         except InterruptedError:
             raise CancelledError() from None
 
@@ -327,9 +331,22 @@ class RenderSource:
     dcp_has_tone_curve: bool = False
     content_identity: tuple = ()
     effect_status: tuple = ()
-    content_identity: tuple = ()
-    effect_status: tuple = ()
     raw_decode_meta: object = None
+    execution_ownership: object = None
+    patches: tuple = ()
+    patch_base_identity: tuple = ()
+    gpu_image: object = None
+    backend_identity: tuple = CPU_BACKEND_IDENTITY
+    result_identity: tuple = ()
+    input_spec: object = None
+
+    def materialize(self, cancelled=lambda: False):
+        from .image_patches import materialize
+        return materialize(self, cancelled)
+
+    def read_region(self, bounds, cancelled=lambda: False):
+        from .image_patches import read_region
+        return read_region(self, bounds, cancelled)
 
 
 @dataclass
@@ -392,7 +409,9 @@ def linear_proxy_decode_identity(path: str) -> tuple[str, ...] | None:
     if os.path.splitext(path)[1].lower() in (".tif", ".tiff"):
         import tifffile
         return ("tiff-linear-v1", f"tifffile:{tifffile.__version__}", *identity)
-    return ("bitmap-linear-v1", *identity)
+    import cv2
+    from .source_input import SOURCE_INPUT_REVISION
+    return ("bitmap-integer-linear-v2", SOURCE_INPUT_REVISION, f"opencv:{cv2.__version__}", *identity)
 
 
 def supports_raw_initial_proxy(path: str) -> bool:
@@ -600,6 +619,55 @@ def _decode_e1_linear(path, *, for_preview=False, threads=1):
     return pixels, meta
 
 
+def describe_render_source(path: str) -> RenderSource | None:
+    from .contracts.source import PixelSpecification
+
+    norm = os.path.normpath(path)
+    source_format, pipeline, has_alpha = "srgb8", "srgb-direct", False
+    if _is_raw(norm):
+        if _dcp_opt_in():
+            return None
+        if rawpy is None:
+            from .raw_loader import RawSupportUnavailableError
+            raise RawSupportUnavailableError("RAW support is unavailable")
+        with rawpy.imread(norm) as raw:
+            if not raw_sizes_match_output(raw.sizes):
+                return None
+            size = raw_oriented_size(raw.sizes)
+        source_format, pipeline = "raw", "libraw"
+    elif os.path.splitext(norm)[1].lower() in (".tif", ".tiff"):
+        import tifffile
+        with tifffile.TiffFile(norm) as file:
+            page = file.pages[0]
+            size = page.imagewidth, page.imagelength
+            orientation = int(page.tags[274].value) if 274 in page.tags else 1
+            if orientation in (5, 6, 7, 8):
+                size = size[::-1]
+            has_alpha = bool(page.extrasamples)
+            source_format = "srgb16" if page.dtype == np.dtype("uint16") else "srgb8"
+    else:
+        with Image.open(norm) as image:
+            size = image.size
+            from .source_input import read_orientation
+            if read_orientation(norm, image) in (5, 6, 7, 8):
+                size = size[::-1]
+            has_alpha = image.mode in ("RGBA", "LA") or "transparency" in image.info or image.mode == "P" and (
+                image.palette is not None and image.palette.mode == "RGBA")
+            if image.mode in ("I;16", "I;16L", "I;16B", "I;16N"):
+                source_format = "srgb16"
+            if image.format == "PNG":
+                with open(norm, "rb") as stream:
+                    header = stream.read(26)
+                if header[24] == 16:
+                    source_format = "srgb16"
+    width, height = size
+    from .source_input import describe_input
+    return RenderSource(PixelSpecification((height, width, 3)),
+        PixelSpecification((height, width)) if has_alpha else None,
+        source_format, norm, False, size, pipeline, input_spec=(describe_input(norm)
+            if os.path.splitext(norm)[1].lower() not in (".tif", ".tiff") else None))
+
+
 def load_render_source(path: str, *, for_preview: bool = False, threads: int = 1) -> RenderSource:
     """引擎入口（与 raw_loader.load_image 并存，不替换非引擎调用者）。
 
@@ -638,9 +706,24 @@ def load_render_source(path: str, *, for_preview: bool = False, threads: int = 1
         from .render_codec import load_tiff
         return load_tiff(norm)
 
+    if not for_preview:
+        from .source_input import decode_integer_pixels
+        decoded = decode_integer_pixels(norm)
+        if decoded is not None:
+            values, _ = decoded
+            channels = values.shape[2]
+            maximum = np.float32(65535 if values.dtype == np.uint16 else 255)
+            alpha = values[..., -1].astype(np.float32) / maximum if channels in (2, 4) else None
+            rgb = values[..., :3] if channels >= 3 else np.repeat(values[..., :1], 3, axis=2)
+            pixels = srgb_to_linear(rgb.astype(np.float32) / maximum)
+            height, width = pixels.shape[:2]
+            return RenderSource(pixels, alpha, "srgb16" if values.dtype == np.uint16 else "srgb8",
+                norm, False, (width, height), "srgb-direct")
+
     with Image.open(norm) as src:
-        orig_w, orig_h = src.size
-        img = src.copy()
+        from PIL import ImageOps
+        img = ImageOps.exif_transpose(src)
+        orig_w, orig_h = img.size
 
     is_proxy = False
     if for_preview and max(orig_w, orig_h) > 1280:
@@ -745,6 +828,15 @@ def _src_from_pil(
 
 def _pil_from(src: RenderSource, *, parallelism: int = 1) -> Image.Image:
     """线性 RenderSource → PIL（display sRGB, 8-bit），出口前 clip + 单次量化。"""
+    rgba = display_rgba8(src, parallelism=parallelism)
+    image = Image.fromarray(rgba, mode="RGBA")
+    if src.alpha is not None:
+        return image
+    with image:
+        return image.convert("RGB")
+
+
+def _numpy_pil_from(src: RenderSource, *, parallelism: int = 1) -> Image.Image:
     def convert(pixels):
         disp = linear_to_srgb(pixels)
         np.clip(disp, 0.0, 1.0, out=disp)
@@ -765,9 +857,16 @@ def _pil_from(src: RenderSource, *, parallelism: int = 1) -> Image.Image:
 
         with ThreadPoolExecutor(max_workers=bands, thread_name_prefix="ops-display") as pool:
             tuple(pool.map(convert_band, range(bands)))
+    for patch in src.patches:
+        left, top, right, bottom = patch.bounds
+        rgb8[top:bottom, left:right] = convert(patch.pixels)
     out = Image.fromarray(rgb8, mode="RGB")
     if src.alpha is not None:
         a8 = np.round(np.clip(src.alpha, 0.0, 1.0) * np.float32(255.0)).astype(np.uint8)
+        for patch in src.patches:
+            if patch.alpha is not None:
+                left, top, right, bottom = patch.bounds
+                a8[top:bottom, left:right] = np.round(np.clip(patch.alpha, 0.0, 1.0) * np.float32(255.0)).astype(np.uint8)
         out = out.convert("RGBA")
         out.putalpha(Image.fromarray(a8, mode="L"))
     return out
@@ -776,13 +875,96 @@ def _pil_from(src: RenderSource, *, parallelism: int = 1) -> Image.Image:
 _display_fallback_logged = False
 
 
-def display_rgba8(src: RenderSource, *, parallelism: int = 1) -> np.ndarray:
+def remap_bicubic_native(rgb, alpha, field, cancelled):
+    native = getattr(ops_accel, "remap_bicubic", None) if _HAS_RUST_ACCEL else None
+    if native is None:
+        return None
+    execution = _GUIDED_FILTER_EXECUTION.get()
+    threads = execution[0] if execution is not None else 1
+    logger.debug("美颜变形 backend=rust threads=%s input=%sx%s alpha=%s",
+                 threads, rgb.shape[1], rgb.shape[0], alpha is not None)
+    try:
+        return native(np.ascontiguousarray(rgb, dtype=np.float32),
+            None if alpha is None else np.ascontiguousarray(alpha, dtype=np.float32),
+            np.ascontiguousarray(field, dtype=np.float32), threads=threads, cancelled=cancelled)
+    except InterruptedError:
+        raise CancelledError() from None
+
+
+def resize_display_rgba8(rgba, size, *, parallelism=1, cancelled=lambda: False):
+    if cancelled():
+        raise CancelledError()
+    if tuple(reversed(rgba.shape[:2])) == size:
+        return rgba
+    native = getattr(ops_accel, "resize_display_rgba8", None) if _HAS_RUST_ACCEL else None
+    if native is not None:
+        try:
+            result = native(np.ascontiguousarray(rgba, dtype=np.uint8), *size,
+                            threads=parallelism, cancelled=cancelled)
+        except InterruptedError:
+            raise CancelledError() from None
+    else:
+        height, width = rgba.shape[:2]
+        out_width, out_height = size
+        if not (0 < out_width <= width and 0 < out_height <= height):
+            raise ValueError("display size must be nonempty and cannot upscale")
+        edges = np.linspace(0, width, out_width + 1)
+        indices = np.minimum(edges.astype(np.intp), width - 1)
+        fractions = edges - indices
+        result = np.empty((out_height, out_width, 4), dtype=np.uint8)
+        for y in range(out_height):
+            top, bottom = y * height / out_height, min(height, (y + 1) * height / out_height)
+            total = np.zeros((out_width, 4), dtype=np.float64)
+            for sy in range(int(np.floor(top)), min(height, int(np.ceil(bottom)))):
+                if sy % 64 == 0 and cancelled():
+                    raise CancelledError()
+                row = rgba[sy].astype(np.float64)
+                row[:, :3] *= row[:, 3:4]
+                integral = np.empty((width + 1, 4), dtype=np.float64)
+                integral[0] = 0
+                np.cumsum(row, axis=0, out=integral[1:])
+                samples = integral[indices] + row[indices] * fractions[:, None]
+                total += np.diff(samples, axis=0) * (min(bottom, sy + 1) - max(top, sy))
+            alpha = total[:, 3:4]
+            np.divide(total[:, :3], alpha, out=total[:, :3], where=alpha > 0)
+            total[alpha[:, 0] == 0, :3] = 0
+            total[:, 3] /= (width / out_width) * (bottom - top)
+            result[y] = np.rint(np.clip(total, 0, 255)).astype(np.uint8)
+    if cancelled():
+        raise CancelledError()
+    result.setflags(write=False)
+    return result
+
+
+def display_rgba8(src: RenderSource, *, parallelism: int = 1, max_dimension=None,
+                  cancelled=lambda: False) -> np.ndarray:
     """线性 RenderSource → 显示用 RGBA8（HxWx4 uint8，只读）。
 
-    语义同 _pil_from（OETF → clip → round(x*255)，Alpha 直通，无 Alpha 时为 255）。
-    原生函数与 _pil_from 的 8 位结果逐像素相差不超过 1 LSB；原生函数不可用时走 _pil_from。
+    OETF → clip → round(x*255)，按目标规格在显示空间面积缩小。
+    输入和输出为直通 Alpha，缩小时按预乘 Alpha 累加，再还原直通颜色。
     """
     global _display_fallback_logged
+    spec = PreviewDisplaySpec(max_dimension)
+    size = spec.size_for(src.pixels.shape[1], src.pixels.shape[0])
+    if cancelled():
+        raise CancelledError()
+    if src.gpu_image is not None:
+        return src.gpu_image.display(size, cancelled)
+    if src.patches:
+        from .patch_display import display_patches
+        return display_patches(src, spec, parallelism, cancelled)
+    render = getattr(ops_accel, "render_display_rgba8", None) if _HAS_RUST_ACCEL else None
+    if render is not None:
+        logger.debug("显示末段 backend=rust resampling=%s input=%sx%s output=%sx%s",
+                     spec.resampling, src.pixels.shape[1], src.pixels.shape[0], *size)
+        try:
+            rgba = render(np.ascontiguousarray(src.pixels, dtype=np.float32),
+                None if src.alpha is None else np.ascontiguousarray(src.alpha, dtype=np.float32),
+                *size, threads=parallelism, cancelled=cancelled)
+        except InterruptedError:
+            raise CancelledError() from None
+        rgba.setflags(write=False)
+        return rgba
     convert = getattr(ops_accel, "linear_to_display_rgba8", None) if _HAS_RUST_ACCEL else None
     if convert is not None:
         rgba = convert(np.ascontiguousarray(src.pixels, dtype=np.float32),
@@ -792,14 +974,14 @@ def display_rgba8(src: RenderSource, *, parallelism: int = 1) -> np.ndarray:
         if not _display_fallback_logged:
             _display_fallback_logged = True
             logger.warning("显示转换 backend=numpy：ops_accel.linear_to_display_rgba8 不可用")
-        with _pil_from(src, parallelism=parallelism) as image:
+        with _numpy_pil_from(src, parallelism=parallelism) as image:
             if image.mode == "RGBA":
                 rgba = np.array(image)
             else:
                 with image.convert("RGBA") as converted:
                     rgba = np.array(converted)
     rgba.setflags(write=False)
-    return rgba
+    return resize_display_rgba8(rgba, size, parallelism=parallelism, cancelled=cancelled)
 
 
 # ---------------------------------------------------------------------------
@@ -1618,7 +1800,7 @@ def mask_working_memory(source: RenderSource, params: dict, *, threads=1) -> int
 
 
 def _check_render_cancelled(cancelled):
-    if cancelled():
+    if execution_cancelled(cancelled):
         raise CancelledError()
 
 
@@ -1759,6 +1941,7 @@ class RenderPipeline:
     def render(self, src: RenderSource, params: dict, *, threads=None,
                cancelled=lambda: False, sampling=None) -> RenderSource:
         _check_render_cancelled(cancelled)
+        src = src.materialize(cancelled)
         validate_params(params)
         look, process_version = color_identity(params)
         if process_version in (3, 4):
@@ -1810,7 +1993,10 @@ class RenderPipeline:
                 # 确保输入是 C-contiguous float32
                 pix_in = np.ascontiguousarray(src.pixels, dtype=np.float32)
                 if sampling is None:
-                    x_out = ops_accel.render_pipeline_fast(pix_in, rust_params, threads=threads)
+                    from .color_memo import render_incremental
+                    x_out = render_incremental(pix_in, rust_params, ops_accel, threads, cancelled)
+                    if x_out is None:
+                        x_out = ops_accel.render_pipeline_fast(pix_in, rust_params, threads=threads)
                 else:
                     with sampling.memory(pix_in.nbytes):
                         x_out, mixer_input = capture_native(pix_in, rust_params, threads=threads)
@@ -1941,6 +2127,7 @@ def encode_render_source(src: RenderSource, target, *, ext: str, quality: int = 
     # JPEG 和 BMP 的透明区域在线性空间合成白色背景。
     if ext in (".jpg", ".jpeg", ".bmp") and src.alpha is not None:
         from dataclasses import replace
+        src = src.materialize()
         src = replace(src, pixels=src.pixels * src.alpha[..., None] + (1 - src.alpha[..., None]), alpha=None)
     with _pil_from(src) as pil_img:
         if ext in (".jpg", ".jpeg", ".webp"):

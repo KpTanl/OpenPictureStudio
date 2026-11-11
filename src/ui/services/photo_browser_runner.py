@@ -122,6 +122,12 @@ class PhotoBrowserRunner(QObject):
         self._prune()
         self._schedule_source_check()
 
+    def pause_previews(self):
+        if self._active is not None and self._active[0] is not None:
+            self._active[3].cancel()
+        self._preview_pending = True
+        self._timer.start(200)
+
     def _cancel_unwanted(self):
         if self._active is None or self._active[0] is None:
             return

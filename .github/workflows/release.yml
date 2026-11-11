@@ -196,13 +196,17 @@ jobs:
           $repositoryUrl = "https://github.com/$env:GITHUB_REPOSITORY"
           $notes = @"
           ## 简体中文
-          OpenPictureStudio $env:APP_VERSION Beta。
+          OpenPictureStudio $env:APP_VERSION。
           [使用说明]($repositoryUrl/blob/$env:GITHUB_REF_NAME/README.md)
 
           ## English
-          OpenPictureStudio $env:APP_VERSION Beta.
+          OpenPictureStudio $env:APP_VERSION.
           [User guide]($repositoryUrl/blob/$env:GITHUB_REF_NAME/README.en.md)
+
+          ## Français
+          OpenPictureStudio $env:APP_VERSION.
+          [Guide d’utilisation]($repositoryUrl/blob/$env:GITHUB_REF_NAME/README.fr.md)
           "@
           $notesPath = Join-Path $env:RUNNER_TEMP 'ops-release-notes.md'
           [IO.File]::WriteAllText($notesPath, $notes, [Text.UTF8Encoding]::new($false))
-          gh release create $env:GITHUB_REF_NAME $files --repo $env:GITHUB_REPOSITORY --draft --verify-tag --title "OpenPictureStudio $env:APP_VERSION Beta" --notes-file $notesPath
+          gh release create $env:GITHUB_REF_NAME $files --repo $env:GITHUB_REPOSITORY --draft --verify-tag --title "OpenPictureStudio $env:APP_VERSION" --notes-file $notesPath

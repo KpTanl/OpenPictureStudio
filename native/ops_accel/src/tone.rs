@@ -467,26 +467,39 @@ pub fn detail_effects(
     cl: i32,
     dz: i32,
 ) {
+    detail_effects_cached(buffer, width, height, tx, cl, dz, None, None, None, None);
+}
+
+pub fn detail_effects_cached(buffer: &mut [f32], width: usize, height: usize, tx: i32, cl: i32, dz: i32,
+    original: Option<&[f32]>, fine: Option<&[f32]>, mid: Option<&[f32]>, coarse: Option<&[f32]>) {
     if tx == 0 && cl == 0 && dz == 0 {
         return;
     }
 
     let len = width * height;
-    let mut l_orig = vec![0.0f32; len];
-    l_orig
+    let mut calculated = Vec::new();
+    if original.is_none() {
+        calculated = vec![0.0f32; len];
+        calculated
         .par_iter_mut()
         .zip(buffer.par_chunks_exact(3))
         .for_each(|(l, pix)| {
             *l = calc_rec709_luma(pix[0], pix[1], pix[2]);
         });
+    }
+    let l_orig = original.unwrap_or(&calculated);
 
     let minhw = width.min(height);
-    let mut lp = l_orig.clone();
+    let mut lp = l_orig.to_vec();
 
     if tx != 0 || cl != 0 {
         let r_f = 2.max(minhw / 256);
         let s_f = (minhw as f32 / 512.0).clamp(1.0, 4.0) as usize;
-        let base_fine = fast_guided_filter(&l_orig, &l_orig, width, height, r_f, 0.10 * 0.10, s_f);
+        let calculated_fine;
+        let base_fine = if let Some(values) = fine { values } else {
+            calculated_fine = fast_guided_filter(l_orig, l_orig, width, height, r_f, 0.10 * 0.10, s_f);
+            &calculated_fine
+        };
 
         if tx != 0 {
             let tx_scale = (tx as f32) / 100.0;
@@ -501,7 +514,11 @@ pub fn detail_effects(
         if cl != 0 {
             let r_m = 4.max(minhw / 24);
             let s_m = (minhw as f32 / 200.0).clamp(2.0, 6.0) as usize;
-            let base_mid = fast_guided_filter(&l_orig, &l_orig, width, height, r_m, 0.14 * 0.14, s_m);
+            let calculated_mid;
+            let base_mid = if let Some(values) = mid { values } else {
+                calculated_mid = fast_guided_filter(l_orig, l_orig, width, height, r_m, 0.14 * 0.14, s_m);
+                &calculated_mid
+            };
             let cl_scale = 0.8 * (cl as f32) / 100.0;
 
             lp.par_iter_mut()
@@ -516,7 +533,11 @@ pub fn detail_effects(
     if dz != 0 {
         let r_c = 8.max(minhw / 8);
         let s_c = (minhw as f32 / 128.0).clamp(4.0, 12.0) as usize;
-        let base_coarse = fast_guided_filter(&l_orig, &l_orig, width, height, r_c, 0.20 * 0.20, s_c);
+        let calculated_coarse;
+        let base_coarse = if let Some(values) = coarse { values } else {
+            calculated_coarse = fast_guided_filter(l_orig, l_orig, width, height, r_c, 0.20 * 0.20, s_c);
+            &calculated_coarse
+        };
         let dz_scale = 0.5 * (dz as f32) / 100.0;
 
         lp.par_iter_mut()

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 
 from ..core.contracts import WorkflowGraph
 from .core_api import CoreAPI
 from .result_types import CoreOperationError, CoreResult, ErrorCode
-from .services import DisplayFrame
+from .services import DisplayFrame, PreviewResult
+from ..core.contracts.image_display import PreviewDisplaySpec
 
 STUDIO_PREVIEW_MAX_DIMENSION = 1600
+logger = logging.getLogger(__name__)
 
 
 def comparison_workflow(workflow):
@@ -40,8 +43,78 @@ class StudioRenderService:
     def render_sampled(self, session, sampling_request, **options):
         return self._render(session, display=True, sampling_request=sampling_request, **options)
 
-    def render_preview(self, session, **options):
+    def render_preview(self, session, *, cached_preview=None, **options):
+        if cached_preview is not None and not session.read_only:
+            result = self._cached_preview(session, *cached_preview, **options)
+            if result is not None:
+                return result
         return self._render(session, display=True, **options)
+
+    def _cached_preview(self, session, key, frame, *, source_identity=None, source_preview=None,
+                        is_cancelled=lambda: False, max_dimension=STUDIO_PREVIEW_MAX_DIMENSION, **options):
+        from .studio_preview_cache import preview_variant
+        from ..core.contracts.execution import dependency_cancellation
+        tools, sources = self.core.tools, self.core.image_sources
+        spec = PreviewDisplaySpec(max_dimension)
+        if (is_cancelled() or frame.display_spec != spec or frame.backend_identity != key.backend_identity
+                or not key.matches_file() or not tools.cacheable_workflow(session.workflow)
+                or not self.core.matches_edit_state(session.core_id, session.state_version, source_identity)
+                or self.core.source_preview(session.core_id) != source_preview):
+            return None
+        snapshot = tools.snapshot(is_cancelled=is_cancelled)
+        if not key.variant.startswith(preview_variant(session.workflow, snapshot.generation, spec, frame.backend_identity)):
+            return None
+        checked = tools.validate(session.workflow)
+        if not checked.success:
+            raise CoreOperationError(checked.error)
+        token = dependency_cancellation.set(is_cancelled)
+        try:
+            for node in session.workflow.nodes:
+                definition = snapshot.registry.get(node.node_type, node.version)
+                if definition.execution_requirements is not None:
+                    definition.execution_requirements(node.params, node.node_id)
+        finally:
+            dependency_cancellation.reset(token)
+        if (is_cancelled() or snapshot.is_cancelled() or not sources.matches_file(source_identity)
+                or not self.core.matches_edit_state(session.core_id, session.state_version, source_identity)
+                or self.core.source_preview(session.core_id) != source_preview):
+            return None
+        logger.debug("预览帧命中 session=%s workflow=%s size=%sx%s",
+            session.core_id, session.workflow.workflow_hash()[:12], *frame.size)
+        return PreviewResult(None, session.core_id, session.workflow.workflow_hash(), *frame.size,
+            display=DisplayFrame(frame.rgba, frame.size, frame.backend_identity), full_size=frame.full_size,
+            effect_status=frame.effect_status, input_size=frame.input_size, input_is_proxy=frame.input_is_proxy,
+            display_spec=frame.display_spec, backend_identity=frame.backend_identity)
+
+    def render_region(self, session, bounds, *, source_identity, source_preview, is_cancelled=lambda: False):
+        from .services import DetailDisplay, PreviewResult
+        from ..core.photo_engine import display_rgba8
+        tools, sources = self.core.tools, self.core.image_sources
+        snapshot = tools.snapshot()
+        def cancelled():
+            return (is_cancelled() or snapshot.is_cancelled()
+                or not self.core.matches_edit_state(session.core_id, session.state_version, source_identity)
+                or self.core.source_preview(session.core_id) != source_preview)
+        with sources.borrow_linear(source_identity.path, identity=source_identity, is_cancelled=cancelled) as lease:
+            with sources.compute.request_context(cancelled, priority=1, role="foreground",
+                    threads=sources.policy.interactive_threads):
+                result = snapshot.executor.execute_region(lease.value, session.workflow, bounds, is_cancelled=cancelled)
+                if not result.success:
+                    raise CoreOperationError(result.error)
+                region = result.data
+                source = region.source
+                size = source.pixels.shape[1::-1]
+                with tools.execution.output_operation(source, "region.display", cancelled,
+                        threads=sources.policy.interactive_threads, memory_bytes=source.pixels.nbytes*4):
+                    detail = DetailDisplay(sources.resources, size,
+                        lambda: DisplayFrame.from_array(display_rgba8(source, cancelled=cancelled)), cancelled,
+                        bounds=region.bounds, full_size=region.full_size)
+                if cancelled() or not sources.matches_file(source_identity):
+                    detail.close()
+                    return None
+                return PreviewResult(None, session.core_id, session.workflow.workflow_hash(), *size,
+                    detail=detail, full_size=region.full_size, effect_status=source.effect_status,
+                    input_size=lease.value.pixels.shape[1::-1], input_is_proxy=False)
 
     def render_original(self, session_id, workflow, *, proxy_input, is_cancelled):
         result = self.core.preview(session_id, workflow, update_draft=False, allow_intermediate=True,
@@ -53,7 +126,8 @@ class StudioRenderService:
 
     def _render(self, session, *, display, use_proxy=True, editing_tool=None, is_cancelled=lambda: False,
                 allow_intermediate=False, source_identity=None, source_preview=None, sampling_request=None,
-                priority=0, keep_full_display=False, temporary_workflow=None):
+                priority=0, keep_full_display=False, temporary_workflow=None,
+                max_dimension=STUDIO_PREVIEW_MAX_DIMENSION, source_is_cancelled=None):
         caller_cancelled = is_cancelled
         is_cancelled = lambda: caller_cancelled() or (
             source_identity is not None and self.core.source_identity(session.core_id) != source_identity) or (
@@ -65,7 +139,7 @@ class StudioRenderService:
             if is_cancelled():
                 return None
             result = self.core.history_preview(session.core_id, revision_id=session.revision_id,
-                                               max_dimension=STUDIO_PREVIEW_MAX_DIMENSION if use_proxy else None,
+                                               max_dimension=max_dimension if use_proxy else None,
                                                is_cancelled=is_cancelled, display=display,
                                                priority=priority, keep_full_display=keep_full_display,
                                                expected_state=session.state_version if not allow_intermediate else None)
@@ -81,10 +155,11 @@ class StudioRenderService:
         result = self.core.preview(
             session.core_id, session.workflow,
             update_draft=False, is_cancelled=is_cancelled,
-            max_dimension=STUDIO_PREVIEW_MAX_DIMENSION if use_proxy else None,
+            max_dimension=max_dimension if use_proxy else None,
             allow_intermediate=allow_intermediate, display=display,
             priority=priority, keep_full_display=keep_full_display,
             expected_state=session.state_version if not allow_intermediate else None,
+            source_is_cancelled=source_is_cancelled,
             **({"temporary_workflow": temporary_workflow} if temporary_workflow is not None else {}),
             **({"sampling_request": sampling_request} if sampling_request is not None else {}),
         )

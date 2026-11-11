@@ -15,6 +15,11 @@ from .system_profile import available_logical_count, available_memory, memory_st
 
 logger = logging.getLogger(__name__)
 
+
+def queue_order(priority, created, now):
+    value = priority() if callable(priority) else priority
+    return value - (now - created) / 2, created
+
 # 可以在运行中替换的内存字段
 MEMORY_FIELDS = frozenset({"memory_bytes", "memory_seat_bytes", "memory_reserve_bytes", "source_cache_bytes",
                            "proxy_cache_bytes", "display_cache_bytes", "preview_cache_bytes",
@@ -96,6 +101,11 @@ class ComputeLease:
 
 
 @dataclass(frozen=True)
+class ComputeRequestContext:
+    threads: int
+
+
+@dataclass(frozen=True)
 class ComputeUsage:
     thread_capacity: int
     used_threads: int
@@ -119,8 +129,16 @@ class _ComputeRequest:
         return self.role in ("operator", "foreground")
 
     @property
-    def foreground(self):
-        return self.heavy and self.priority <= 0
+    def current_priority(self):
+        return self.priority() if callable(self.priority) else self.priority
+
+
+@dataclass
+class _ComputeState:
+    request: _ComputeRequest
+    lease: ComputeLease
+    active: bool = True
+    foreground: bool = False
 
 
 class ComputeBudget:
@@ -143,12 +161,13 @@ class ComputeBudget:
         self._active_thumbnails = 0
         self._used_threads = 0
         self._waiting = []
+        self._blocked = {}
         self._local = local()
         self._closed = False
 
     @contextmanager
     def borrow(self, is_cancelled=lambda: False, priority=0, *, role="operator", threads=None,
-               minimum_threads=1):
+               minimum_threads=1, admit=None):
         if role not in ("operator", "foreground", "thumbnail", "quick_preview"):
             raise ValueError("计算任务角色无效")
         if threads is None:
@@ -163,15 +182,30 @@ class ComputeBudget:
         ticket = _ComputeRequest(priority, time.monotonic(), role, threads, minimum)
         if is_cancelled():
             raise CancelledError()
-        borrowed = getattr(self._local, "lease", None)
-        if borrowed is not None:
+        state = getattr(self._local, "state", None)
+        if state is not None and state.active:
             with self._condition:
                 if self._closed:
                     raise CancelledError()
-            if minimum > borrowed.threads or ticket.heavy and not borrowed.heavy:
+            if minimum > state.lease.threads or ticket.heavy and not state.lease.heavy:
                 raise ValueError("嵌套计算需求超过已领取额度")
-            yield borrowed
+            if admit is not None and not admit():
+                raise RuntimeError("实例准入必须在归还外层算力后执行")
+            yield state.lease
             return
+        lease = self._acquire(ticket, is_cancelled, admit)
+        state = _ComputeState(ticket, lease, foreground=self._local.foreground)
+        self._local.state = state
+        try:
+            if is_cancelled():
+                raise CancelledError()
+            yield lease
+        finally:
+            self._local.state = None
+            if state.active:
+                self._release(ticket, state.lease, foreground=state.foreground)
+
+    def _acquire(self, ticket, is_cancelled, admit=None):
         with self._condition:
             if self._closed:
                 raise CancelledError()
@@ -181,57 +215,109 @@ class ComputeBudget:
                 if is_cancelled():
                     raise CancelledError()
                 with self._condition:
+                    waiting = tuple(self._waiting)
+                priorities = {item: item.current_priority for item in waiting}
+                with self._condition:
                     if self._closed:
                         raise CancelledError()
                     now = time.monotonic()
-                    foreground = self._active_foreground or any(item.foreground for item in self._waiting)
+                    foreground = self._active_foreground or any(item.heavy and priorities.get(item, 1) <= 0
+                                                               for item in self._waiting)
                     candidates = [item for item in self._waiting
-                                  if (not item.heavy or item.priority <= 0 or not self._active_background)
+                                  if item in priorities and self._blocked.get(item, 0) <= now
+                                  and (not item.heavy or priorities[item] <= 0 or not self._active_background)
                                   and (item.role != "thumbnail" or not foreground or not self._active_thumbnails)]
-                    first = min(candidates, key=lambda item: (item.priority - (now - item.created) / 2,
-                                                              item.created)) if candidates else None
+                    first = min(candidates, key=lambda item: queue_order(priorities[item], item.created, now)) if candidates else None
                     available = self._thread_capacity - self._used_threads
-                    if (first is ticket and available >= minimum
+                    if (first is ticket and available >= ticket.minimum
                             and (not ticket.heavy or self._active < self._slots)):
-                        granted = min(threads, available) if role == "foreground" else threads
+                        granted = min(ticket.threads, available) if ticket.role == "foreground" else ticket.threads
                         self._waiting.remove(ticket)
                         self._used_threads += granted
                         self._active += ticket.heavy
-                        self._active_background += ticket.heavy and priority > 0
-                        self._active_foreground += ticket.foreground
-                        self._active_thumbnails += role == "thumbnail"
+                        granted_foreground = ticket.heavy and priorities[ticket] <= 0
+                        self._active_background += ticket.heavy and not granted_foreground
+                        self._active_foreground += granted_foreground
+                        self._active_thumbnails += ticket.role == "thumbnail"
                         active = self._active
                         used = self._used_threads
-                        break
-                    self._condition.wait(0.05)
-            lease = ComputeLease(granted, ticket.heavy)
-            self._local.lease = lease
-            started = time.monotonic()
-            logger.debug("计算预算准入 role=%s priority=%s threads=%s used=%s capacity=%s wait_ms=%.1f active=%s slots=%s",
-                         role, priority, granted, used, self._thread_capacity,
-                         (started - ticket.created) * 1000, active, self._slots)
-            try:
-                if is_cancelled():
-                    raise CancelledError()
-                yield lease
-            finally:
-                self._local.lease = None
+                    else:
+                        self._condition.wait(0.05)
+                        continue
+                lease = ComputeLease(granted, ticket.heavy)
+                try:
+                    accepted = admit is None or admit()
+                except BaseException:
+                    self._release(ticket, lease, foreground=granted_foreground)
+                    raise
+                if accepted:
+                    self._local.foreground = granted_foreground
+                    logger.debug("计算预算准入 role=%s priority=%s threads=%s used=%s capacity=%s wait_ms=%.1f active=%s slots=%s",
+                                 ticket.role, priorities[ticket], granted, used, self._thread_capacity,
+                                 (time.monotonic() - ticket.created) * 1000, active, self._slots)
+                    return lease
+                self._release(ticket, lease, foreground=granted_foreground)
                 with self._condition:
-                    self._used_threads -= granted
-                    self._active -= ticket.heavy
-                    self._active_background -= ticket.heavy and priority > 0
-                    self._active_foreground -= ticket.foreground
-                    self._active_thumbnails -= role == "thumbnail"
-                    active = self._active
-                    used = self._used_threads
-                    self._condition.notify_all()
-                logger.debug("计算预算释放 role=%s priority=%s threads=%s duration_ms=%.1f active=%s used=%s",
-                             role, priority, granted, (time.monotonic() - started) * 1000, active, used)
+                    self._waiting.append(ticket)
+                    self._blocked[ticket] = time.monotonic() + 0.05
         finally:
             with self._condition:
+                self._blocked.pop(ticket, None)
                 if ticket in self._waiting:
                     self._waiting.remove(ticket)
                 self._condition.notify_all()
+
+    def _release(self, ticket, lease, *, foreground):
+        with self._condition:
+            self._used_threads -= lease.threads
+            self._active -= ticket.heavy
+            self._active_background -= ticket.heavy and not foreground
+            self._active_foreground -= foreground
+            self._active_thumbnails -= ticket.role == "thumbnail"
+            active, used = self._active, self._used_threads
+            self._condition.notify_all()
+        logger.debug("计算预算释放 role=%s threads=%s active=%s used=%s", ticket.role, lease.threads, active, used)
+
+    def scheduling(self):
+        state = getattr(self._local, "state", None)
+        return ((state.request.priority, state.request.role) if state is not None
+                else getattr(self._local, "scheduling", (0, "operator")))
+
+    @contextmanager
+    def request_context(self, is_cancelled=lambda: False, priority=0, *, role="operator", threads=None,
+                        minimum_threads=1):
+        if is_cancelled():
+            raise CancelledError()
+        previous = getattr(self._local, "scheduling", (0, "operator"))
+        self._local.scheduling = priority, role
+        try:
+            yield ComputeRequestContext(threads or self._operator_threads)
+        finally:
+            self._local.scheduling = previous
+
+    @contextmanager
+    def suspend(self, is_cancelled=lambda: False):
+        state = getattr(self._local, "state", None)
+        if state is None or not state.active:
+            yield
+            return
+        self._release(state.request, state.lease, foreground=state.foreground)
+        state.active = False
+        previous = getattr(self._local, "scheduling", (0, "operator"))
+        self._local.scheduling = state.request.priority, state.request.role
+        self._local.state = None
+        try:
+            yield
+        finally:
+            try:
+                if not is_cancelled() and not self._closed:
+                    restore = replace(state.request, threads=state.lease.threads, minimum=state.lease.threads)
+                    state.lease = self._acquire(restore, is_cancelled)
+                    state.foreground = self._local.foreground
+                    state.active = True
+                    self._local.state = state
+            finally:
+                self._local.scheduling = previous
 
     def snapshot(self):
         with self._condition:
@@ -255,6 +341,8 @@ class _Entry:
     error: BaseException | None = None
     borrowers: int = 0
     owner: int = field(default_factory=get_ident)
+    buffers: dict = field(default_factory=dict)
+    retain: bool = True
 
 
 class ImageLease:
@@ -280,16 +368,45 @@ class ImageLease:
 
 
 class MemoryHold:
-    def __init__(self, pool, size):
+    def __init__(self, pool, size, owner=None):
         self._pool = pool
         self._size = size
         self._lock = RLock()
+        self._owner = owner
 
     def close(self):
         with self._lock:
             pool, self._pool = self._pool, None
         if pool is not None:
-            pool.release_memory(self._size)
+            pool.release_memory(self._size, owner=self._owner)
+
+    def split(self, size):
+        with self._lock:
+            pool = self._pool
+            if pool is None:
+                raise RuntimeError("内存预约已释放")
+            size = min(size, self._size)
+            with pool._condition:
+                self._size -= size
+                if self._owner is not None:
+                    pool._working_owners[self._owner] -= size
+                    if not pool._working_owners[self._owner]:
+                        pool._working_owners.pop(self._owner)
+                if not self._size:
+                    self._owner = None
+            return MemoryHold(pool, size)
+
+    def consume(self, pool):
+        with self._lock:
+            if self._pool is not pool:
+                return 0
+            self._pool = None
+            pool._reserved -= self._size
+            if self._owner is not None:
+                pool._working_owners[self._owner] -= self._size
+                if not pool._working_owners[self._owner]:
+                    pool._working_owners.pop(self._owner)
+            return self._size
 
     def __del__(self):
         self.close()
@@ -314,7 +431,22 @@ class ImageResourcePool:
         return {"source": (policy.source_cache_bytes, policy.source_cache_items),
                 "proxy": (policy.proxy_cache_bytes, None),
                 "display": (policy.display_cache_bytes, None),
-                "preview": (policy.preview_cache_bytes, policy.preview_cache_items)}
+                "preview": (policy.preview_cache_bytes, policy.preview_cache_items),
+                "intermediate": (min(2 * 1024 ** 3, policy.memory_bytes // 3), 48)}
+
+    def _costs(self):
+        sizes = dict.fromkeys(self._limits, 0)
+        counts = dict.fromkeys(self._limits, 0)
+        known = set()
+        for entry in self._entries.values():
+            counts[entry.category] += 1
+            cost = max(0, entry.size - sum(entry.buffers.values()))
+            for identity, size in entry.buffers.items():
+                if identity not in known:
+                    cost += size
+                    known.add(identity)
+            sizes[entry.category] += cost
+        return sizes, counts
 
     def update_memory(self, **changes):
         """运行中替换内存策略的字段。已持有的用量不追溯：让出超出新留存与新上限的空闲缓存，后续新增申请按新策略准入。"""
@@ -352,24 +484,19 @@ class ImageResourcePool:
 
     def _trim(self, required=0, *, everything=False):
         """淘汰空闲的缓存并返回剩余的已登记用量；everything 为真时空闲的全部让出。"""
-        sizes = dict.fromkeys(self._limits, 0)
-        counts = dict.fromkeys(self._limits, 0)
-        for entry in self._entries.values():
-            sizes[entry.category] += entry.size
-            counts[entry.category] += 1
+        sizes, counts = self._costs()
         total = sum(sizes.values()) + self._reserved
         for key, entry in list(self._entries.items()):
             if not entry.done.is_set() or entry.borrowers or entry.subscribers:
                 continue
             size_limit, count_limit = self._limits[entry.category]
-            if (everything or self._closed or entry.error is not None
+            if (everything or self._closed or entry.error is not None or not entry.retain
                     or total + required > self.policy.memory_bytes
                     or sizes[entry.category] > size_limit
                     or count_limit is not None and counts[entry.category] > count_limit):
                 self._remove(key)
-                total -= entry.size
-                sizes[entry.category] -= entry.size
-                counts[entry.category] -= 1
+                sizes, counts = self._costs()
+                total = sum(sizes.values()) + self._reserved
         return total
 
     def _can_wait(self):
@@ -432,14 +559,15 @@ class ImageResourcePool:
                     value = loader(abandoned)
                     size = size_of(value)
                     with self._lock:
-                        if size > entry.size:
-                            self._admit(size - entry.size)
-                        entry.value, entry.size = value, size
+                        from ..core.execution_memo import buffers
+                        entry.value, entry.size, entry.buffers = value, size, buffers(value)
+                        self._admit(0)
                 except BaseException as error:
                     close = getattr(locals().get("value"), "close", None)
                     if close:
                         close()
                     entry.error, entry.size = error, 0
+                    entry.value, entry.buffers = None, {}
                 finally:
                     entry.done.set()
                     with self._condition:
@@ -490,22 +618,63 @@ class ImageResourcePool:
             except MemoryError:
                 return False
             entry = self._entries[key] = _Entry(category, size, value=value)
+            from ..core.execution_memo import buffers
+            entry.buffers = buffers(value)
             entry.done.set()
             self._trim()
             return key in self._entries
+
+    def additional_bytes(self, value):
+        from ..core.execution_memo import buffers
+        candidate = buffers(value)
+        with self._lock:
+            known = {identity for entry in self._entries.values() for identity in entry.buffers}
+            return sum(size for identity, size in candidate.items() if identity not in known)
+
+    def publish_shared(self, key, value, *, retain=True):
+        from ..core.execution_memo import buffers, freeze
+        owned = getattr(value, "execution_ownership", None)
+        stored = replace(value, execution_ownership=None) if hasattr(value, "execution_ownership") else value
+        storage = buffers(stored)
+        size = sum(storage.values())
+        if not size:
+            size = getattr(stored, "nbytes", 4096)
+        with self._condition:
+            if self._closed:
+                raise CancelledError()
+            existing = self._entries.get(key)
+            if existing is not None and existing.done.is_set() and existing.error is None:
+                existing.borrowers += 1
+                self._entries.move_to_end(key)
+                return ImageLease(self, key, existing)
+            if owned is not None:
+                owned.release_credit(self)
+            entry = _Entry("intermediate", size, value=freeze(stored), borrowers=1, buffers=storage, retain=retain)
+            entry.done.set()
+            self._entries[key] = entry
+            try:
+                self._admit(0)
+            except BaseException:
+                self._entries.pop(key)
+                raise
+            self._condition.notify_all()
+            return ImageLease(self, key, entry)
 
     def contains(self, key):
         with self._lock:
             entry = self._entries.get(key)
             return not self._closed and entry is not None and entry.done.is_set() and entry.error is None
 
-    def discard(self, key):
-        """让出一个空闲的缓存项；正在使用的不动。"""
+    def discard(self, key, *, value=None):
+        """淘汰指定条目，已有借用释放后回收。"""
         with self._condition:
             entry = self._entries.get(key)
-            if entry is not None and entry.done.is_set() and not entry.borrowers and not entry.subscribers:
+            if entry is None or (value is not None and entry.value is not value):
+                return
+            entry.retain = False
+            if entry.done.is_set() and not entry.borrowers and not entry.subscribers:
                 self._remove(key)
-                self._condition.notify_all()
+            self._condition.notify_all()
 
     def try_hold_memory(self, size):
         if type(size) is not int or size < 0:
@@ -516,6 +685,24 @@ class ImageResourcePool:
             self._admit(size)
             self._reserved += size
             return MemoryHold(self, size)
+
+    def try_working_memory(self, size, *, retained=False):
+        if type(size) is not int or size < 0:
+            raise ValueError("工作内存必须为非负整数")
+        owner = None if retained else get_ident()
+        with self._condition:
+            if self._closed:
+                raise CancelledError()
+            try:
+                self._admit(size)
+            except MemoryError:
+                if size > self.policy.memory_bytes or not self._can_wait():
+                    raise
+                return None
+            self._reserved += size
+            if owner is not None:
+                self._working_owners[owner] = self._working_owners.get(owner, 0) + size
+            return MemoryHold(self, size, owner)
 
     def hold_memory(self, size, is_cancelled=lambda: False):
         if type(size) is not int or size < 0:
@@ -536,9 +723,13 @@ class ImageResourcePool:
                 self._reserved += size
                 return MemoryHold(self, size)
 
-    def release_memory(self, size):
+    def release_memory(self, size, *, owner=None):
         with self._condition:
             self._reserved -= size
+            if owner is not None:
+                self._working_owners[owner] -= size
+                if not self._working_owners[owner]:
+                    self._working_owners.pop(owner)
             self._trim()
             self._condition.notify_all()
 
@@ -594,7 +785,7 @@ class ImageResourcePool:
 
     def usage(self):
         with self._lock:
-            return {"bytes": sum(entry.size for entry in self._entries.values()),
+            return {"bytes": sum(self._costs()[0].values()),
                     "reserved_bytes": self._reserved,
                     "borrowers": sum(entry.borrowers for entry in self._entries.values()),
                     "entries": len(self._entries)}

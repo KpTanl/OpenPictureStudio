@@ -1,5 +1,6 @@
 import os
 import logging
+from math import floor, ceil
 from dataclasses import dataclass
 from PIL import Image
 from PySide6.QtCore import Qt, QSize, QEvent, QTimer, Signal, Slot, QRect, QRectF, QPointF
@@ -64,6 +65,9 @@ class ImageViewer(QLabel):
         super().__init__(parent)
         self._zoom = 1.0
         self._pixmap: QPixmap | None = None
+        self._region_image = None
+        self._region_bounds = None
+        self._region_full_size = None
         self._bitmap_key = None
         self._companion = None
         self._scale_runner = canvas_scale_runner
@@ -347,10 +351,7 @@ class ImageViewer(QLabel):
         self._pixmap = pixmap
         self._bitmap_key = pixmap.cacheKey()
         self.setText("")
-        self._display_size = (
-            pixmap.size().scaled(reference_size, Qt.AspectRatioMode.KeepAspectRatio)
-            if reference_size is not None else pixmap.size()
-        )
+        self._display_size = QSize(reference_size) if reference_size is not None else pixmap.size()
         if preserve_zoom and not self._fit_mode:
             self._update_display()
         else:
@@ -394,6 +395,7 @@ class ImageViewer(QLabel):
 
     def set_display_pair(self, image, reference_size, companion=None, companion_reference=None, *, sampling=None,
                          preserve_zoom=True):
+        self.set_region_image(None)
         self._scale_deferred = True
         try:
             self.set_qimage(image, preserve_zoom=preserve_zoom, reference_size=reference_size, sampling=sampling)
@@ -401,6 +403,24 @@ class ImageViewer(QLabel):
         finally:
             self._scale_deferred = False
         self._queue_scale()
+
+    def set_region_image(self, image, bounds=None, full_size=None):
+        if (image is self._region_image and bounds == self._region_bounds
+                and full_size == self._region_full_size):
+            return
+        self._region_image, self._region_bounds, self._region_full_size = image, bounds, full_size
+        self.update()
+
+    def visible_image_bounds(self, full_size):
+        rect = self.get_image_display_rect()
+        visible = rect.intersected(self.visibleRegion().boundingRect())
+        if visible.isEmpty() or rect.isEmpty():
+            return None
+        width, height = full_size
+        return (max(0, floor((visible.left()-rect.left())*width/rect.width())),
+                max(0, floor((visible.top()-rect.top())*height/rect.height())),
+                min(width, ceil((visible.x()+visible.width()-rect.left())*width/rect.width())),
+                min(height, ceil((visible.y()+visible.height()-rect.top())*height/rect.height())))
 
     def _scale_spec(self):
         if self._scale_runner is None or not self.has_image:
@@ -662,7 +682,7 @@ class ImageViewer(QLabel):
         if self.isVisible() and self._fit_mode and self._pixmap:
             self._fit_to_window()
 
-    def _update_display(self):
+    def _update_display(self, *, notify=True):
         if not self._pixmap:
             return
         size = self._widget_size()
@@ -672,7 +692,8 @@ class ImageViewer(QLabel):
         self.update()
         if self._zoom_changed_callback:
             self._zoom_changed_callback()
-        self.view_changed.emit()
+        if notify:
+            self.view_changed.emit()
 
     def _scroll_area(self):
         parent = self.parentWidget()
@@ -745,7 +766,7 @@ class ImageViewer(QLabel):
                                (local.y() - rect.y()) / rect.height())
         self._fit_mode = False
         self._zoom = zoom
-        self._update_display()
+        self._update_display(notify=False)
         if position is not None:
             rect = self.get_image_display_rect()
             local = self.mapFrom(scroll.viewport(), anchor)
@@ -753,6 +774,7 @@ class ImageViewer(QLabel):
             vertical = scroll.verticalScrollBar()
             horizontal.setValue(horizontal.value() + round(rect.x() + position.x() * rect.width() - local.x()))
             vertical.setValue(vertical.value() + round(rect.y() + position.y() * rect.height() - local.y()))
+        self.view_changed.emit()
 
     def _cancel_wheel_zoom(self):
         self._wheel_timer.stop()
@@ -854,6 +876,14 @@ class ImageViewer(QLabel):
                 painter.drawPixmap(QPointF(rect.topLeft()), scaled)
             else:
                 painter.drawPixmap(QRectF(visible), self._pixmap, source)
+        if self._region_image is not None and self._region_bounds is not None and not visible.isEmpty():
+            left, top, right, bottom = self._region_bounds
+            width, height = self._region_full_size
+            target = QRectF(rect.x()+left*rect.width()/width, rect.y()+top*rect.height()/height,
+                (right-left)*rect.width()/width, (bottom-top)*rect.height()/height)
+            painter.setBrushOrigin(rect.topLeft())
+            painter.fillRect(target, _checker_brush())
+            painter.drawImage(target, self._region_image)
         if self._overlay is not None:
             self._overlay.paint(painter, rect)
 

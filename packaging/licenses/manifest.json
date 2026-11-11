@@ -1,5 +1,80 @@
 {
   "supplements": {
+    "crate:lz4_flex@0.14.0": {
+      "version": "0.14.0",
+      "files": [
+        {
+          "path": "lz4-flex/LICENSE",
+          "origin": "https://github.com/pseitz/lz4_flex/blob/1bffdcbbf906a234b913937cb2f57c0245915038/LICENSE",
+          "sha256": "0982c33390159842ecce8e9d6ce2e5e39961fe0e0ffbb2eec39c9ba46db6db10"
+        }
+      ]
+    },
+    "crate:hexf-parse@0.2.1": {
+      "version": "0.2.1",
+      "files": [
+        {
+          "path": "hexf-parse/LICENSE-CC0",
+          "origin": "https://github.com/spdx/license-list-data/blob/v3.26.0/text/CC0-1.0.txt (declared in https://github.com/lifthrasiir/hexf/blob/4225763d744183d720f575ae96d04161b4d08ea0/parse/Cargo.toml)",
+          "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499"
+        }
+      ]
+    },
+    "crate:lhash@1.1.0": {
+      "version": "1.1.0",
+      "files": [
+        {
+          "path": "lhash/LICENSE",
+          "origin": "https://github.com/DoumanAsh/lhash/blob/403834764cadd9c47928c5e70219fec1e1b10857/LICENSE",
+          "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+        }
+      ]
+    },
+    "crate:profiling@1.0.18": {
+      "version": "1.0.18",
+      "files": [
+        {
+          "path": "profiling/LICENSE-MIT",
+          "origin": "https://github.com/aclysma/profiling/blob/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-MIT",
+          "sha256": "c8167fdeeed46d3f244d3f85c5bf998ce889343691c32be2c61a8bc4b5c08333"
+        },
+        {
+          "path": "profiling/LICENSE-APACHE",
+          "origin": "https://github.com/aclysma/profiling/blob/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-APACHE",
+          "sha256": "10d30a673cd5e9349bdc02aeb48f14b3386d27d0da32df8f0a555d4aa16aa551"
+        }
+      ]
+    },
+    "native:mach-dxcompiler": {
+      "version": "2026.10.26+141dd7f.1",
+      "files": [
+        {
+          "path": "mach-dxcompiler/LICENSE",
+          "origin": "https://github.com/DouglasDwyer/mach-dxcompiler/blob/2026.10.26%2B141dd7f.1/LICENSE",
+          "sha256": "d7227ff78132e0dfb706c41bbecf803cf3b3d274c93722ebcbf307b3272323fe"
+        },
+        {
+          "path": "mach-dxcompiler/LICENSE-APACHE",
+          "origin": "https://github.com/DouglasDwyer/mach-dxcompiler/blob/2026.10.26%2B141dd7f.1/LICENSE-APACHE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "path": "mach-dxcompiler/LICENSE-MIT",
+          "origin": "https://github.com/DouglasDwyer/mach-dxcompiler/blob/2026.10.26%2B141dd7f.1/LICENSE-MIT",
+          "sha256": "84cf02ebb6a2d05bbc7f9a151e9887f190e050cc7f5743869eedc0a9ada26a7f"
+        },
+        {
+          "path": "mach-dxcompiler/DXC-LICENSE.TXT",
+          "origin": "https://github.com/hexops/DirectXShaderCompiler/blob/4190bb0c90d374c6b4d0b0f2c7b45b604eda24b6/LICENSE.TXT",
+          "sha256": "27a49e35d1da96eba18fba54bc882667ff0ff8c0254f16f2b6e165d605ba7df8"
+        },
+        {
+          "path": "mach-dxcompiler/DXC-ThirdPartyNotices.txt",
+          "origin": "https://github.com/hexops/DirectXShaderCompiler/blob/4190bb0c90d374c6b4d0b0f2c7b45b604eda24b6/ThirdPartyNotices.txt",
+          "sha256": "19512a5d0a015ef16d167272c164da49a604614a786206212a80ad486ed0be6d"
+        }
+      ]
+    },
     "python:flatbuffers": {
       "version": "25.12.19",
       "files": [
@@ -15,7 +90,7 @@
         {
           "path": "msvc-runtime/NOTICE.txt",
           "origin": "written for this project",
-          "sha256": "a1c662417a700fba6e74af77687ebbfd19d6b114e4b535287f1e5801ae63c9ed"
+          "sha256": "8983eda273745be5ef50447b4abba02ba5cb7a48676c72d61aff27c0c8071b01"
         }
       ]
     },

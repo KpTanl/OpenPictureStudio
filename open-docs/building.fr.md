@@ -2,6 +2,10 @@
 
 [简体中文](building.md) | [English](building.en.md) | [Français](building.fr.md)
 
+## Versions candidates indépendantes
+
+`tools/build_review_candidate.py` produit une version candidate de l’espace de travail avec les manifestes de sources et d’artefacts correspondant au module natif release. Les arguments `--native-sources` et `--native-artifacts` sont obligatoires. Le dossier indépendant `dist/candidate-<version>/` contient l’installateur candidat, le ZIP des sources, leur instantané, les dépendances et les empreintes des artefacts. La compilation utilise une copie fixe des sources. Les fichiers `components.json` et `SOURCE.txt` désignent l’archive incluse. Le nom de l’installateur contient `candidate`. Les distributions formelles exigent toujours des sources validées et propres, puis la recette manuelle. Voir [Plug-ins d’image](image-plugins.fr.md).
+
 [Retour à l’accueil](../README.fr.md)
 
 ## Exécution depuis les sources
@@ -26,7 +30,7 @@ pip install -r requirements-beauty.txt
 python main.py
 ```
 
-Le module d’accélération Rust est facultatif. Si vous en avez besoin, installez la chaîne d’outils Rust, compilez, puis copiez le résultat à la racine du dépôt :
+Le module d’accélération Rust est facultatif. Sa compilation nécessite Rust, MSVC C++ Build Tools et le SDK Windows. DXC statique, activé par défaut, nécessite aussi le composant « C++ ATL for x64/x86 ». La première compilation télécharge et vérifie la bibliothèque DXC statique à version fixe. Compilez le module, puis copiez le résultat à la racine du dépôt :
 
 ```powershell
 cd native\ops_accel
@@ -34,6 +38,8 @@ cargo build --release --locked
 copy target\release\ops_accel.dll ..\..\ops_accel.pyd
 cd ..\..
 ```
+
+Si les bibliothèques ATL sont fournies séparément, définissez la variable d’environnement du processus `OPS_ATL_LIB` avec le répertoire contenant `atls.lib`. La commande `cargo build --release --locked --no-default-features` produit un module natif avec FXC uniquement. L’application ne nécessite pas ces outils de compilation à l’exécution.
 
 ## Compilation
 

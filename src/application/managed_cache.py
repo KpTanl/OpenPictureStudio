@@ -89,13 +89,16 @@ class ManagedCache:
         return self.directory / version / digest[:2] / f"{digest}{self._suffix}"
 
     @contextmanager
-    def _publication(self):
-        with self._lock:
-            try:
-                yield
-            finally:
-                if self._closed.is_set():
-                    self._release_owner()
+    def _publication(self, *, blocking=True):
+        if not self._lock.acquire(blocking=blocking):
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            if self._closed.is_set():
+                self._release_owner()
+            self._lock.release()
 
     def _acquire_owner(self):
         lock_path = self.directory / "cache.lock"
@@ -244,10 +247,12 @@ class ManagedCache:
             return False
 
     def touch(self, digest, version, generation, *, is_current=lambda: True,
-              is_cancelled=lambda: False):
+              is_cancelled=lambda: False, blocking=True):
         if not self.is_writer or not self.capacity_ready:
             return
-        with self._publication():
+        with self._publication(blocking=blocking) as acquired:
+            if not acquired:
+                return
             if not self.current(generation, is_cancelled, is_current):
                 return
             target = self._target(digest, version)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import CancelledError
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -88,43 +89,63 @@ class MaskGenerationTask:
         height, width = source.pixels.shape[:2]
         scale = min(1, 1600 / max(width, height))
         size = max(1, round(width * scale)), max(1, round(height * scale))
-        estimate = width * height * (20 if source.alpha is not None else 0) + size[0] * size[1] * 160 + 256 * 1024 ** 2
-        with self.core.image_sources.resources.working_memory(estimate, cancelled):
-            rgb = source.pixels
-            if source.alpha is not None:
-                rgb = rgb * source.alpha[..., None] + 1 - source.alpha[..., None]
-            rgb = cv2.resize(rgb, size, interpolation=cv2.INTER_AREA) if size != (width, height) else rgb
-            srgb = np.clip(linear_to_srgb(rgb), 0, 1)
+        snapshot = None
+        if self.kind != "subject":
+            checked = self.core.tools.analyze("beauty", source, self.face_settings, reference=self.face_reference,
+                purpose="snapshot", context=context, is_cancelled=cancelled)
+            if not checked.success:
+                raise CoreOperationError(checked.error)
+            snapshot = checked.data
+            if snapshot.processed == 0:
+                raise CoreOperationError(CoreError(ErrorCode.INVALID_INPUT, "beauty.detail." + snapshot.status))
+        execution = self.core.tools.execution
+        estimate = width * height * (20 if source.alpha is not None else 0) + size[0] * size[1] * 64
+        if source.patches:
+            estimate += source.pixels.nbytes * 2
+        with ExitStack() as retained:
+            with execution.operation("mask.prepare", cancelled, memory_bytes=estimate,
+                    threads=self.core.image_sources.policy.operator_threads):
+                combined = source.materialize(cancelled)
+                rgb = combined.pixels
+                if combined.alpha is not None:
+                    rgb = rgb * combined.alpha[..., None] + 1 - combined.alpha[..., None]
+                rgb = cv2.resize(rgb, size, interpolation=cv2.INTER_AREA) if size != (width, height) else rgb
+                del combined
+                if self.kind == "subject":
+                    srgb = np.clip(linear_to_srgb(rgb), 0, 1)
+                    image = retained.enter_context(Image.fromarray(np.rint(srgb * 255).astype(np.uint8)))
+                    del srgb
+                    rgb = None
+                retained.callback(self.core.image_sources.resources.hold_memory(size[0] * size[1] * 16, cancelled).close)
             if self.kind == "subject":
-                with Image.fromarray(np.rint(srgb * 255).astype(np.uint8)) as image:
-                    weights = self._subject_weights(image, size, cancelled)
-            else:
-                snapshot = self.core.tools.analyze("beauty", source, self.face_settings, reference=self.face_reference,
-                    purpose="snapshot", context=context, is_cancelled=cancelled)
-                if not snapshot.success:
-                    raise CoreOperationError(snapshot.error)
-                if snapshot.data.processed == 0:
-                    raise CoreOperationError(CoreError(ErrorCode.INVALID_INPUT, "beauty.detail." + snapshot.data.status))
-                weights = np.zeros((size[1], size[0]), np.float32)
-                for face in snapshot.data.faces:
-                    if cancelled():
-                        raise CancelledError()
-                    if face.status != "ready":
-                        continue
-                    regions = face_regions(face.points, size)
-                    left, top, right, bottom = regions.bounds
-                    region = getattr(regions, self.kind)
-                    if self.kind == "skin":
-                        from ..core.beauty_v2 import _skin_color, linear_lab
-                        lab = linear_lab(rgb[top:bottom, left:right])
-                        region = region * _skin_color(lab)
-                    np.maximum(weights[top:bottom, left:right], region, out=weights[top:bottom, left:right])
-            if cancelled():
-                raise CancelledError()
-            digest = self.core.tools.mask_assets.put(weights, cancelled)
-            return {"id": str(uuid4()), "name": self.name, "enabled": True, "op": self.operation,
-                    "type": self.kind, "asset": digest, "size": list(size), "model": self.model_identity,
-                    "source": self.source_identity.file_hash + ":" + context["upstream_identity"][1]}
+                weights = self._subject_weights(image, size, cancelled)
+            with execution.operation("mask.compose", cancelled, memory_bytes=size[0] * size[1] * 64,
+                    threads=self.core.image_sources.policy.operator_threads):
+                return self._compose_weights(rgb, snapshot, weights if self.kind == "subject" else None,
+                                             size, context, cancelled)
+
+    def _compose_weights(self, rgb, snapshot, weights, size, context, cancelled):
+        if self.kind != "subject":
+            weights = np.zeros((size[1], size[0]), np.float32)
+            for face in snapshot.faces:
+                if cancelled():
+                    raise CancelledError()
+                if face.status != "ready":
+                    continue
+                regions = face_regions(face.points, size)
+                left, top, right, bottom = regions.bounds
+                region = getattr(regions, self.kind)
+                if self.kind == "skin":
+                    from ..core.beauty_v2 import _skin_color, linear_lab
+                    lab = linear_lab(rgb[top:bottom, left:right])
+                    region = region * _skin_color(lab)
+                np.maximum(weights[top:bottom, left:right], region, out=weights[top:bottom, left:right])
+        if cancelled():
+            raise CancelledError()
+        digest = self.core.tools.mask_assets.put(weights, cancelled)
+        return {"id": str(uuid4()), "name": self.name, "enabled": True, "op": self.operation,
+                "type": self.kind, "asset": digest, "size": list(size), "model": self.model_identity,
+                "source": self.source_identity.file_hash + ":" + context["upstream_identity"][1]}
 
     def _subject_weights(self, image, size, cancelled):
         from ..core.tools.segmentation import U2NetMask
@@ -133,7 +154,8 @@ class MaskGenerationTask:
         try:
             with self.core.models.borrow(self.model_key), self.core.tools.borrow_processor(
                     "color_adjust", "mask.subject", factory, resources=self.paths, is_cancelled=cancelled,
-                    memory_bytes=sum(Path(path).stat().st_size * 4 for path in self.paths.values()) + 16 * 1024 ** 2) as processor:
+                    memory_bytes=sum(Path(path).stat().st_size * 4 for path in self.paths.values()) + 16 * 1024 ** 2,
+                    working_bytes=size[0] * size[1] * 160 + 256 * 1024 ** 2) as processor:
                 return cv2.resize(processor.weights(image), size, interpolation=cv2.INTER_LINEAR)
         except OSError as error:
             raise CoreOperationError(CoreError(ErrorCode.TOOL_RESOURCE_MISSING, "error.tool.resource_missing",

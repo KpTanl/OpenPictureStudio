@@ -1,6 +1,7 @@
 """Color Adjust Panel for in-window sidebar editing."""
 
 import copy
+from contextlib import ExitStack
 from uuid import uuid4
 import logging
 from typing import Optional
@@ -741,7 +742,16 @@ class ColorAdjustPanel(BaseToolPanel):
         def ready(params):
             self.end_edit_group()
             self._apply_params(params)
-        self.submit_background(image, analyze, ready, self._processing_error)
+        if self.external_preview:
+            identity, sources = self.source_bundle.identity, self._image_source_service
+            def load_and_analyze(unused, cancelled):
+                with ExitStack() as resources:
+                    with sources.compute.suspend(cancelled):
+                        lease = resources.enter_context(sources.borrow_panel_snapshot(identity, is_cancelled=cancelled))
+                    return analyze(lease.value.image)
+            self.submit_background(None, load_and_analyze, ready, self._processing_error, cancellable=True)
+        else:
+            self.submit_background(image, analyze, ready, self._processing_error)
 
     def _on_bw(self) -> None:
         self.end_edit_group()

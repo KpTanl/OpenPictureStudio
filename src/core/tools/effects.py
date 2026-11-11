@@ -11,6 +11,7 @@ from .geometry import checked
 from .id_photo import (LAYOUT_SHEET, MANAGED_ID_PHOTO_PARAMETERS, SHEET_BORDER,
                        SHEET_SIZE, photo_bounds, sheet_positions)
 from ..photo_engine import _pil_from, linear_to_srgb, srgb_to_linear
+from ..execution_memo import memo
 
 
 def _validate_color(params):
@@ -58,6 +59,11 @@ def resize_arrays(pixels, alpha, size, *, box=None, parallelism=1):
 
 def resize_source(source, size, *, box=None, parallelism=1, sampling=None):
     """缩放到指定尺寸。输出多大没有固定上限，内存由宿主按各工具声明的估算准入。"""
+    from ..contracts.execution import current_execution
+    execution = current_execution.get()
+    if source.gpu_image is not None and execution is not None and execution.engine == "gpu":
+        return source.gpu_image.resize(source, size, box, execution.is_cancelled)
+    source = source.materialize()
     pixels, alpha = resize_arrays(source.pixels, source.alpha, size, box=box, parallelism=parallelism)
     if sampling is not None and sampling.active:
         sampling.resize(size, box=box)
@@ -125,10 +131,13 @@ def make_id_photo(source, params, *, mask_provider=None, sampling=None):
         if params["ai_matting"]:
             if mask_provider is None:
                 raise FileNotFoundError("抠图模型不可用")
-            mask = mask_provider(_pil_from(replace(source, pixels=pixels, alpha=None)).convert("RGB"))
-            if mask.size != (right - left, bottom - top):
-                raise ValueError("抠图蒙版尺寸无效")
-            coverage = np.asarray(mask.convert("L"), dtype=np.float32) / np.float32(255)
+            def prepare_mask():
+                with _pil_from(replace(source, pixels=pixels, alpha=None)) as image, image.convert("RGB") as rgb:
+                    with mask_provider(rgb) as mask:
+                        if mask.size != (right-left, bottom-top):
+                            raise ValueError("抠图蒙版尺寸无效")
+                        return np.asarray(mask.convert("L"), dtype=np.float32) / np.float32(255)
+            coverage = memo("id_photo.mask", (left, top, right, bottom), prepare_mask, image=True)
             if sampling is not None and sampling.active:
                 sampling.apply_mask(coverage)
             alpha = coverage if alpha is None else alpha * coverage
@@ -137,7 +146,8 @@ def make_id_photo(source, params, *, mask_provider=None, sampling=None):
 
     box = (max(0.0, bounds[0] - left), max(0.0, bounds[1] - top),
            min(float(right - left), bounds[2] - left), min(float(bottom - top), bounds[3] - top))
-    pixels, alpha = resize_arrays(pixels, alpha, size, box=box)
+    pixels, alpha = memo("id_photo.resize", (bounds, size, params["background"], params["ai_matting"]),
+        lambda: resize_arrays(pixels, alpha, size, box=box), image=True)
     if sampling is not None and sampling.active:
         sampling.resize(size, box=box)
     if params["layout"] != LAYOUT_SHEET:
@@ -164,24 +174,33 @@ def make_id_photo(source, params, *, mask_provider=None, sampling=None):
 
 def execute_background(source, params, *, mask_provider=None, sampling=None):
     params = checked(BG_PARAMETERS, params)
-    if params["mode"] == "ai":
-        if mask_provider is None:
-            raise FileNotFoundError("抠图模型不可用")
-        mask = mask_provider(_pil_from(source).convert("RGB"))
-        if mask.size != (source.pixels.shape[1], source.pixels.shape[0]):
-            raise ValueError("抠图蒙版尺寸无效")
-    else:
+    mask_key = (params["mode"], params["target_color"] if params["mode"] != "ai" else (),
+                params["tolerance"] if params["mode"] != "ai" else 0)
+    def prepare_mask():
+        if params["mode"] == "ai":
+            if mask_provider is None:
+                raise FileNotFoundError("抠图模型不可用")
+            with _pil_from(source) as image, image.convert("RGB") as rgb:
+                with mask_provider(rgb) as mask:
+                    if mask.size != (source.pixels.shape[1], source.pixels.shape[0]):
+                        raise ValueError("抠图蒙版尺寸无效")
+                    return np.asarray(mask.convert("L"), dtype=np.uint8).copy()
         rgb = np.clip(linear_to_srgb(source.pixels), 0, 1) * np.float32(255)
         distance = np.linalg.norm(rgb - np.asarray(params["target_color"], dtype=np.float32), axis=2)
-        mask = Image.fromarray(np.where(distance <= params["tolerance"], 0, 255).astype(np.uint8))
-    if params["edge_radius"]:
-        ratio = min(source.pixels.shape[1] / source.orig_size[0], source.pixels.shape[0] / source.orig_size[1])
-        mask = mask.filter(ImageFilter.GaussianBlur(params["edge_radius"] * ratio))
-    alpha = np.asarray(mask.convert("L"), dtype=np.float32) / np.float32(255)
+        return np.where(distance <= params["tolerance"], 0, 255).astype(np.uint8)
+    mask = memo("background.mask", mask_key, prepare_mask, image=True)
+    def prepare_edge():
+        with Image.fromarray(mask) as image:
+            if params["edge_radius"]:
+                ratio = min(source.pixels.shape[1] / source.orig_size[0], source.pixels.shape[0] / source.orig_size[1])
+                with image.filter(ImageFilter.GaussianBlur(params["edge_radius"] * ratio)) as blurred:
+                    return np.asarray(blurred, dtype=np.float32) / np.float32(255)
+            return np.asarray(image, dtype=np.float32) / np.float32(255)
+    alpha = memo("background.edge", (mask_key, params["edge_radius"]), prepare_edge, image=True)
     if sampling is not None and sampling.active:
         sampling.apply_mask(alpha)
     if source.alpha is not None:
-        alpha *= source.alpha
+        alpha = alpha * source.alpha
     if params["bg_type"] == "transparent":
         return replace(source, alpha=alpha)
     background = np.float32(1 if params["bg_type"] == "white" else 0)

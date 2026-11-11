@@ -92,9 +92,6 @@ def beauty_binding(params, service, threads, inference=None, *, implementation_i
         {"tool_id": "beauty", "implementation_id": implementation_id}))
 
 
-BEAUTY_PROXY_ADMISSIONS = frozenset()
-
-
 def default_face_locator(models):
     """新开美颜的人脸定位选择：模型已下载时选上（开启多人脸），否则不使用。"""
     from ..core.tools.managed_models import FACE_LOCATOR_MODEL
@@ -150,11 +147,19 @@ def detail_beauty_binding(params, service, threads, *, algorithm=DETAIL_BEAUTY_A
                                 analyze=analyze_auto, regions=face_rectangles,
                                 uses_thread_limit=True, uses_cancellation=True, uses_sampling=True, uses_prepared=True)
 
+    def prepared_factory(resources):
+        def render(source, settings, *, threads, cancelled, **kwargs):
+            with guided_filter_execution(threads, cancelled):
+                return execute(source, settings, cancelled=cancelled, **kwargs)
+        return FunctionExecutor(render, uses_thread_limit=True, uses_cancellation=True,
+                                uses_sampling=True, uses_prepared=True)
+
     return ToolDefinition(descriptor, MANAGED_BEAUTY_PARAMETERS, factory, reusable_executor=bool(paths),
-        supports_proxy=descriptor.reference in BEAUTY_PROXY_ADMISSIONS,
+        supports_proxy=True, supports_patches=True, create_prepared_executor=prepared_factory,
         working_memory=working_memory, needs_preparation=lambda settings: bool(required_resources(settings)),
         allow_resource_gaps_edit=True, resource_features=BEAUTY_RESOURCE_FEATURES,
         collect_resources=required_resources, sampling_behavior="transport",
         prepare_input=partial(preparation_identity, detection_spec=detection_spec),
+        prepare_gpu_input=True,
         preparation_memory=partial(preparation_memory, detection_spec=detection_spec),
         executor_memory=lambda resources: sum(Path(path).stat().st_size * 4 for path in resources.values()) + 16 * 1024 ** 2), paths

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from dataclasses import dataclass, field
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from concurrent.futures import CancelledError
 from io import BytesIO
 import math
@@ -294,12 +294,22 @@ class ImageOutputService:
         if any(Path(path).exists() for path in paths):
             raise FileExistsError("error.export.exists")
         jobs = []
+        def save_tile(bounds, path):
+            left, top, right, bottom = bounds
+            memory = ((right - left) * (bottom - top) * 16 if source.patches else 0)
+            hold = (self._resource_budget.working_memory(memory, cancellation.is_cancelled)
+                    if self._resource_budget is not None else nullcontext())
+            try:
+                with hold, self.writer.reserve(path) as reservation:
+                    with self._compute(cancellation):
+                        pixels, alpha = source.read_region(bounds, cancellation.is_cancelled)
+                        tile = replace(source, pixels=pixels, alpha=alpha, patches=(), patch_base_identity=(),
+                                       orig_size=(right - left, bottom - top))
+                        return self._save(tile, path, cancellation=cancellation, publication=publication, reservation=reservation)
+            except CancelledError as error:
+                raise InterruptedError("error.cancelled") from error
         for top, bottom in zip(ys, ys[1:]):
             for left, right in zip(xs, xs[1:]):
-                tile = replace(source, pixels=source.pixels[top:bottom, left:right],
-                               alpha=None if source.alpha is None else source.alpha[top:bottom, left:right],
-                               orig_size=(right - left, bottom - top))
                 path = paths[len(jobs)]
-                jobs.append((path, lambda tile=tile, path=path: self.save(
-                    tile, path, cancellation=cancellation, publication=publication)))
+                jobs.append((path, lambda bounds=(left, top, right, bottom), path=path: save_tile(bounds, path)))
         return self.batch(jobs, cancellation)

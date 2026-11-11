@@ -102,6 +102,9 @@ def apply_resize(source, plan, *, sampling=None):
     size = (source.pixels.shape[1], source.pixels.shape[0])
     if size != plan.source_size or source.is_proxy:
         raise SourceChangedError()
+    if plan.crop_box is None and plan.content_size == size and not any(plan.padding):
+        return source
+    source = source.materialize()
     result = source
     if plan.crop_box is not None or plan.content_size != size:
         result = resize_source(source, plan.content_size, box=plan.crop_box, sampling=sampling)

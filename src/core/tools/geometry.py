@@ -7,6 +7,20 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from .catalog import ParameterContract, ParameterField
 from .color import number, point
+from ..execution_memo import memo
+
+
+def _rotated_pixels(source, angle):
+    pixels, alpha = source.pixels, source.alpha
+    coverage = np.ones(pixels.shape[:2], dtype=np.float32) if alpha is None else alpha
+    def rotate(channel):
+        return np.asarray(Image.fromarray(channel).rotate(
+            angle, resample=Image.Resampling.BICUBIC, expand=True), dtype=np.float32)
+    premultiplied = pixels * coverage[..., None]
+    alpha = np.clip(rotate(coverage), 0, 1)
+    pixels = np.stack([rotate(premultiplied[..., i]) for i in range(3)], axis=-1)
+    pixels = np.divide(pixels, alpha[..., None], out=np.zeros_like(pixels), where=alpha[..., None] > 1e-8)
+    return pixels, alpha
 
 
 def validate_crop(params):
@@ -135,14 +149,7 @@ def execute_crop(source, params, *, sampling=None):
         output_size = rotated_size((pixels.shape[1], pixels.shape[0]), angle)
         if output_size[0] * output_size[1] > 100_000_000:
             raise ValueError("error.export.size")
-        coverage = np.ones(pixels.shape[:2], dtype=np.float32) if alpha is None else alpha
-        def rotate(channel):
-            return np.asarray(Image.fromarray(channel).rotate(
-                angle, resample=Image.Resampling.BICUBIC, expand=True), dtype=np.float32)
-        premultiplied = pixels * coverage[..., None]
-        alpha = np.clip(rotate(coverage), 0, 1)
-        pixels = np.stack([rotate(premultiplied[..., i]) for i in range(3)], axis=-1)
-        pixels = np.divide(pixels, alpha[..., None], out=np.zeros_like(pixels), where=alpha[..., None] > 1e-8)
+        pixels, alpha = memo("crop.rotation", angle, lambda: _rotated_pixels(source, angle), image=True)
         if sampling is not None and sampling.active:
             sampling.rotate(angle, output_size=(pixels.shape[1], pixels.shape[0]))
         formal_size = rotated_size(formal_size, angle) if source.is_proxy else (pixels.shape[1], pixels.shape[0])
@@ -163,9 +170,8 @@ def _masked(source, mask, *, sampling=None):
     return replace(source, alpha=alpha)
 
 
-def execute_shape(source, params, *, sampling=None):
-    params = checked(SHAPE_PARAMETERS, params)
-    width, height = source.pixels.shape[1], source.pixels.shape[0]
+def shape_mask(params, size, reference_size):
+    width, height = size
     x, y, w, h = params["rect"]
     left, top, right, bottom = crop_box((x, y, min(1, x + w), min(1, y + h)), (width, height))
     mask = Image.new("L", (width, height), 0)
@@ -180,14 +186,25 @@ def execute_shape(source, params, *, sampling=None):
     elif params["shape"] == "ellipse":
         draw.ellipse(box, fill=255)
     elif params["shape"] == "round_rect":
-        ratio = min(width / source.orig_size[0], height / source.orig_size[1])
+        ratio = min(width / reference_size[0], height / reference_size[1])
         draw.rounded_rectangle(box, radius=params["corner_radius"] * ratio, fill=255)
     else:
         draw.rectangle(box, fill=255)
+    values = np.asarray(mask, dtype=np.uint8).copy()
+    mask.close()
+    return values, bounds
+
+
+def execute_shape(source, params, *, sampling=None):
+    params = checked(SHAPE_PARAMETERS, params)
+    size = source.pixels.shape[1::-1]
+    mask, bounds = memo("shape.mask", (size, source.orig_size, params),
+        lambda: shape_mask(params, size, source.orig_size))
     masked = _masked(source, mask, sampling=sampling)
     left, top, right, bottom = bounds
     if sampling is not None and sampling.active:
         sampling.crop(bounds)
+    x, y, w, h = params["rect"]
     fl, ft, fr, fb = crop_box((x, y, min(1, x + w), min(1, y + h)), source.orig_size)
     return replace(masked, pixels=source.pixels[top:bottom, left:right].copy(),
                    alpha=masked.alpha[top:bottom, left:right].copy(), orig_size=(fr - fl, fb - ft))

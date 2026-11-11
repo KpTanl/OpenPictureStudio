@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from concurrent.futures import CancelledError
-from contextlib import nullcontext
 
 from ..core.contracts import WorkflowGraph
 from ..core.contracts.result import CoreOperationError, CoreResult, ErrorCode
@@ -71,19 +70,20 @@ class CanonicalInputPreparer:
         if self.full_source is None:
             raise CanonicalInputUnavailable()
         prefix = self._prefix(self.workflow, context["node_id"])
-        with self.full_source(cancelled) as lease:
+        source_lease = self.full_source(cancelled)
+        with source_lease as lease:
             source = lease.value
             if source.is_proxy or source.content_identity != context["upstream_identity"][0]:
                 raise CanonicalInputUnavailable()
-            memory = (self.resources.working_memory(source.pixels.nbytes * 4, cancelled)
-                      if self.resources is not None else nullcontext())
-            with memory:
-                result = self.snapshot.executor.execute(source, prefix, is_cancelled=cancelled, input_preparer=self)
-                if not result.success:
-                    if result.error.code == ErrorCode.CANCELLED:
-                        raise CancelledError()
-                    raise CoreOperationError(result.error)
-                canonical = result.data
-                if canonical.is_proxy or identity(canonical, context, reference) != key:
-                    raise CanonicalInputUnavailable()
-                return prepare(canonical, key, cancelled)
+            execution = context.get("execution")
+            stage = next((item for item in execution.stages if item.node_id == context["node_id"]), None) if execution else None
+            result = self.snapshot.executor.execute(source, prefix, is_cancelled=cancelled, input_preparer=self,
+                planned_stages=stage.preparation_stages if stage is not None and stage.preparation_stages else None)
+            if not result.success:
+                if result.error.code == ErrorCode.CANCELLED:
+                    raise CancelledError()
+                raise CoreOperationError(result.error)
+            canonical = result.data
+            if canonical.is_proxy or identity(canonical, context, reference) != key:
+                raise CanonicalInputUnavailable()
+            return prepare(canonical, key, cancelled)

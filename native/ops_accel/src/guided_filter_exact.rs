@@ -1,37 +1,12 @@
 use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use rayon::prelude::*;
-use std::time::{Duration, Instant};
 
 use crate::thread_pools;
 use crate::guided_filter::kernels;
+use crate::cancellation::Cancellation;
 
 const BAND_ROWS: usize = 64;
-
-struct Cancellation {
-    callback: Option<Py<PyAny>>,
-    next_poll: Instant,
-}
-
-impl Cancellation {
-    fn check(&mut self) -> PyResult<()> {
-        if Instant::now() < self.next_poll {
-            return Ok(());
-        }
-        self.next_poll = Instant::now() + Duration::from_millis(16);
-        if let Some(callback) = &self.callback {
-            Python::with_gil(|py| {
-                if callback.bind(py).call0()?.is_truthy()? {
-                    Err(pyo3::exceptions::PyInterruptedError::new_err("cancelled"))
-                } else {
-                    Ok(())
-                }
-            })
-        } else {
-            Ok(())
-        }
-    }
-}
 
 fn copy_input(source: &PyReadonlyArray2<'_, f32>, cancelled: &mut Cancellation) -> PyResult<Vec<f32>> {
     let mut output = Vec::with_capacity(source.len());
@@ -160,7 +135,7 @@ pub fn guided_filter_exact<'py>(py: Python<'py>, guide: PyReadonlyArray2<'py, f3
         return Err(pyo3::exceptions::PyValueError::new_err("expected matching nonempty 2D arrays and positive eps"));
     }
     let same = guide.as_ptr() == source.as_ptr();
-    let mut cancelled = Cancellation { callback: cancelled, next_poll: Instant::now() };
+    let mut cancelled = Cancellation::new(cancelled);
     let guide_values = copy_input(&guide, &mut cancelled)?;
     let source_values = if same { None } else { Some(copy_input(&source, &mut cancelled)?) };
     let output = py.allow_threads(|| thread_pools::install(Some(threads), || {

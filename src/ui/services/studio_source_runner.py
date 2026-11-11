@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 def source_qimage(image):
+    if hasattr(image, "rgba"):
+        width, height = image.size
+        return QImage(image.rgba, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
     rgba = image if image.mode == "RGBA" else image.convert("RGBA")
     try:
         return QImage(rgba.tobytes(), rgba.width, rgba.height, rgba.width * 4,
@@ -44,12 +47,14 @@ class StudioSourceRunner(QObject):
         self._closed = Event()
         self._completed.connect(self._deliver, Qt.ConnectionType.QueuedConnection)
 
-    def submit(self, path, session_id=None, *, preview_key=None, initial_workflow=None, preview_workflow=None):
+    def submit(self, path, session_id=None, *, preview_key=None, initial_workflow=None, preview_workflow=None,
+               max_dimension=1600):
         if self._closed.is_set():
             return
         self._prefetch_paths.clear()
         request = self._queue.submit(path, session_id, preview_key=preview_key,
-                                      initial_workflow=initial_workflow, preview_workflow=preview_workflow)
+                                      initial_workflow=initial_workflow, preview_workflow=preview_workflow,
+                                      max_dimension=max_dimension)
         selected = request or self._queue.pending or self._queue.active
         if selected is not None and selected.preview_key is not None:
             frame = self._cache.peek(selected.preview_key)
@@ -86,7 +91,7 @@ class StudioSourceRunner(QObject):
         if self._prefetch_paths and not self._closed.is_set():
             target = self._prefetch_paths.popleft()
             request = self._queue.submit(target.path, prefetch=True, preview_key=target.preview_key,
-                                          initial_workflow=target.workflow)
+                                          initial_workflow=target.workflow, max_dimension=target.max_dimension)
             if request is not None:
                 self._pool.submit(self._run, request)
 
@@ -124,7 +129,6 @@ class StudioSourceRunner(QObject):
         if result.success and result.data is not None:
             try:
                 if not request.cancellation.is_set():
-                    qimage = source_qimage(result.data.image)
                     checked = self._service.validate_prepared(result.data)
                     if not checked.success:
                         result.data.close()

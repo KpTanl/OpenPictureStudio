@@ -4,10 +4,12 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+from collections import OrderedDict
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Optional
 from concurrent.futures import CancelledError
+from threading import RLock
 from PIL import Image
 
 from ..core.contracts.image_display import (DEFAULT_NON_RAW_DISPLAY_MODE, DEFAULT_RAW_DISPLAY_MODE,
@@ -50,6 +52,29 @@ class SourcePreviewSpec:
     generation: int = 0
 
 
+class SourceInputLease:
+    def __init__(self, lease, reject):
+        self._lease, self._reject = lease, reject
+
+    @property
+    def value(self):
+        return self._lease.value
+
+    def reject(self):
+        value = self.value
+        self.close()
+        self._reject(value)
+
+    def close(self):
+        self._lease.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+
 @dataclass
 class SourceDisplayImage:
     image: Image.Image
@@ -71,15 +96,16 @@ class PanelSnapshot:
 @dataclass
 class SourceBundle:
     identity: SourceIdentity
-    original: Image.Image
-    proxy: Image.Image
+    original: Image.Image | None
+    proxy: Image.Image | None
     render_source: object = None
     reference_size: tuple[int, int] = (0, 0)
     lease: object = None
 
     def close(self) -> None:
-        self.original.close()
-        if self.proxy is not self.original:
+        if self.original is not None:
+            self.original.close()
+        if self.proxy is not None and self.proxy is not self.original:
             self.proxy.close()
         self.render_source = None
         if self.lease is not None:
@@ -100,6 +126,136 @@ class ImageSourceService:
         self._engine = engine
         self._thumbnail_cache = thumbnail_cache
         self._linear_proxy_cache = linear_proxy_cache
+        self._source_disk = getattr(linear_proxy_cache, "sources", None)
+        self._source_candidates = OrderedDict()
+        self._source_submitted = OrderedDict()
+        self._source_opens = OrderedDict()
+        self._source_lock = RLock()
+        if self._source_disk is not None:
+            self._source_disk.bind(self.compute, self.resources)
+
+    def _input_spec(self, identity, half_size):
+        cached = self.resources.borrow_cached((identity, "source-metadata-v2"))
+        if cached is not None:
+            with cached:
+                spec = cached.value.input_spec
+        else:
+            with self.compute.borrow(threads=1):
+                if self._engine is None:
+                    from ..core.photo_engine import describe_render_source
+                    metadata = describe_render_source(identity.path)
+                else:
+                    metadata = self._engine.describe_engine_source(identity.path)
+            spec = metadata.input_spec if metadata is not None else None
+        if spec is not None and half_size:
+            spec = replace(spec, size=tuple((side + 1) // 2 for side in spec.size))
+        return spec
+
+    def _disk_source_key(self, identity, spec, half_size):
+        if self._source_disk is None or not 1024 ** 2 <= spec.nbytes <= 1024 ** 3:
+            return None
+        from ..core.photo_engine import linear_proxy_decode_identity
+        from .source_disk_cache import SourceDiskKey
+        if self._engine is not None:
+            describe = getattr(self._engine, "source_decode_identity", None)
+            if describe is None:
+                return None
+            decoded = describe(identity.path)
+        else:
+            decoded = linear_proxy_decode_identity(identity.path)
+        return SourceDiskKey(identity.file_hash, spec, decoded, half_size) if decoded is not None else None
+
+    def record_source_open(self, identity):
+        with self._source_lock:
+            self._source_opens[identity.file_hash] = self._source_opens.get(identity.file_hash, 0) + 1
+            self._source_opens.move_to_end(identity.file_hash)
+            while len(self._source_opens) > 1024:
+                self._source_opens.popitem(last=False)
+            self._source_submitted.pop(identity, None)
+
+    def borrow_input(self, identity, spec, *, half_size=False, is_cancelled=lambda: False, priority=0):
+        disk_key = self._disk_source_key(identity, spec, half_size)
+        cache_generation = self._linear_proxy_cache.generation if disk_key is not None else None
+        key = identity, "integer-source-v2", spec, half_size, cache_generation
+        stored = None
+        current = lambda: self.matches_file(identity)
+        original_cost = max(spec.nbytes * 4,
+            spec.size[0] * spec.size[1] * (96 if half_size else 64) if spec.transfer == "xyz-d65" else 0) + identity.size
+        def decode(abandoned):
+            if stored is not None:
+                value = self._linear_proxy_cache.sources.read(disk_key, stored[0], is_current=current, is_cancelled=abandoned)
+                if value is None:
+                    raise _ProxyCacheMiss()
+                return value
+            with self.compute.borrow(abandoned, priority, threads=1):
+                if self._engine is None:
+                    from ..core.source_input import load_input
+                    value = load_input(identity.path, spec, half_size=half_size, cancelled=abandoned)
+                else:
+                    value = self._engine.load_engine_input(identity.path, spec, half_size=half_size, cancelled=abandoned)
+            self._check(abandoned)
+            if not current():
+                raise SourceChangedError()
+            return value
+        def estimate():
+            nonlocal stored
+            if disk_key is not None:
+                stored = self._linear_proxy_cache.sources.peek(disk_key, is_current=current, is_cancelled=is_cancelled)
+                if stored is not None and stored[0] != cache_generation:
+                    stored = None
+            if stored is not None:
+                return stored[1]
+            return original_cost
+        try:
+            lease = self.resources.acquire(key, "source", estimate, decode, lambda value: value.nbytes, is_cancelled)
+        except _ProxyCacheMiss:
+            stored = None
+            lease = self.resources.acquire(key, "source",
+                original_cost,
+                decode, lambda value: value.nbytes, is_cancelled)
+        if is_cancelled() or not current():
+            lease.close()
+            self._check(is_cancelled)
+            raise SourceChangedError()
+        if (disk_key is not None and lease.value.blocks is None
+                and cache_generation == self._linear_proxy_cache.generation):
+            with self._source_lock:
+                self._source_submitted.pop(identity, None)
+                self._source_candidates[identity] = disk_key, key, cache_generation
+                self._source_candidates.move_to_end(identity)
+                while len(self._source_candidates) > 16:
+                    self._source_candidates.popitem(last=False)
+        return SourceInputLease(lease,
+            lambda value: self._reject_input(identity, key, disk_key, cache_generation, value))
+
+    def publish_source_cache(self, identity, *, is_cancelled=lambda: False, preloading=False):
+        if self._source_disk is None:
+            return
+        with self._source_lock:
+            candidate = self._source_candidates.get(identity)
+        if candidate is not None:
+            disk_key, resource_key, generation = candidate
+            if generation != self._linear_proxy_cache.generation:
+                return
+            with self._source_lock:
+                if (self._source_submitted.get(identity) == (disk_key, generation)
+                        or disk_key.spec.container == "jpeg" and self._source_opens.get(identity.file_hash, 0) < 2):
+                    return
+            accepted = self._linear_proxy_cache.submit_source(disk_key, lambda: self.resources.borrow_cached(resource_key),
+                is_current=lambda: self.matches_file(identity), is_cancelled=is_cancelled,
+                preloading=preloading, generation=generation)
+            if accepted:
+                with self._source_lock:
+                    self._source_submitted[identity] = disk_key, generation
+                    while len(self._source_submitted) > 16:
+                        self._source_submitted.popitem(last=False)
+
+    def _reject_input(self, identity, resource_key, disk_key, generation, value):
+        self.resources.discard(resource_key, value=value)
+        if disk_key is not None:
+            cache = self._linear_proxy_cache
+            cache._directory.discard(disk_key.digest, cache.VERSION, generation,
+                is_current=lambda: self.matches_file(identity))
 
     @property
     def policy(self):
@@ -109,6 +265,12 @@ class ImageSourceService:
     def update_memory(self, **fields):
         """替换内存上限、座位、保留量或缓存留存额度；已持有的图像与预留保留至释放。"""
         self.resources.update_memory(**fields)
+
+    def set_source_cache_enabled(self, enabled):
+        if self._source_disk is not None:
+            self._source_disk.enabled = bool(enabled)
+            with self._source_lock:
+                self._source_submitted.clear()
 
     def close(self):
         self.resources.close()
@@ -132,8 +294,95 @@ class ImageSourceService:
         with Image.open(path) as image:
             return image.size
 
+    def describe(self, identity, *, max_side=None, half_size=False, is_cancelled=lambda: False):
+        from ..core.contracts.source import PixelSpecification
+        if max_side is not None and (type(max_side) is not int or max_side < 1):
+            raise ValueError("max_side must be a positive integer")
+        self._check(is_cancelled)
+        if not self.matches_file(identity):
+            raise SourceChangedError()
+
+        def load(cancelled):
+            with self.compute.borrow(cancelled, threads=1):
+                if self._engine is None:
+                    from ..core.photo_engine import describe_render_source
+                    source = describe_render_source(identity.path)
+                else:
+                    source = self._engine.describe_engine_source(identity.path)
+            decoded = source is None
+            if source is None:
+                with self.borrow_linear(identity.path, identity=identity, is_cancelled=cancelled) as lease:
+                    source = replace(lease.value, pixels=PixelSpecification(tuple(lease.value.pixels.shape)),
+                        alpha=None if lease.value.alpha is None else PixelSpecification(tuple(lease.value.alpha.shape)),
+                        raw_decode_meta=None, execution_ownership=None)
+            self._check(cancelled)
+            if not self.matches_file(identity):
+                raise SourceChangedError()
+            logger.debug("源描述 source=%s size=%sx%s format=%s pixel_fallback=%s",
+                identity.path, *source.orig_size, source.source_format, decoded)
+            return source
+
+        with self.resources.acquire((identity, "source-metadata-v2"), "intermediate", 4096,
+                load, lambda value: 4096, is_cancelled) as lease:
+            source = lease.value
+        width, height = source.pixels.shape[1::-1]
+        if half_size:
+            width, height = (width + 1) // 2, (height + 1) // 2
+        input_spec = replace(source.input_spec, size=(width, height)) if source.input_spec is not None else None
+        ratio = min(1, max_side / max(width, height)) if max_side is not None else 1
+        size = max(1, round(width * ratio)), max(1, round(height * ratio))
+        if not self.matches_file(identity):
+            raise SourceChangedError()
+        return replace(source, pixels=PixelSpecification((size[1], size[0], 3)),
+            alpha=None if source.alpha is None else PixelSpecification((size[1], size[0])),
+            input_spec=input_spec,
+            is_proxy=half_size or ratio < 1,
+            content_identity=(identity.file_hash, self._linear_key(identity, None, half_size),
+                              source.source_format, source.color_pipeline))
+
+    def preview_half_size(self, identity, max_side, *, is_cancelled=lambda: False):
+        if max_side is None:
+            return False
+        metadata = self.describe(identity, is_cancelled=is_cancelled)
+        if metadata.source_format != "raw" or max_side > max(metadata.orig_size) // 2:
+            return False
+        def load(cancelled):
+            from ..core.photo_engine import supports_raw_initial_proxy
+            with self.compute.borrow(cancelled, threads=1):
+                return supports_raw_initial_proxy(identity.path)
+        with self.resources.acquire((identity, "raw-half-capability-v1"), "intermediate", 32,
+                load, lambda value: 32, is_cancelled) as lease:
+            return lease.value
+
+    def borrow_deferred(self, path, *, identity=None, max_side=None, half_size=False,
+                        is_cancelled=lambda: False, priority=0, preloading=False, source_cancelled=None):
+        from .deferred_source import DeferredSourceLease
+        identity = identity or self.identity(path, is_cancelled=is_cancelled)
+        metadata = self.describe(identity, max_side=max_side, half_size=half_size, is_cancelled=is_cancelled)
+        def load(cancelled):
+            root_cancelled = lambda: cancelled() and (source_cancelled is None or source_cancelled())
+            lease = self.borrow_linear(path, identity=identity, max_side=max_side, half_size=half_size,
+                is_cancelled=root_cancelled if max_side is None else cancelled,
+                priority=priority, preloading=preloading, source_cancelled=source_cancelled)
+            if cancelled():
+                lease.close()
+                raise CancelledError()
+            return lease
+        def load_integer(cancelled):
+            spec = metadata.input_spec
+            if spec is None or self._engine is not None and not hasattr(self._engine, "load_engine_input"):
+                return None
+            root_cancelled = lambda: cancelled() and (source_cancelled is None or source_cancelled())
+            lease = self.borrow_input(identity, spec, half_size=half_size, is_cancelled=root_cancelled, priority=priority)
+            if cancelled() or not self.matches_file(identity):
+                lease.close()
+                self._check(cancelled)
+                raise SourceChangedError()
+            return lease
+        return DeferredSourceLease(metadata, load, load_integer)
+
     def borrow_linear(self, path, *, identity=None, max_side=None, half_size=False,
-                      is_cancelled=lambda: False, priority=0, preloading=False):
+                      is_cancelled=lambda: False, priority=0, preloading=False, source_cancelled=None):
         generation = self._linear_proxy_cache.generation if self._linear_proxy_cache is not None else None
         if max_side is not None and (type(max_side) is not int or max_side < 1):
             raise ValueError("max_side must be a positive integer")
@@ -143,13 +392,32 @@ class ImageSourceService:
         key = self._linear_key(identity, max_side, half_size)
         disk_key = self._proxy_cache_key(identity, max_side, half_size)
         disk_available = disk_key is not None and self._linear_proxy_cache.exists(disk_key)
+        dependency = None
+        if max_side is None and not self.resources.contains(key) and (self._engine is None or hasattr(self._engine, "load_engine_input")):
+            import ops_accel
+            if hasattr(ops_accel, "source_unfilter_png"):
+                spec = self._input_spec(identity, half_size)
+                if spec is not None:
+                    dependency = self.borrow_input(identity, spec, half_size=half_size, is_cancelled=is_cancelled, priority=priority)
 
         def load(cancelled):
             from ..core.photo_engine import load_render_source
             self._check(cancelled)
             if max_side is None:
                 with self.compute.borrow(cancelled, priority) as compute:
-                    if self._engine is None:
+                    if dependency is not None:
+                        from ..core.source_input import render_input
+                        try:
+                            source = render_input(dependency.value, identity.path, half_size=half_size,
+                                threads=compute.threads, cancelled=cancelled)
+                        except ValueError:
+                            if dependency.value.blocks is None:
+                                raise
+                            dependency.reject()
+                            source = (load_render_source(identity.path, for_preview=half_size, threads=compute.threads)
+                                if self._engine is None else self._engine.load_engine_source(identity.path,
+                                    for_preview=half_size, threads=compute.threads))
+                    elif self._engine is None:
                         source = load_render_source(identity.path, for_preview=half_size,
                                                     threads=compute.threads)
                     else:
@@ -163,8 +431,10 @@ class ImageSourceService:
                 self._check(cancelled)
                 if source is None:
                     from ..core.tools.effects import resize_source
-                    with self.borrow_linear(identity.path, identity=identity, is_cancelled=cancelled,
+                    root_cancelled = lambda: cancelled() and (source_cancelled is None or source_cancelled())
+                    with self.borrow_linear(identity.path, identity=identity, is_cancelled=root_cancelled,
                                             priority=priority, half_size=half_size) as original:
+                        self._check(cancelled)
                         full = original.value
                         height, width = full.pixels.shape[:2]
                         ratio = min(1, max_side / max(width, height))
@@ -202,12 +472,16 @@ class ImageSourceService:
             if max_side is not None:
                 return max_side ** 2 * 16 + 65536 if disk_available else 0
             width, height = self.dimensions(identity.path)
-            return width * height * (24 if half_size else 64)
+            return max(width * height * (24 if half_size else 64) - (dependency.value.nbytes if dependency is not None else 0),
+                width * height * 16)
         try:
             lease = self.resources.acquire(key, "source" if max_side is None else "proxy",
                                            estimate, load, self._source_bytes, is_cancelled)
         except _ProxyCacheMiss:
             lease = self.resources.acquire(key, "proxy", estimate, load, self._source_bytes, is_cancelled)
+        finally:
+            if dependency is not None:
+                dependency.close()
         try:
             self._check(is_cancelled)
             if not self.matches_file(identity):
@@ -220,7 +494,7 @@ class ImageSourceService:
 
     @staticmethod
     def _linear_key(identity, max_side, half_size):
-        key = (identity, "linear-f32-straight-alpha-v1", max_side, "lanczos-premultiplied-v1")
+        key = (identity, "linear-f32-integer-source-v2", max_side, "lanczos-premultiplied-v1")
         return key + ("raw-half-v1",) if half_size else key
 
     def borrow_cached_linear(self, identity):
@@ -638,12 +912,16 @@ class ImageSourceService:
         )
 
     def load(self, path: str, max_side: Optional[int] = None, *, proxy_only=False,
-             identity=None, half_size=False, is_cancelled=lambda: False) -> SourceBundle:
+             identity=None, half_size=False, metadata_only=False, is_cancelled=lambda: False) -> SourceBundle:
         if max_side is not None and (
             not isinstance(max_side, int) or isinstance(max_side, bool) or max_side < 1
         ):
             raise ValueError("max_side must be a positive integer")
         identity = identity or self.identity(path, is_cancelled=is_cancelled)
+        if metadata_only:
+            source = self.describe(identity, is_cancelled=is_cancelled)
+            metadata = SourceMetadata(source.orig_size, source.source_format, source.color_pipeline)
+            return SourceBundle(identity, None, None, metadata, source.orig_size)
         if proxy_only:
             lease = self.borrow_panel_snapshot(identity, half_size=half_size, is_cancelled=is_cancelled)
             try:

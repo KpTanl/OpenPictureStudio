@@ -13,6 +13,8 @@ from PIL import Image
 from PIL import ImageEnhance, ImageFilter
 
 from .contracts.result import CoreOperationError, CoreResult, ErrorCode
+from .execution_memo import memo, cancelled
+from concurrent.futures import CancelledError
 from ..utils.model_paths import get_project_model_root
 
 logger = logging.getLogger(__name__)
@@ -59,10 +61,10 @@ BASIC_DENOISE_VERSION = 3
 
 def is_onnxruntime_available() -> bool:
     try:
-        import onnxruntime  # noqa: F401
+        import onnxruntime
     except ImportError:
         return False
-    return True
+    return onnxruntime is not None
 
 
 def is_numpy_available() -> bool:
@@ -215,9 +217,12 @@ class ImageDenoiser:
         cr = ycrcb[:, :, 1]
         cb = ycrcb[:, :, 2]
 
-        y_d = self._denoise_channel(y, method, _clamp(luma_strength, 0, 100), is_luma=True)
-        cr_d = self._denoise_channel(cr, method, _clamp(chroma_strength, 0, 100), is_luma=False)
-        cb_d = self._denoise_channel(cb, method, _clamp(chroma_strength, 0, 100), is_luma=False)
+        def filtered(channel, index, strength):
+            return memo("denoise.channel", (2, method, index, strength),
+                lambda: self._denoise_channel(channel, method, strength, is_luma=index == 0), image=True)
+        y_d = filtered(y, 0, _clamp(luma_strength, 0, 100))
+        cr_d = filtered(cr, 1, _clamp(chroma_strength, 0, 100))
+        cb_d = filtered(cb, 2, _clamp(chroma_strength, 0, 100))
 
         merged = cv2.merge((y_d, cr_d, cb_d))
         result = cv2.cvtColor(merged, cv2.COLOR_YCrCb2RGB)
@@ -243,7 +248,8 @@ class ImageDenoiser:
         for index, strength in enumerate((luma_strength, chroma_strength, chroma_strength)):
             if strength:
                 channel = np.ascontiguousarray(ycrcb[:, :, index])
-                ycrcb[:, :, index] = self._denoise_channel_v3(channel, method, strength, index == 0)
+                ycrcb[:, :, index] = memo("denoise.channel", (3, method, index, strength),
+                    lambda: self._denoise_channel_v3(channel, method, strength, index == 0), image=True)
         result = cv2.cvtColor(ycrcb, cv2.COLOR_YCrCb2RGB)
         np.multiply(result, np.float32(255.0), out=result)
         np.rint(result, out=result)
@@ -296,12 +302,12 @@ class ImageDenoiser:
         original_rgb = np.array(image.convert("RGB"), dtype=np.uint8)
         image_fp32 = original_rgb.astype(np.float32) / 255.0
 
-        denoised = self._run_tiled(
+        denoised = memo("denoise.model", (str(path_obj.resolve()), tile_size, tile_overlap), lambda: self._run_tiled(
             image_fp32,
             tile_size=tile_size,
             tile_overlap=tile_overlap,
             progress_callback=progress_callback,
-        )
+        ), image=True)
 
         denoised_rgb = np.clip(np.round(denoised * 255.0), 0, 255).astype(np.uint8)
         blended = self._blend_luma_chroma(
@@ -451,6 +457,8 @@ class ImageDenoiser:
 
         for y0 in y_positions:
             for x0 in x_positions:
+                if cancelled(lambda: False):
+                    raise CancelledError()
                 y1 = min(y0 + run_tile_size, img_h)
                 x1 = min(x0 + run_tile_size, img_w)
 

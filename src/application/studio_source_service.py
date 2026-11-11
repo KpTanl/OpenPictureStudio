@@ -6,9 +6,8 @@ from dataclasses import dataclass, field
 from threading import Event
 from concurrent.futures import CancelledError
 
-from PIL import Image
-
 from ..core.contracts import WorkflowGraph
+from ..core.contracts.image_display import PreviewDisplaySpec
 from .result_types import CoreResult, ErrorCode
 from ..core.contracts.result import memory_error_key
 from .image_source_service import path_key
@@ -27,6 +26,7 @@ class StudioLoadRequest:
     cancellation: Event = field(default_factory=Event, compare=False)
     initial_workflow: WorkflowGraph = field(default_factory=WorkflowGraph)
     preview_workflow: WorkflowGraph | None = None
+    max_dimension: int | None = 1600
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,7 @@ class StudioPreviewTarget:
     path: str
     workflow: WorkflowGraph
     preview_key: PreviewKey | None = None
+    max_dimension: int | None = 1600
 
 
 class StudioLoadQueue:
@@ -45,18 +46,20 @@ class StudioLoadQueue:
         self.generation = 0
 
     def submit(self, path, session_id=None, *, preview_key=None, prefetch=False,
-               initial_workflow=None, preview_workflow=None):
+               initial_workflow=None, preview_workflow=None, max_dimension=1600):
         path = os.path.normpath(path)
         initial_workflow = initial_workflow if initial_workflow is not None else WorkflowGraph()
         if (self.active is not None and not self.active.cancellation.is_set()
                 and self.active.path == path and self.active.session_id == session_id
                 and self.active.preview_key == preview_key and self.active.prefetch == prefetch
+                and self.active.max_dimension == max_dimension
                 and self.active.initial_workflow == initial_workflow
                 and self.active.preview_workflow == preview_workflow):
             return None
         self.cancel()
         request = StudioLoadRequest(self.generation, path, session_id, preview_key, prefetch,
-                                    initial_workflow=initial_workflow, preview_workflow=preview_workflow)
+                                    initial_workflow=initial_workflow, preview_workflow=preview_workflow,
+                                    max_dimension=max_dimension)
         if self.active is not None:
             self.pending = request
             return None
@@ -82,18 +85,10 @@ class StudioLoadQueue:
 class PreparedStudioSource:
     core: object
     project: object
-    image: Image.Image | None = None
     owns_session: bool = False
     file_stamp: tuple[int, int] | None = None
-    proxy_lease: object = None
 
     def close(self):
-        if self.proxy_lease is not None:
-            self.proxy_lease.close()
-            self.proxy_lease = None
-        if self.image is not None:
-            self.image.close()
-            self.image = None
         if self.owns_session:
             self.core.close_session(self.project.session_id)
             self.owns_session = False
@@ -104,45 +99,62 @@ class StudioSourceService:
         self.core = core
 
     def prepare_preview(self, request, cache):
+        from ..core.contracts.gpu import cpu_recovery
         cancelled = request.cancellation.is_set
         try:
+            if not self.core.tools.cacheable_workflow(request.initial_workflow):
+                return CoreResult.ok()
             if cancelled():
                 return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
             snapshot = self.core.tools.snapshot(is_cancelled=cancelled)
-            key = PreviewKey.capture(request.path, preview_variant(request.initial_workflow, snapshot.generation))
+            spec = PreviewDisplaySpec(request.max_dimension)
+            backend = self.core.tools.preview_backend(request.path, request.initial_workflow, spec)
+            key = (request.preview_key if cpu_recovery.get() is None else None) or PreviewKey.capture(request.path,
+                preview_variant(request.initial_workflow, snapshot.generation, spec, backend), backend)
+            if not key.variant.startswith(preview_variant(request.initial_workflow, snapshot.generation, spec, backend)):
+                return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
             sources = self.core.image_sources
             if cache.contains(key):
-                with sources.borrow_linear(request.path, max_side=1600, is_cancelled=cancelled,
-                                           priority=2, preloading=True):
-                    pass
                 logger.debug("OPS prefetch cache hit: request=%s image=%s",
                              request.request_id, os.path.basename(request.path))
                 return CoreResult.ok()
             logger.debug("OPS prefetch decoding: request=%s image=%s",
                          request.request_id, os.path.basename(request.path))
             minimum_threads = snapshot.required_threads(request.initial_workflow)
-            with sources.borrow_linear(request.path, max_side=1600, is_cancelled=cancelled,
-                                       priority=2, preloading=True) as lease:
+            identity = sources.identity(request.path, is_cancelled=cancelled)
+            metadata = sources.describe(identity, is_cancelled=cancelled)
+            limit = (snapshot.executor.preview_input_limit(metadata.orig_size, request.initial_workflow, spec)
+                     if self.core.tools.supports_proxy(request.initial_workflow, canonical_inputs=True) else None)
+            half_size = (not self.core.tools.uses_prepared_inputs(request.initial_workflow)
+                         and sources.preview_half_size(identity, limit, is_cancelled=cancelled))
+            with sources.borrow_deferred(request.path, identity=identity, max_side=limit, is_cancelled=cancelled,
+                                       priority=2, preloading=True, half_size=half_size) as lease:
                 reference_size = lease.value.orig_size
-                source_bytes = lease.value.pixels.nbytes + (lease.value.alpha.nbytes if lease.value.alpha is not None else 0)
-                with sources.resources.working_memory(source_bytes * 4, cancelled), \
-                        sources.compute.borrow(cancelled, priority=2, minimum_threads=minimum_threads):
-                    rendered = snapshot.executor.execute(lease.value, request.initial_workflow, is_cancelled=cancelled)
-                    if not rendered.success:
-                        return rendered
-                    from ..core.photo_engine import _pil_from
-                    image = _pil_from(rendered.data)
-            try:
-                if cancelled() or snapshot.is_cancelled() or not key.matches_file():
-                    return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
-                rgba = image.convert("RGBA")
-                try:
-                    cache.put(key, PreviewFrame(rgba.tobytes(), rgba.size, reference_size),
-                              is_cancelled=lambda: cancelled() or snapshot.is_cancelled() or not key.matches_file())
-                finally:
-                    rgba.close()
-            finally:
-                image.close()
+                from ..core.contracts.gpu import display_request
+                with sources.compute.request_context(cancelled, priority=2, minimum_threads=minimum_threads), display_request(spec):
+                    executed = self.core.tools.execute_preview(snapshot, lease.value, request.initial_workflow,
+                        is_cancelled=cancelled, resources=sources.resources, describe=True,
+                        full_source=lambda abort: sources.borrow_deferred(request.path, identity=identity,
+                                                                        is_cancelled=abort, priority=2))
+                    if not executed.success:
+                        return executed
+                    rendered = executed.data.source
+                    source_size, source_is_proxy = executed.data.input_size, executed.data.input_is_proxy
+                    from ..core.photo_engine import display_rgba8
+                    from ..core.image_patches import display_stage_scope
+                    with self.core.tools.execution.output_operation(rendered, "prefetch.display", cancelled,
+                            threads=sources.policy.operator_threads, memory_bytes=rendered.pixels.nbytes), display_stage_scope(
+                                self.core.tools.execution.results if self.core.tools.execution.memo_enabled else None):
+                        rgba = display_rgba8(rendered, max_dimension=request.max_dimension,
+                            parallelism=sources.policy.operator_threads, cancelled=cancelled)
+            if cancelled() or snapshot.is_cancelled() or not key.matches_file():
+                return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
+            full_size = rendered.orig_size if source_is_proxy else (
+                rendered.pixels.shape[1], rendered.pixels.shape[0])
+            cache.put(key, PreviewFrame(memoryview(rgba).cast("B"), tuple(reversed(rgba.shape[:2])), reference_size,
+                                       full_size, rendered.effect_status, source_size, source_is_proxy, spec, rendered.backend_identity),
+                      is_cancelled=lambda: cancelled() or snapshot.is_cancelled() or not key.matches_file())
+            sources.publish_source_cache(identity, is_cancelled=cancelled, preloading=True)
             return CoreResult.ok()
         except CancelledError:
             return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
@@ -150,6 +162,12 @@ class StudioSourceService:
             return CoreResult.from_exception(error, code=ErrorCode.DECODE_FAILED,
                                              message_key=memory_error_key(error))
         except Exception as error:
+            from ..core.contracts.gpu import GpuExecutionError, cpu_recovery, recover_cpu
+            if isinstance(error, GpuExecutionError) and cpu_recovery.get() is None and not cancelled():
+                rendered = executed = None
+                error.__traceback__ = error.__cause__ = error.__context__ = None
+                with recover_cpu(error.code):
+                    return self.prepare_preview(request, cache)
             return CoreResult.from_exception(error, code=ErrorCode.DECODE_FAILED,
                                              message_key="studio.prefetch_failed")
 
@@ -204,24 +222,6 @@ class StudioSourceService:
                 project = created.data
             if cancelled():
                 return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
-            workflow = request.preview_workflow if request.preview_workflow is not None else project.draft_workflow
-            preview = self.core.preview(project.session_id, workflow,
-                                        update_draft=False, max_dimension=1600, is_cancelled=cancelled)
-            if not preview.success:
-                return preview
-            prepared.image = preview.data.image
-            from .image_source_service import SourceMetadata
-            identity = self.core.source_identity(project.session_id)
-            contract = project.active_source
-            spec = self.core.source_preview(project.session_id)
-            with self.core.image_sources.borrow_panel_snapshot(identity,
-                    image=prepared.image if not workflow.nodes else None,
-                    half_size=spec.half_size,
-                    metadata=SourceMetadata((contract.width, contract.height), contract.source_format,
-                                            contract.color_pipeline), is_cancelled=cancelled):
-                pass
-            if cancelled():
-                return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
             current = self.core.get_session(project.session_id)
             if not current.success or current.data.state_version != project.state_version:
                 return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
@@ -229,8 +229,8 @@ class StudioSourceService:
             if (before.st_mtime_ns, before.st_size) != (after.st_mtime_ns, after.st_size):
                 return CoreResult.fail(ErrorCode.SOURCE_CHANGED, "error.source.changed")
             prepared.file_stamp = (after.st_mtime_ns, after.st_size)
-            prepared.proxy_lease = self.core.image_sources.borrow_linear(request.path,
-                identity=identity, max_side=1600, half_size=spec.half_size, is_cancelled=cancelled)
+            if request.session_id is not None:
+                self.core.image_sources.record_source_open(identity)
             transferred = True
             return CoreResult.ok(prepared)
         except CancelledError:

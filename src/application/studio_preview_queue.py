@@ -20,6 +20,7 @@ class StudioPreviewContext:
     geometry_generation: int = 0
     interaction_id: str | None = None
     preview_mode: str = "auto"
+    max_dimension: int | None = 1600
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,7 @@ class StudioPreviewRequest:
     sampling_request: MixerSamplingRequest | None = None
     keep_full_display: bool = False
     temporary_workflow: object = None
+    source_cancellation: Event = field(default_factory=Event, compare=False)
 
     def is_cancelled(self):
         return self.cancellation.is_set() or self.context_cancellation.is_set()
@@ -46,13 +48,17 @@ class StudioPreviewQueue:
         self.pending = None
         self.latest = None
         self._context_cancellation = Event()
+        self._source_cancellation = Event()
 
     def submit(self, request):
         if self.latest is not None and request.context != self.latest.context:
-            self.cancel()
+            previous, current = self.latest.context, request.context
+            self.cancel(preserve_source=(previous.session_id, previous.source_identity, previous.source_preview)
+                == (current.session_id, current.source_identity, current.source_preview))
         if self.pending is not None:
             self.pending.cancellation.set()
-        request = replace(request, context_cancellation=self._context_cancellation)
+        request = replace(request, context_cancellation=self._context_cancellation,
+                          source_cancellation=self._source_cancellation)
         self.pending = self.latest = request
         return request
 
@@ -67,13 +73,15 @@ class StudioPreviewQueue:
             self.active = None
 
     def accepts(self, request):
-        return (self.latest is not None and request.context == self.latest.context
-                and not request.is_cancelled())
+        return self.latest is not None and request is self.latest and not request.is_cancelled()
 
-    def cancel(self):
+    def cancel(self, *, preserve_source=False):
         for request in (self.active, self.pending, self.latest):
             if request is not None:
                 request.cancellation.set()
         self._context_cancellation.set()
         self._context_cancellation = Event()
+        if not preserve_source:
+            self._source_cancellation.set()
+            self._source_cancellation = Event()
         self.pending = self.latest = None

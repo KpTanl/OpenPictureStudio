@@ -28,17 +28,20 @@ class ProjectDocument:
     redo_targets: dict[str, str] = field(default_factory=dict)
     document_id: str = ""
     assets: dict[str, dict] = field(default_factory=dict)
+    plugins: dict[str, list] = field(default_factory=dict)
 
     def to_dict(self):
         result = asdict(self)
         if self.schema_version < 3:
             result.pop("assets")
+        if self.schema_version < 4:
+            result.pop("plugins")
         return result
 
     def validate(self):
         from ..workflow.validator import validate_structure
 
-        if type(self.schema_version) is not int or self.schema_version not in (1, 2, 3):
+        if type(self.schema_version) is not int or self.schema_version not in (1, 2, 3, 4):
             raise ValueError("不支持的项目版本")
         if not isinstance(self.source, dict) or not isinstance(self.source.get("path"), str):
             raise ValueError("源文件引用无效")
@@ -95,6 +98,12 @@ class ProjectDocument:
                 raise ValueError("工作流快照无效")
         if not validate_structure(WorkflowGraph.from_dict(self.draft)).success:
             raise ValueError("草稿工作流无效")
+        from ..contracts.image_plugins import workflow_plugin_dependencies
+        dependencies = workflow_plugin_dependencies(WorkflowGraph.from_dict(graph)
+            for graph in (*self.workflows.values(), self.draft))
+        if (not isinstance(self.plugins, dict) or self.plugins != dependencies
+                or dependencies and self.schema_version < 4):
+            raise ValueError("项目插件依赖清单无效")
         if not isinstance(self.assets, dict) or self.assets and self.schema_version < 3:
             raise ValueError("项目资产清单无效")
         for digest, asset in self.assets.items():

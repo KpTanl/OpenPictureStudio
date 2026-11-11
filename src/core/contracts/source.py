@@ -12,7 +12,18 @@ the UI and Agent only ever see this descriptor plus artifact references.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import prod
 from typing import Any
+
+
+@dataclass(frozen=True)
+class PixelSpecification:
+    shape: tuple
+    dtype: str = "float32"
+
+    @property
+    def nbytes(self):
+        return prod(self.shape) * 4
 
 
 @dataclass(frozen=True)

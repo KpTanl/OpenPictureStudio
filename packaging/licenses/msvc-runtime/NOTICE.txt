@@ -7,6 +7,9 @@ THIRD_PARTY_NOTICES.txt. They are redistributable files provided by Microsoft
 under the license terms of Microsoft Visual Studio and the Windows SDK, and are
 not covered by the licenses of this program.
 
+The native ops_accel.pyd module also statically links Microsoft ATL support
+under the applicable Microsoft Visual Studio license terms.
+
 Redistribution of these files:
 https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files
 https://learn.microsoft.com/cpp/windows/universal-crt-deployment

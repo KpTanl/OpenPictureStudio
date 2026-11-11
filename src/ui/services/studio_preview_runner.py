@@ -92,12 +92,13 @@ class SamplingDelivery:
 
 
 class StudioPreviewWorker(QRunnable):
-    def __init__(self, request, service, delivery=None):
+    def __init__(self, request, service, delivery=None, *, cache=None):
         super().__init__()
         self.request = request
         self.service = service
         self.signals = _RenderSignals()
         self.delivery = delivery
+        self.cache = cache
 
     def run(self):
         started = monotonic()
@@ -108,9 +109,17 @@ class StudioPreviewWorker(QRunnable):
             request = self.request
             options = dict(use_proxy=request.context.preview_mode != "full", editing_tool=request.context.editing_tool,
                 is_cancelled=request.is_cancelled, source_identity=request.context.source_identity,
-                source_preview=request.context.source_preview)
+                source_preview=request.context.source_preview, max_dimension=request.context.max_dimension,
+                source_is_cancelled=request.source_cancellation.is_set)
             if request.temporary_workflow is not None:
                 options["temporary_workflow"] = request.temporary_workflow
+            if (self.cache is not None and request.preview_key is not None and not request.keep_full_display
+                    and request.sampling_request is None and request.temporary_workflow is None
+                    and request.context.gesture_id is None and not request.context.source_preview.half_size
+                    and request.preview_key.matches_file()):
+                cached = self.cache.get(request.preview_key)
+                if cached is not None:
+                    options["cached_preview"] = request.preview_key, cached
             result = self.service.render_preview(request.session,
                 sampling_request=request.sampling_request, keep_full_display=request.keep_full_display,
                 allow_intermediate=request.sampling_request is None, **options)
@@ -123,7 +132,8 @@ class StudioPreviewWorker(QRunnable):
                                      result.full_size if result is not None else None,
                                      result.effect_status if result is not None else (),
                                      result.input_size if result is not None else None,
-                                     result.input_is_proxy if result is not None else None)
+                                     result.input_is_proxy if result is not None else None,
+                                     result.display_spec, result.backend_identity)
                 image = QImage(frame.rgba, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
                 if result.detail is not None:
                     try:

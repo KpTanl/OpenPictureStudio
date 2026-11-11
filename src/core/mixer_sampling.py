@@ -166,7 +166,8 @@ class MixerSampling:
             raise
 
     def capture_neutral(self, source):
-        with self.memory(source.pixels.nbytes):
+        with self.memory(source.pixels.nbytes * (3 if source.patches else 1)):
+            source = source.materialize()
             rgb = linear_to_srgb(source.pixels)
             np.clip(rgb, 0.0, 1.0, out=rgb)
             self.capture(rgb, source.alpha, "neutral")
@@ -258,12 +259,22 @@ class MixerSampling:
                 hold.close()
             raise
 
-    def beauty_detail(self, field, cancelled):
+    def beauty_detail(self, field, cancelled, *, bounds=None):
         if not self.active:
             return
-        from .beauty_v2 import remap_once
+        from .beauty_v2 import remap_once, remap_region
         with self.memory(self.field.rgb.nbytes * 8 + field.shape[1] * min(64, field.shape[0]) * 224):
-            rgb, coverage = remap_once(self.field.rgb, self.field.coverage, field, cancelled)
+            if bounds is None:
+                rgb, coverage = remap_once(self.field.rgb, self.field.coverage, field, cancelled)
+            else:
+                from .photo_engine import RenderSource
+                source = RenderSource(self.field.rgb, self.field.coverage, "srgb8", "", False,
+                                      self.field.size, "srgb-direct")
+                patch, alpha = remap_region(source, field, bounds, cancelled)
+                rgb, coverage = self.field.rgb.copy(), self.field.coverage.copy()
+                left, top, right, bottom = bounds
+                rgb[top:bottom, left:right] = patch
+                coverage[top:bottom, left:right] = alpha
             hold = self._reserve(rgb.nbytes + coverage.nbytes)
             self._replace(rgb, coverage, hold)
 

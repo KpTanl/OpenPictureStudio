@@ -137,7 +137,7 @@ class CropPanel(BaseToolPanel):
 
     def _on_geometry_changed(self) -> None:
         self._sync_size_label()
-        if self._original_image:
+        if self.source_bundle is not None:
             self._commit_params({
                 "aspect_ratio": self.overlay.aspect_ratio,
                 "crop_rect": self.overlay.norm_rect,
@@ -155,7 +155,7 @@ class CropPanel(BaseToolPanel):
 
     def _sync_size_label(self) -> None:
         self._project_result()
-        if not self._original_image:
+        if self.source_bundle is None:
             return
         w, h = self.source_size
         box = self.overlay.get_crop_box(w, h)

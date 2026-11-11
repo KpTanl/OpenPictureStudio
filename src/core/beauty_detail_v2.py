@@ -10,6 +10,7 @@ from .beauty_v2 import (CALIBRATION as LEGACY_CALIBRATION, color_delta as legacy
                        execute as execute_detail, linear_lab, lab_linear, skin_weight,
                        spot_candidates, working_area, working_memory as legacy_working_memory)
 from .photo_engine import guided_filter, linear_luma
+from .execution_memo import memo, cancelled as execution_cancelled
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,7 @@ CALIBRATION = BeautyCalibration()
 
 
 def _check(cancelled):
-    if cancelled():
+    if execution_cancelled(cancelled):
         raise CancelledError()
 
 
@@ -177,7 +178,8 @@ def color_delta(rgb, regions, params, cancelled):
     skipped = 0
     if params["spot_remove"]:
         _check(cancelled)
-        spots, spot_support, skipped = _spot_delta(rgb, y, lab, skin, regions, cancelled)
+        spots, spot_support, skipped = memo("face.spots", (),
+            lambda: _spot_delta(rgb, y, lab, skin, regions, cancelled), image=True)
         delta += spots * (params["spot_remove"] / 100)
         support = np.maximum(support, spot_support)
     return delta, support, skipped

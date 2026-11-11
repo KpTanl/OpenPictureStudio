@@ -57,6 +57,12 @@ fn quantize(table: &DisplayTable, value: f32) -> u8 {
     level as u8
 }
 
+pub fn pixel(rgb: [f32; 3], alpha: f32) -> [u8; 4] {
+    let table = table();
+    [quantize(table, rgb[0]), quantize(table, rgb[1]), quantize(table, rgb[2]),
+     (alpha.clamp(0.0, 1.0) * 255.0).round_ties_even() as u8]
+}
+
 /// 线性 RGB（HxWx3）与可选直通 Alpha（HxW）转为显示用 RGBA8（HxWx4）。
 /// 语义同 OETF → 裁剪到 [0, 1] → round(x * 255)；无 Alpha 时填 255。
 pub fn linear_to_display_rgba8(pixels: &[f32], alpha: Option<&[f32]>, width: usize, out: &mut [u8]) {

@@ -188,13 +188,13 @@ def _adapters():
                 directx12 = d3d12 is not None and d3d12.D3D12CreateDevice(
                     adapter, _FEATURE_LEVEL_11_0, ctypes.byref(device_iid), None) >= 0
                 found[identity] = GraphicsAdapter(description.Description, description.VendorId,
-                                                  description.DedicatedVideoMemory, bool(directx12))
+                    description.DedicatedVideoMemory, bool(directx12),
+                    f"{description.LuidHigh & 0xFFFFFFFF:08x}{description.LuidLow:08x}", index - 1)
             finally:
                 _method(adapter, 2)(adapter)
     finally:
         _method(factory, 2)(factory)
-    # 同一块显卡可能以不同适配器标识出现多次，按名称与显存再合并一次。
-    return tuple({(item.name, item.dedicated_bytes): item for item in found.values()}.values())
+    return tuple(found.values())
 
 
 def detect_profile():

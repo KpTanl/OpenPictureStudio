@@ -13,6 +13,7 @@ from ..photo_engine import linear_to_srgb, srgb_to_linear
 from ..contracts.inference import CPU
 from ..contracts.result import CoreOperationError, CoreResult, ErrorCode
 from ..contracts.tool_resources import ModelRequirement, RequiredResource, ResourceFeature
+from ..execution_memo import memo, cancellation_callback
 
 
 ENHANCE_RESOURCE_FEATURES = tuple(ResourceFeature(role, (ModelRequirement(
@@ -168,6 +169,16 @@ def _banded(size, final_plan):
     return top == int(top) and step == int(step) and step >= 1
 
 
+def _upscale_storage(height, upscaled, plan, final_plan, model):
+    output = plan.output_size[0] * plan.output_size[1]
+    whole = max(output, upscaled[0] * upscaled[1]) * 48
+    if not _banded(upscaled, final_plan):
+        return whole, False
+    band = min(height, model.tile - model.overlap * 2) * model.scale * upscaled[0]
+    streamed = output * 24 + band * 2 * 48
+    return (streamed, True) if streamed < whole else (whole, False)
+
+
 def _image_memory(size, params, plan, models, source_bytes):
     """图像数据占用的工作内存，规划与执行准入共用。
 
@@ -182,10 +193,8 @@ def _image_memory(size, params, plan, models, source_bytes):
         return max(width * height, output) * 48 + source_bytes * 4
     scale = model.scale
     upscaled = (width * scale, height * scale)
-    if not _banded(upscaled, _final_plan(upscaled, plan, params)):
-        return max(output, upscaled[0] * upscaled[1]) * 48 + source_bytes * 4
-    band = min(height, model.tile - model.overlap * 2) * scale * upscaled[0]
-    return output * 24 + band * 2 * 48 + source_bytes * 4
+    storage, _ = _upscale_storage(height, upscaled, plan, _final_plan(upscaled, plan, params), model)
+    return storage + source_bytes * 4
 
 
 def estimate_memory(source, params, models):
@@ -314,19 +323,22 @@ class EnhancementExecutor:
         needs_upscale = _upscales(plan)
         if not needs_upscale and not any(params[key] for key in ("luminance", "chroma", "deblur")):
             return apply_resize(source, plan, sampling=sampling)
-        rgb = linear_to_srgb(np.clip(source.pixels, 0, 1))
-        if source.alpha is not None:
-            hidden = source.alpha <= 1e-6
-            if np.any(hidden) and not np.all(hidden):
-                import cv2
-                _, labels = cv2.distanceTransformWithLabels(hidden.astype(np.uint8),
-                    cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
-                visible = rgb[~hidden]
-                rgb[hidden] = visible[labels[hidden] - 1]
-            elif np.all(hidden):
-                rgb.fill(0)
+        def prepare_rgb():
+            rgb = linear_to_srgb(np.clip(source.pixels, 0, 1))
+            if source.alpha is not None:
+                hidden = source.alpha <= 1e-6
+                if np.any(hidden) and not np.all(hidden):
+                    import cv2
+                    _, labels = cv2.distanceTransformWithLabels(hidden.astype(np.uint8),
+                        cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
+                    rgb[hidden] = rgb[~hidden][labels[hidden] - 1]
+                elif np.all(hidden):
+                    rgb.fill(0)
+            return rgb
+        rgb = memo("enhance.input", (), prepare_rgb, image=True)
         if params["luminance"] or params["chroma"]:
-            restored = self._model("denoise").run(rgb, cancelled)
+            restored = memo("enhance.denoise", (),
+                lambda: self._model("denoise").run(rgb, cancellation_callback(cancelled)), image=True)
             weights = np.array([0.299, 0.587, 0.114], dtype=np.float32)
             luma = rgb @ weights
             target_luma = restored @ weights
@@ -334,7 +346,8 @@ class EnhancementExecutor:
             rgb = np.clip(rgb + delta_y * (params["luminance"] / 100)
                           + (restored - rgb - delta_y) * (params["chroma"] / 100), 0, 1)
         if params["deblur"]:
-            restored = self._model("deblur").run(rgb, cancelled)
+            restored = memo("enhance.deblur", (params["luminance"], params["chroma"]),
+                lambda: self._model("deblur").run(rgb, cancellation_callback(cancelled)), image=True)
             rgb = rgb + (restored - rgb) * (params["deblur"] / 100)
         if not needs_upscale:
             if cancelled():
@@ -344,8 +357,10 @@ class EnhancementExecutor:
         model = self._model("super_resolution")
         size = (rgb.shape[1] * model.descriptor.scale, rgb.shape[0] * model.descriptor.scale)
         final_plan = _final_plan(size, plan, params)
-        if not _banded(size, final_plan):
-            return self._upscale_whole(source, rgb, model, final_plan, cancelled, sampling)
+        _, banded = _upscale_storage(rgb.shape[0], size, plan, final_plan, model.descriptor)
+        if not banded:
+            return self._upscale_whole(source, rgb, model, final_plan, cancelled, sampling,
+                (params["luminance"], params["chroma"], params["deblur"]))
         pixels, alpha = _upscale_banded(model, rgb, source.alpha, final_plan, cancelled)
         if sampling is not None and sampling.active:
             sampling.resize(size)
@@ -354,9 +369,10 @@ class EnhancementExecutor:
         return replace(source, pixels=pixels, alpha=alpha, orig_size=final_plan.content_size)
 
     @staticmethod
-    def _upscale_whole(source, rgb, model, final_plan, cancelled, sampling):
+    def _upscale_whole(source, rgb, model, final_plan, cancelled, sampling, dependency=()):
         """先得到完整的放大结果，再按完整域结果计算目标尺寸输出。"""
-        rgb = model.run(rgb, cancelled)
+        rgb = memo("enhance.super_resolution", dependency,
+            lambda: model.run(rgb, cancellation_callback(cancelled)), image=True)
         size = (rgb.shape[1], rgb.shape[0])
         alpha = None
         if source.alpha is not None:

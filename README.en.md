@@ -119,7 +119,7 @@ Adjust skin, eye, and face-shape settings, and zoom in to check the details.
 
 ### Download the Windows Installer
 
-1. Open the [latest release](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Under **Assets**, download `OpenPictureStudio-<version>-beta-setup.exe` and the `.exe.sha256` file with the same name.
+1. Open the [latest release](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Under **Assets**, download `OpenPictureStudio-<version>-setup.exe` and the `.exe.sha256` file with the same name.
 2. Verify the installer's SHA256, then double-click the EXE and follow the setup wizard.
 3. Start OpenPictureStudio and open a photo or folder. The installed version needs no separate Python or Rust. AI models are downloaded as needed.
 
@@ -165,9 +165,9 @@ The desktop interface uses **Python/PySide6**. Application services coordinate t
 - **Rust + Rayon**: Covers hotspots in global and local color grading, filtering, RAW matrix conversion, and display output, and coordinates multithreaded execution.
 - **AVX2 SIMD**: Seven kernel groups are wired in: color grading, color conversion, curves, local adjustments, RAW, filtering, and display. The CPU is detected automatically. If it supports AVX2 the acceleration is enabled, and otherwise portable Rust is used.
 - **Fast RAW preview**: The embedded JPEG preview is implemented for NEF and other suitable RAW formats. Full decoding and post-processing keep being optimized.
-- **GPU**: DirectML is currently used for optional AI inference. General GPU image computation is planned, and wgpu is a candidate.
+- **GPU**: Windows image computation uses wgpu/D3D12, with DirectML model inference following the same complete-chain contract. GPU execution opens after the matching tool, model, and device pass numerical and performance qualification; other requests use the CPU.
 
-The Image Engine, Workflow Engine, and Project Model carry image operations, flow orchestration, and project state respectively. The CPU backend and the planned GPU backend develop along one image-operation contract, and tool extension follows the long-term direction of Everything is Plugin. See [Architecture and Native Acceleration](open-docs/architecture.en.md) for details.
+The Image Engine, Workflow Engine, and Project Model carry image operations, flow orchestration, and project state respectively. CPU and GPU backends share image contracts; incremental reuse, proxy previews, and visible-region processing support continuous editing. Trusted image plugins join the same tool runtime through a versioned float32 interface. See [Architecture and Native Acceleration](open-docs/architecture.en.md) and [Image Plugins](open-docs/image-plugins.en.md).
 
 ## System Requirements and Performance Benchmarks
 

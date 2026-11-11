@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 from PIL import Image
 from resources.styles.theme_variables import (CANVAS_TOOLBAR_HEIGHT, CANVAS_TOOLBAR_MARGIN,
                                               SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, SPACING_MD, SPACING_SM, px)
-from PySide6.QtCore import QSize, Qt, QThreadPool, QTimer, Signal, Slot
+from PySide6.QtCore import QEvent, QSize, Qt, QThreadPool, QTimer, Signal, Slot
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..application.studio_service import STUDIO_PREVIEW_MAX_DIMENSION, StudioRenderService, comparison_workflow
+from ..application.studio_service import StudioRenderService, comparison_workflow
 from ..application.agent_service import AgentService
 from ..application.assistant_models import AssistantContext
 from ..application.audit import AuditLog
@@ -56,7 +56,7 @@ from ..core.contracts.preview import PreviewTarget
 from ..core.contracts import WorkflowGraph
 from ..application.edit_sessions import EditSessionService, EditSession, STAGE_SPECS as _STAGE_SPECS
 from ..application.edit_changes import parameter_changes, stage_changes
-from ..core.contracts.image_display import (DEFAULT_NON_RAW_DISPLAY_MODE, DEFAULT_RAW_DISPLAY_MODE,
+from ..core.contracts.image_display import (DEFAULT_NON_RAW_DISPLAY_MODE, DEFAULT_RAW_DISPLAY_MODE, PreviewDisplaySpec,
                                             NonRawDisplayMode, RawDisplayMode)
 from .adapters.studio_adapter import StudioSession
 from .edit_descriptions import changes_summary, stage_title, step_text
@@ -166,6 +166,12 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self.destroyed.connect(lambda: [frame.close() for frame in frames])
         self._syncing_canvas = False
         self._loading_preview = None
+        self._preview_layout_pending = False
+        self._layout_render_options = None
+        self._preview_layout_size = None
+        self._preview_layout_timer = QTimer(self)
+        self._preview_layout_timer.setSingleShot(True)
+        self._preview_layout_timer.timeout.connect(self._refresh_preview_layout)
         self._loading_placeholder = None
         self._image_load_generation = 0
         self._image_load_path = None
@@ -268,6 +274,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._detail_resources = DetailResources()
         self.destroyed.connect(self._detail_resources.close)
         self._detail_request = None
+        self._detail_bounds = None
         self._detail_attempted = None
         self._detail_showing = False
         self._detail_state = ("", "")
@@ -338,6 +345,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self.viewer.setObjectName("studioViewer")
         self.viewer.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.scroll_area.setWidget(self.viewer)
+        self.scroll_area.viewport().installEventFilter(self)
+        for scrollbar in (self.scroll_area.horizontalScrollBar(), self.scroll_area.verticalScrollBar()):
+            scrollbar.valueChanged.connect(lambda _: QTimer.singleShot(0, self, self._refresh_detail))
 
         # 画布 + 胶片条放入垂直分割器，可上下拖拽调整（与看图模式一致）
         self.canvas_splitter = QSplitter(Qt.Orientation.Vertical, center_container)
@@ -628,6 +638,22 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         return self.edit_sessions.initial_workflow(path, raw_display_mode=self._raw_display_mode,
                                                    non_raw_display_mode=self._non_raw_display_mode)
 
+    def preview_max_dimension(self, workflow=None, *, path=None):
+        if self._canvas_preview_mode == "full":
+            return None
+        if self._canvas_preview_mode == "preview1600":
+            return 1600
+        viewport = self.scroll_area.viewport()
+        width, height = viewport.width() * viewport.devicePixelRatioF(), viewport.height() * viewport.devicePixelRatioF()
+        session = self.session if path is None else self.edit_sessions.get(path)
+        if session is not None and session.source_size is not None:
+            workflow = self.preview_workflow(path or self._current_path) if workflow is None else workflow
+            size = self.core.tools.preview_output_size(workflow, session.source_size)
+            if size is not None:
+                scale = min(1, width / size[0], height / size[1])
+                return max(1, round(max(size) * scale))
+        return max(1, round(max(width, height)))
+
     def preview_key(self, path: str, workflow=None, *, preview_target=None):
         if self._canvas_preview_mode == "full":
             return None
@@ -635,7 +661,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         if workflow is None:
             workflow = self.preview_workflow(path)
         try:
-            variant = preview_variant(workflow, self.core.tools.generation)
+            spec = PreviewDisplaySpec(self.preview_max_dimension(workflow, path=path))
+            backend = self.core.tools.preview_backend(path, workflow, spec)
+            variant = preview_variant(workflow, self.core.tools.generation, spec, backend)
             variant += ":canvas-" + self._canvas_preview_mode
             if preview_target is not None and preview_target.mode != "full":
                 variant += ":" + preview_target.mode + ":" + preview_target.node_id
@@ -643,7 +671,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                 variant += ":raw-half-v1"
             if session is not None and session.read_only:
                 variant += ":" + session.history_revision
-            return PreviewKey.capture(path, variant)
+            return PreviewKey.capture(path, variant, backend)
         except OSError:
             return None
 
@@ -707,6 +735,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._original_error = None
         self._render_generation += 1
         self._image_loading = bool(path)
+        self._preview_layout_pending = bool(path)
+        self._layout_render_options = None
+        self._preview_layout_size = None
         self.assistant_panel.invalidate(clear=path is not None and os.path.normpath(path) != self._current_path)
         for panel in self._tool_panels.values():
             panel.cleanup()
@@ -762,8 +793,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             ))
         return self._tr("studio.load_failed", "OPS initialization failed")
 
-    def load_prepared_session(self, path: str, source, project, *,
-                              qimage=None, preview_key=None) -> None:
+    def load_prepared_session(self, path: str, source, project, *, qimage=None, preview_key=None) -> None:
         if preview_key != self.preview_key(path):
             self._loading_preview = None
         normalized = os.path.normpath(path)
@@ -771,8 +801,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         if cached is not None:
             if cached.core_id != project.session_id:
                 raise ValueError("OPS session changed during loading")
-            self.load_image_path(normalized, prepared_qimage=qimage)
-            return
         self.load_image_path(
             path, prepared_source=source, prepared_project=project,
             prepared_qimage=qimage,
@@ -799,21 +827,20 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             source_service = StudioSourceService(self.core)
             request = StudioLoadRequest(self._render_generation, path, self.cached_session_id(path),
                                          initial_workflow=self.initial_workflow(path),
-                                         preview_workflow=self.preview_workflow(path))
+                                         preview_workflow=self.preview_workflow(path),
+                                         max_dimension=self.preview_max_dimension())
             self.prepare_image_load(path)
-            from .services.studio_source_runner import source_qimage
             def prepare(cancellation):
                 result = source_service.prepare(request, is_cancelled=cancellation.is_cancelled)
                 if not result.success:
                     return result, None
                 try:
-                    image = source_qimage(result.data.image)
                     checked = source_service.validate_prepared(result.data)
                     if not checked.success or cancellation.is_cancelled():
                         result.data.close()
                         return (checked if not checked.success else
                                 CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")), None
-                    return result, image
+                    return result, None
                 except BaseException:
                     result.data.close()
                     raise
@@ -826,8 +853,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                 self.load_prepared_session(path, prepared.project.active_source, prepared.project,
                                            qimage=image)
                 if self.session is not None and self.session.core_id == prepared.project.session_id:
-                    self.hold_preview_source(prepared.proxy_lease)
-                    prepared.proxy_lease = None
                     prepared.owns_session = False
             finally:
                 prepared.close()
@@ -843,6 +868,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                 panel.cleanup()
         self.assistant_panel.invalidate(clear=path != self._current_path or force)
         self.stop_preview()
+        self._preview_layout_pending = bool(path)
+        self._layout_render_options = None
+        self._preview_layout_size = None
         self._detail_resources.release_source()
         self._render_generation += 1
         self._comparing = False
@@ -895,7 +923,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             self.assistant_panel.refresh()
             return
 
-        if prepared_qimage is not None:
+        if prepared_qimage is not None or self._loading_preview is not None:
             image = self._loading_preview if self._loading_preview is not None else prepared_qimage
             self._show_loading_image(image, QSize(*self.session.source_size), preserve_zoom=preserve_view)
             self._last_rendered_qimage = image
@@ -919,6 +947,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._apply_sidebar_widths()
+        self._preview_layout_timer.start(0)
         QTimer.singleShot(0, self, self._refresh_detail)
         if self.viewer.is_fit_mode() and self.viewer._pixmap:
             QTimer.singleShot(0, self, self._refit_canvas)
@@ -935,6 +964,32 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._apply_sidebar_widths()
         if self.viewer.is_fit_mode() and self.viewer._pixmap:
             self.viewer.zoom_fit()
+        self._preview_layout_timer.start(0)
+
+    def eventFilter(self, watched, event):
+        if (watched is self.scroll_area.viewport()
+                and event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.DevicePixelRatioChange)):
+            self._preview_layout_timer.start(0)
+        return super().eventFilter(watched, event)
+
+    def _refresh_preview_layout(self):
+        if self.session is None or self._image_loading or not self.isVisible():
+            return
+        viewport = self.scroll_area.viewport()
+        size = viewport.width(), viewport.height(), viewport.devicePixelRatioF()
+        if min(size[:2]) <= 1:
+            return
+        if size != self._preview_layout_size:
+            self._preview_layout_size = size
+            self._preview_layout_timer.start(0)
+            return
+        initial = self._preview_layout_pending
+        self._preview_layout_pending = False
+        options, self._layout_render_options = self._layout_render_options or {}, None
+        latest = self._preview_queue.latest
+        if initial or (self._canvas_preview_mode == "auto" and latest is not None
+                       and latest.context.max_dimension != self.preview_max_dimension(latest.session.workflow)):
+            self._schedule_pipeline_render(**options)
 
     # ------------------------------------------------------------------
     # 工具切换与面板管理
@@ -1673,6 +1728,11 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         for panel in self._tool_panels.values():
             panel.on_memory_budget_changed()
 
+    def refresh_compute_backend(self):
+        self.stop_preview()
+        if self.session is not None and not self._image_loading:
+            self._schedule_pipeline_render()
+
     def refresh_tool_availability(self):
         if self._output_context is not None:
             self.cancel_output()
@@ -1776,13 +1836,18 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                                   sampling_request=None) -> None:
         if self._image_loading or self.session is None:
             return
+        if self._preview_layout_pending:
+            self._layout_render_options = dict(input_started=input_started, edit_group=edit_group,
+                synchronized_state=synchronized_state, sampling_request=sampling_request)
+            self._preview_layout_timer.start(0)
+            return
         target = PreviewTarget.after_node(self._mask_node_id()) if self._mask_panel() is not None else PreviewTarget()
         session_changed = self._preview_target_session != self.session.core_id
         if session_changed or target != self._preview_target:
             if not session_changed and self._preview_target_session is not None:
                 self._stage_views[self._preview_target_session, self._preview_target] = self.viewer.view_state()
             self._cancel_mask_gesture(resume=False)
-            self._preview_queue.cancel()
+            self._preview_queue.cancel(preserve_source=not session_changed)
             self._preview_target = target
             self._pending_stage_view = not session_changed or target.mode == "after_node"
             self._update_mask_context()
@@ -1825,7 +1890,8 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                                        preview_target=target,
                                        gesture_id=self._mask_gesture.identity if self._mask_gesture is not None else None,
                                        geometry_generation=self._mask_gesture.generation if self._mask_gesture is not None else 0,
-                                       preview_mode=self._canvas_preview_mode)
+                                       preview_mode=self._canvas_preview_mode,
+                                       max_dimension=self.preview_max_dimension(snapshot.workflow))
         temporary_workflow = None
         if self._color_preview_gesture is not None and sampling_request is None and self._mask_gesture is None:
             interaction, baseline = self._color_preview_gesture
@@ -1834,21 +1900,17 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                     and context == baseline.context and not snapshot.read_only):
                 temporary_workflow = baseline.session.workflow
                 context = replace(context, interaction_id=interaction)
-        if self._preview_queue.latest is not None and context != self._preview_queue.latest.context:
-            dropped = self._preview_queue.pending
-            self._preview_queue.cancel()
-            if dropped is not None:
-                self._report_manual_preview(dropped, "stopped")
+        dropped = (self._preview_queue.pending if self._preview_queue.latest is not None
+                   and context != self._preview_queue.latest.context else None)
         self._render_generation += 1
         request = StudioPreviewRequest(self._render_generation, context, snapshot,
             self.preview_key(self._current_path, snapshot.workflow, preview_target=target), self.session.source_size,
             sampling_request=sampling_request,
             temporary_workflow=temporary_workflow,
-            keep_full_display=self._canvas_preview_mode == "full" or (
-                not context.source_preview.half_size and self._view_needs_detail()
-                and temporary_workflow is None
-                and (snapshot.read_only or not self.core.tools.supports_proxy(snapshot.workflow, canonical_inputs=True))))
+            keep_full_display=self._canvas_preview_mode == "full" or not self.core.tools.cacheable_workflow(snapshot.workflow))
         request = self._preview_queue.submit(request)
+        if dropped is not None:
+            self._report_manual_preview(dropped, "stopped")
         self._canvas_failed_generation = None
         self._sync_canvas_display()
         live = {item.generation for item in (self._preview_queue.active, self._preview_queue.pending)
@@ -1907,7 +1969,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             return
         delivery = SamplingDelivery(request) if request.sampling_request is not None or request.keep_full_display else None
         self._sampling_resources.delivery = delivery
-        worker = StudioPreviewWorker(request, self._render_service, delivery)
+        worker = StudioPreviewWorker(request, self._render_service, delivery, cache=self._preview_cache)
         if delivery is None:
             worker.signals.finished.connect(self._on_pipeline_render_finished)
         else:
@@ -1917,6 +1979,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
     def _accept_preview(self, request):
         return (self.session is not None and not self._image_loading
                 and self.session.core_id == request.session.core_id
+                and self.session.state_version == request.session.state_version
                 and self._preview_queue.accepts(request)
                 and request.context.preview_target == self._preview_target
                 and (request.context.gesture_id is None or self._mask_gesture is not None
@@ -1924,10 +1987,10 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                 and self.core.source_identity(request.session.core_id) == request.context.source_identity
                 and self.core.source_preview(request.session.core_id) == request.context.source_preview
                 and self.core.tools.is_current(request.context.tool_generation)
+                and (request.context.preview_mode != "auto"
+                     or request.context.max_dimension == self.preview_max_dimension(request.session.workflow))
                 and (request.sampling_request is None or (
-                    request is self._preview_queue.latest
-                    and request.context.sampling_epoch == self._sampling_epoch
-                    and self.session.state_version == request.session.state_version
+                    request.context.sampling_epoch == self._sampling_epoch
                     and not self._comparing)))
 
     @Slot(object)
@@ -1977,12 +2040,12 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         if self._accept_preview(request):
             self._report_manual_preview(request, "failed" if error is not None else "updated")
             beauty_panel = self._tool_panels.get("beauty")
-            if request is self._preview_queue.latest and beauty_panel is not None and hasattr(beauty_panel, "set_beauty_status"):
+            if beauty_panel is not None and hasattr(beauty_panel, "set_beauty_status"):
                 status = next((item for item in frame.effect_status if item.node_id == "beauty"), None) if frame is not None else None
                 if frame is not None and status is None:
                     status = next(iter(frame.effect_status), None)
                 beauty_panel.set_beauty_status("failed" if error is not None and error.details.get("tool_id") == "beauty" else status)
-            if error is not None and request is self._preview_queue.latest:
+            if error is not None:
                 self._canvas_failed_generation = request.generation
                 self._canvas_preview_state = replace(self._canvas_preview_state, kind="failed")
                 self.canvas_preview_changed.emit(self._canvas_preview_state)
@@ -2038,11 +2101,14 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                 else:
                     self._histogram_runner.cancel()
                 if (self._preview_cache is not None and request.preview_key is not None
+                        and self.core.tools.cacheable_workflow(request.session.workflow)
                         and not request.context.source_preview.half_size and request.temporary_workflow is None
                         and self._canvas_preview_mode != "full"):
                     self._preview_cache.put(request.preview_key, frame,
                         is_cancelled=request.is_cancelled)
                 old_frames = self._canvas_full_frames[:]
+                self.core.image_sources.publish_source_cache(request.context.source_identity,
+                    is_cancelled=request.source_cancellation.is_set)
                 self._canvas_full_frames.clear()
                 if request.context.preview_mode == "full" and detail_result is not None and detail_result.detail is not None:
                     self._canvas_full_frames.append(detail_result.take_detail())
@@ -2166,7 +2232,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                             and (self.session.read_only or self._original_display is not None
                                  and self._original_display.full is not None))
             self._detail_showing = bool(detail_ready)
-            edited = self._detail_resources.image if detail_ready else base
+            detail = self._detail_resources.detail
+            regional = detail_ready and detail is not None and detail.bounds is not None
+            edited = self._detail_resources.image if detail_ready and not regional else base
             before = self._comparison_image()
             image = before if self._comparing else edited
             full_size = frame.full_size if frame is not None and frame.full_size else (
@@ -2175,13 +2243,14 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             if image is None or reference is None or self._image_loading:
                 state = CanvasPreviewState(mode=self._canvas_preview_mode)
             else:
-                size = (image.width(), image.height())
+                size = ((self._detail_resources.image.width(), self._detail_resources.image.height())
+                        if regional and not self._comparing else (image.width(), image.height()))
                 is_full = detail_ready or size == tuple(full_size or size)
                 if self._comparing:
                     is_full = self._original_display is not None and image is self._original_display.full
                     kind = "original" if is_full else "original_preview"
                 else:
-                    kind = "full" if is_full else "preview"
+                    kind = "region" if regional else "full" if is_full else "preview"
                     if current is not None and current.temporary_workflow is not None:
                         kind = "temporary"
                     if self._preview_queue.latest is not current:
@@ -2210,6 +2279,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                         return
                     self._canvas_image_key = key
                 self.viewer.set_comparison_image(companion, companion_reference)
+                self.viewer.set_region_image(self._detail_resources.image if regional and not self._comparing else None,
+                    detail.bounds if regional and not self._comparing else None,
+                    detail.full_size if regional and not self._comparing else None)
             if state != self._canvas_preview_state:
                 self._canvas_preview_state = state
                 self.canvas_preview_changed.emit(state)
@@ -2226,18 +2298,17 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         if frame is not None:
             proxy = frame.size
         else:
-            scale = min(1, STUDIO_PREVIEW_MAX_DIMENSION / max(full))
+            scale = min(1, (self.preview_max_dimension() or max(full)) / max(full))
             proxy = tuple(max(1, round(side * scale)) for side in full)
         rect = self.viewer.get_image_display_rect()
         return needs_detail((rect.width(), rect.height()), self.viewer.devicePixelRatioF(), proxy, full)
 
     def _detail_candidate(self):
         request = self._displayed_request
-        if (request is None or request is not self._preview_queue.latest
+        if (request is None
                 or request.temporary_workflow is not None
                 or self._preview_queue.active is not None or self._preview_queue.pending is not None
                 or not self.isVisible() or self._commit_busy or not self._accept_preview(request)
-                or self.session.state_version != request.session.state_version
                 or request.context.source_preview.half_size
                 or not self.core.image_sources.matches_file(request.context.source_identity)):
             return None
@@ -2257,6 +2328,8 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                    for tool, panel in self._tool_panels.items())
 
     def _invalidate_detail(self, *, release_source=False):
+        self.viewer.set_region_image(None)
+        self._detail_bounds = None
         self._detail_timer.stop()
         self._detail_runner.cancel()
         if self._detail_showing and not self._comparing and self._last_rendered_qimage is not None:
@@ -2290,10 +2363,17 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             self._sync_canvas_display()
             return
         self._request_original()
+        needs_detail = self._view_needs_detail()
+        if needs_detail and self._detail_bounds is not None:
+            visible = self.viewer.visible_image_bounds(self._displayed_frame.full_size or self.session.source_size)
+            left, top, right, bottom = self._detail_bounds
+            if visible is not None and not (left <= visible[0] and top <= visible[1]
+                                           and right >= visible[2] and bottom >= visible[3]):
+                self._invalidate_detail()
         if (self._detail_resources.source_identity is not None
                 and self._detail_resources.source_identity != request.context.source_identity):
             self._detail_resources.release_source()
-        if not self._view_needs_detail():
+        if not needs_detail:
             self._detail_timer.stop()
             self._detail_runner.cancel()
             if self._detail_showing and not self._comparing:
@@ -2345,13 +2425,20 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             return
         self._detail_request = request
         self._detail_attempted = request.generation
-        self._detail_runner.submit(request)
+        full_size = self._displayed_frame.full_size or self.session.source_size
+        bounds = None if request.session.read_only else self.viewer.visible_image_bounds(full_size)
+        if bounds is not None:
+            bounds = (max(0, bounds[0]-96), max(0, bounds[1]-96),
+                      min(full_size[0], bounds[2]+96), min(full_size[1], bounds[3]+96))
+        self._detail_bounds = bounds
+        self._detail_runner.submit(request, bounds)
         self._set_detail_state("preparing")
 
     def _adopt_detail(self, request, detail, image):
         self._detail_timer.stop()
         self._detail_request = request
         self._detail_attempted = request.generation
+        self._detail_bounds = detail.bounds
         self._detail_resources.adopt(detail, image, request.context.source_identity)
 
     def _on_detail_ready(self, request, packet):
@@ -2833,6 +2920,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         return any(session.has_unsaved_changes() for session in self.edit_sessions.sessions())
 
     def stop_preview(self) -> None:
+        self._preview_layout_timer.stop()
         self._color_preview_gesture = None
         self._canvas_image_key = None
         if self._preview_target_session is not None and self._displayed_request is not None and not self._comparing:

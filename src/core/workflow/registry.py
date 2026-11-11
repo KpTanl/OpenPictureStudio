@@ -13,6 +13,11 @@ class NodeSpec:
     accepts_context: bool = False
     required_threads: Callable | None = None
     sampling_behavior: Callable | None = None
+    execution_requirements: Callable | None = None
+    cacheable: Callable | None = None
+    output_size: Callable | None = None
+    region_input: Callable | None = None
+    execute_region: Callable | None = None
 
 class NodeRegistry:
     def __init__(self) -> None:

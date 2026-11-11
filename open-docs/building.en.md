@@ -2,6 +2,10 @@
 
 [简体中文](building.md) | [English](building.en.md) | [Français](building.fr.md)
 
+## Independent candidate builds
+
+Use `tools/build_review_candidate.py` for a workspace review candidate, passing native source and artifact manifests that match the release module. The `--native-sources` and `--native-artifacts` arguments are required. The independent `dist/candidate-<version>/` directory contains the candidate installer, source ZIP, source snapshot, dependency identities, and artifact hashes. Builds use a fixed source copy. The program's `components.json` and `SOURCE.txt` identify the included source archive. Installer names contain `candidate`. Formal builds continue to require a clean committed source candidate and manual acceptance. See [Image Plugins](image-plugins.en.md) for extension development.
+
 [Back to README](../README.en.md)
 
 ## Running from Source
@@ -26,7 +30,7 @@ pip install -r requirements-beauty.txt
 python main.py
 ```
 
-The Rust acceleration module is optional. If you want it, install the Rust toolchain, build the module, and copy the result to the repository root:
+The Rust acceleration module is optional. Building requires Rust, MSVC C++ Build Tools, and the Windows SDK. The default static DXC feature also requires the “C++ ATL for x64/x86” component. The first build downloads and verifies the pinned DXC static library. Build the module and copy the result to the repository root:
 
 ```powershell
 cd native\ops_accel
@@ -34,6 +38,8 @@ cargo build --release --locked
 copy target\release\ops_accel.dll ..\..\ops_accel.pyd
 cd ..\..
 ```
+
+If ATL build libraries are supplied separately, set the process environment variable `OPS_ATL_LIB` to the directory containing `atls.lib`. Use `cargo build --release --locked --no-default-features` for an FXC-only native module. The application does not require these build tools at runtime.
 
 ## Building
 

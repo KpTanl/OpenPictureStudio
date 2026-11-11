@@ -58,11 +58,19 @@ class AppleSpinBox(QSpinBox, ValueEditMixin):
         super().changeEvent(event)
         if event.type() == event.Type.EnabledChange:
             self._sync_buttons()
+        elif event.type() == event.Type.StyleChange:
+            self._place_children()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self._minus.setGeometry(1, 1, _BUTTON_WIDTH, self.height() - 2)
-        self._plus.setGeometry(self.width() - _BUTTON_WIDTH - 1, 1, _BUTTON_WIDTH, self.height() - 2)
+        self._place_children()
+
+    def _place_children(self) -> None:
+        # Qt 6.11.3 在样式表下把无按钮步进器的编辑区算成 1 像素宽，这里自己摆放
+        height = self.height() - 2
+        self._minus.setGeometry(1, 1, _BUTTON_WIDTH, height)
+        self._plus.setGeometry(self.width() - _BUTTON_WIDTH - 1, 1, _BUTTON_WIDTH, height)
+        self.lineEdit().setGeometry(_BUTTON_WIDTH + 1, 1, self.width() - 2 * _BUTTON_WIDTH - 2, height)
 
     def sizeHint(self) -> QSize:
         hint = super().sizeHint()

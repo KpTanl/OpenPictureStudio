@@ -19,7 +19,7 @@ import os
 import time
 import uuid
 from concurrent.futures import CancelledError
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager, nullcontext, ExitStack
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Optional
@@ -28,6 +28,9 @@ from PIL import Image
 
 from ..core.contracts import ArtifactRef, RenderSource, SourceBinding, RevisionRef, WorkflowGraph
 from ..core.contracts.artifact import LINEAR_ARTIFACT
+from ..core.contracts.image_display import PreviewDisplaySpec
+from ..core.contracts.execution import CPU_BACKEND_IDENTITY
+from ..core.contracts.gpu import GpuExecutionError, cpu_recovery, recover_cpu, display_request
 from ..core.mixer_sampling import MixerSampling, MixerSamplingRequest
 from ..core.output_formats import output_format, validate_quality
 from ..core.photo_engine import (
@@ -35,6 +38,7 @@ from ..core.photo_engine import (
     RenderSource as EngineRenderSource,
     apply_chain_v2,
     display_rgba8,
+    resize_display_rgba8,
     load_render_pil,
     load_render_source,
     render_source,
@@ -85,11 +89,12 @@ class DisplayFrame:
     """显示用 RGBA8 帧。rgba 是只读字节缓冲，长度为 宽 × 高 × 4；size 为 (宽, 高)。"""
     rgba: bytes | memoryview
     size: tuple[int, int]
+    backend_identity: tuple = CPU_BACKEND_IDENTITY
 
     @classmethod
-    def from_array(cls, rgba):
+    def from_array(cls, rgba, *, backend_identity=CPU_BACKEND_IDENTITY):
         height, width = rgba.shape[:2]
-        return cls(memoryview(rgba).cast("B"), (width, height))
+        return cls(memoryview(rgba).cast("B"), (width, height), backend_identity)
 
     @classmethod
     def from_image(cls, image: Image.Image):
@@ -98,13 +103,23 @@ class DisplayFrame:
         with image.convert("RGBA") as rgba:
             return cls(rgba.tobytes(), rgba.size)
 
+    def resized(self, spec, *, parallelism=1, cancelled=lambda: False):
+        import numpy as np
+        size = spec.size_for(*self.size)
+        if size == self.size:
+            return self
+        rgba = np.frombuffer(self.rgba, dtype=np.uint8).reshape(self.size[1], self.size[0], 4)
+        return self.from_array(resize_display_rgba8(rgba, size, parallelism=parallelism, cancelled=cancelled),
+                               backend_identity=self.backend_identity)
+
 
 class DetailDisplay:
     """完整显示帧及其两份 Qt 显示副本的预算，随接收方释放。"""
-    def __init__(self, resources, size, render, is_cancelled):
+    def __init__(self, resources, size, render, is_cancelled, *, bounds=None, full_size=None):
         self._resources = resources
         self._key = (object(), "studio-detail")
         self.source = None
+        self.bounds, self.full_size = bounds, full_size or size
         size_bytes = size[0] * size[1] * 12
         self._lease = resources.acquire(self._key, "preview", size_bytes,
             lambda cancelled: render(), lambda frame: frame.size[0] * frame.size[1] * 12, is_cancelled)
@@ -181,6 +196,8 @@ class PreviewResult:
     effect_status: tuple = ()
     input_size: tuple[int, int] | None = None
     input_is_proxy: bool | None = None
+    display_spec: PreviewDisplaySpec | None = None
+    backend_identity: tuple = CPU_BACKEND_IDENTITY
 
     def take_detail(self):
         detail, self.detail = self.detail, None
@@ -245,6 +262,18 @@ class ImageEngineAdapter:
     ) -> EngineRenderSource:
         return load_render_source(path, for_preview=for_preview, threads=threads)
 
+    def describe_engine_source(self, path):
+        from ..core.photo_engine import describe_render_source
+        return describe_render_source(path)
+
+    def load_engine_input(self, path, spec, *, half_size=False, cancelled=lambda: False):
+        from ..core.source_input import load_input
+        return load_input(path, spec, half_size=half_size, cancelled=cancelled)
+
+    def source_decode_identity(self, path):
+        from ..core.photo_engine import linear_proxy_decode_identity
+        return linear_proxy_decode_identity(path)
+
     def render_source(
         self, source: EngineRenderSource, params: dict[str, Any], *, threads=None,
         cancelled=lambda: False, sampling=None,
@@ -263,8 +292,10 @@ class ImageEngineAdapter:
     def source_to_pil(self, source: EngineRenderSource, *, parallelism=1) -> Image.Image:
         return _pil_from(source, parallelism=parallelism)
 
-    def source_to_display(self, source: EngineRenderSource, *, parallelism=1) -> DisplayFrame:
-        return DisplayFrame.from_array(display_rgba8(source, parallelism=parallelism))
+    def source_to_display(self, source: EngineRenderSource, *, parallelism=1, max_dimension=None,
+                          cancelled=lambda: False) -> DisplayFrame:
+        return DisplayFrame.from_array(display_rgba8(source, parallelism=parallelism,
+            max_dimension=max_dimension, cancelled=cancelled), backend_identity=source.backend_identity)
 
     def save_source(
         self,
@@ -417,6 +448,7 @@ class PreviewService:
     ) -> CoreResult[PreviewResult]:
         """显示预览可同时保留完整帧；缩小帧继续供交互、统计和采样使用。"""
         prepare_started = time.perf_counter()
+        resources = resources if resources is not None else self.runtime.execution.resources
         from ..core.workflow.validator import validate
         snapshot = self.runtime.snapshot()
         validation = validate(workflow, snapshot.registry)
@@ -431,10 +463,11 @@ class PreviewService:
         sampling, map_memory, image, handle, detail = None, None, None, None, None
         detail_error = None
         retained = False
+        display_resources = ExitStack()
         try:
+            display_spec = PreviewDisplaySpec(max_dimension)
+            display_resources.enter_context(display_request(PreviewDisplaySpec(None) if keep_full_display else display_spec))
             if sampling_request is not None:
-                if resources is None:
-                    return CoreResult.fail(ErrorCode.INVALID_INPUT, "error.preview.invalid")
                 sampling = MixerSampling(sampling_request,
                     reserve_memory=lambda size: resources.hold_memory(size, cancelled),
                     working_memory=lambda size: resources.working_memory(size, cancelled))
@@ -446,6 +479,12 @@ class PreviewService:
             if not executed.success:
                 return executed  # type: ignore[return-value]
             rendered = executed.data.source
+            from ..core.image_patches import display_stage_scope
+            display_resources.enter_context(display_stage_scope(
+                self.runtime.execution.results if self.runtime.execution.memo_enabled else None))
+            _, display_compute = display_resources.enter_context(self.runtime.execution.output_operation(rendered, "display", cancelled,
+                threads=parallelism, memory_bytes=rendered.pixels.shape[0] * rendered.pixels.shape[1] * 16))
+            parallelism = display_compute.threads
             if snapshot.is_cancelled() or (is_cancelled is not None and is_cancelled()):
                 return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
 
@@ -458,32 +497,22 @@ class PreviewService:
             if display and keep_full_display and (max_dimension is None or max(width, height) > max_dimension):
                 try:
                     detail = DetailDisplay(resources, (width, height),
-                        lambda: self._engine.source_to_display(rendered, parallelism=parallelism), cancelled)
+                        lambda: self._engine.source_to_display(rendered, parallelism=parallelism, cancelled=cancelled), cancelled)
                 except MemoryError as error:
                     if max_dimension is None:
                         raise
                     detail_error = CoreResult.fail(ErrorCode.DECODE_FAILED, memory_error_key(error)).error
-            if detail is not None:
-                frame = detail.frame
-                if max_dimension is not None and max(frame.size) > max_dimension:
-                    with Image.frombuffer("RGBA", frame.size, frame.rgba, "raw", "RGBA", 0, 1) as reduced:
-                        reduced.thumbnail((max_dimension, max_dimension))
-                        frame = DisplayFrame.from_image(reduced)
-                width, height = frame.size
-            elif display and (max_dimension is None or max(rendered.pixels.shape[:2]) <= max_dimension):
-                frame = self._engine.source_to_display(rendered, parallelism=parallelism)
-                width, height = frame.size
+            if detail is not None and (not rendered.patches and rendered.gpu_image is None
+                                      or detail.frame.size == display_spec.size_for(width, height)):
+                frame = detail.frame.resized(display_spec, parallelism=parallelism, cancelled=cancelled)
             else:
-                image = self._engine.source_to_pil(rendered, parallelism=parallelism)
-                width, height = image.size
-            if sampling is not None and image is not None:
-                if max_dimension is not None:
-                    image.thumbnail((max_dimension, max_dimension))
-                width, height = image.size
-                if display:
-                    frame = DisplayFrame.from_image(image)
-                    image.close()
-                    image = None
+                frame = self._engine.source_to_display(rendered, parallelism=parallelism,
+                    max_dimension=max_dimension, cancelled=cancelled)
+            width, height = frame.size
+            if not display:
+                with Image.frombuffer("RGBA", frame.size, frame.rgba, "raw", "RGBA", 0, 1) as converted:
+                    image = converted.copy() if rendered.alpha is not None else converted.convert("RGB")
+                frame = None
             handle = None
             if sampling is not None:
                 map_memory = resources.hold_memory(width * height, cancelled)
@@ -513,6 +542,8 @@ class PreviewService:
                 effect_status=rendered.effect_status,
                 input_size=executed.data.input_size,
                 input_is_proxy=executed.data.input_is_proxy,
+                display_spec=display_spec,
+                backend_identity=rendered.backend_identity,
             )
             logger.debug("OPS 渲染分段 workflow=%s input=%sx%s output=%sx%s prepare_ms=%.1f execute_ms=%.1f display_ms=%.1f",
                          result.workflow_hash[:12], engine_source.pixels.shape[1], engine_source.pixels.shape[0],
@@ -525,11 +556,24 @@ class PreviewService:
         except MemoryError as memory_error:
             return CoreResult.fail(ErrorCode.DECODE_FAILED, memory_error_key(memory_error))
         except Exception as exc:  # noqa: BLE001
+            if isinstance(exc, GpuExecutionError) and cpu_recovery.get() is None and not cancelled():
+                display_resources.close()
+                if detail is not None:
+                    detail.close()
+                    detail = None
+                rendered = executed = None
+                exc.__traceback__ = exc.__cause__ = exc.__context__ = None
+                with recover_cpu(exc.code):
+                    return self.render(engine_source, workflow, generation=generation, compute_histogram=compute_histogram,
+                        is_cancelled=is_cancelled, display=display, max_dimension=max_dimension, parallelism=parallelism,
+                        sampling_request=sampling_request, resources=resources, keep_full_display=keep_full_display,
+                        full_source=full_source, temporary_workflow=temporary_workflow)
             logger.exception("PreviewService.render failed")
             return CoreResult.from_exception(
                 exc, code=ErrorCode.DECODE_FAILED, message_key="error.preview.failed"
             )
         finally:
+            display_resources.close()
             if sampling is not None:
                 sampling.close()
             if map_memory is not None:
@@ -581,8 +625,9 @@ class CommitService:
 
         stored = None
         retained = False
+        cancelled = lambda: snapshot.is_cancelled() or bool(is_cancelled and is_cancelled())
         try:
-            executed = snapshot.executor.execute(engine_source, workflow, is_cancelled=lambda: snapshot.is_cancelled() or bool(is_cancelled and is_cancelled()))
+            executed = self.runtime.execute_output(snapshot, engine_source, workflow, is_cancelled=cancelled, boundary="commit")
             if not executed.success:
                 return executed  # type: ignore[return-value]
             rendered = executed.data
@@ -593,8 +638,10 @@ class CommitService:
             budget = self._temporary_artifacts.reserve(estimated) if self._temporary_artifacts else nullcontext()
             with budget, tempfile.TemporaryDirectory(dir=self._artifact_dir, prefix="render-") as staging:
                 path = os.path.join(staging, "render.tiff")
-                write_linear(rendered, path)
-                read_linear(path)
+                with self.runtime.execution.operation("commit.encode", cancelled,
+                        memory_bytes=rendered.pixels.nbytes * 3):
+                    write_linear(rendered, path)
+                    read_linear(path)
                 if snapshot.is_cancelled() or (is_cancelled is not None and is_cancelled()):
                     return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
                 stored = self._artifact_store.put_file(path, media_type="image/tiff",
@@ -693,6 +740,7 @@ class ExportService:
                 return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
             rendered = None
             raw_png = None
+            output_resized = False
             if artifact is not None:
                 payload = Path(artifact.path).read_bytes()
                 if hashlib.sha256(payload).hexdigest() != artifact.hash:
@@ -715,21 +763,23 @@ class ExportService:
                 checked = validate(workflow, snapshot.registry)
                 if not checked.success:
                     return checked
-                executed = snapshot.executor.execute(engine_source, workflow, is_cancelled=cancelled)
+                executed = self.runtime.execute_output(snapshot, engine_source, workflow, is_cancelled=cancelled, resize=resize)
                 if not executed.success:
                     return executed
                 rendered = executed.data
+                output_resized = True
             if cancelled():
                 return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
-            if resize is not None and (resize.width is not None or resize.height is not None) and rendered is not None:
+            if not output_resized and resize is not None and (resize.width is not None or resize.height is not None) and rendered is not None:
                 from ..core.image_resize import apply_resize, plan_resize, resize_memory
                 plan = plan_resize((rendered.pixels.shape[1], rendered.pixels.shape[0]), resize)
                 changes_size = plan.content_size != plan.source_size or plan.crop_box is not None or any(plan.padding)
                 if resources is not None and changes_size:
-                    hold = resources.working_memory(resize_memory(plan) - plan.source_size[0] * plan.source_size[1] * 48, cancelled)
+                    hold = resources.working_memory(resize_memory(plan), cancelled)
                     hold.__enter__()
                     resize_hold = hold
-                rendered = apply_resize(rendered, plan)
+                with self.runtime.execution.operation("export.resize", cancelled):
+                    rendered = apply_resize(rendered, plan)
             if raw_png is not None:
                 with Image.open(BytesIO(raw_png)) as original:
                     if original.format != "PNG":
@@ -743,7 +793,9 @@ class ExportService:
                 if preserve_alpha and has_alpha and ext in (".jpg", ".jpeg", ".bmp"):
                     return CoreResult.fail(ErrorCode.UNSUPPORTED_FORMAT, "error.export.alpha_format")
                 def encode(path):
-                    self._engine.save_source(rendered, path, ext=ext, quality=request.quality)
+                    with self.runtime.execution.operation("export.encode", cancelled,
+                            memory_bytes=rendered.pixels.nbytes * 4):
+                        self._engine.save_source(rendered, path, ext=ext, quality=request.quality)
             digest = ""
             def check_output(path):
                 nonlocal digest

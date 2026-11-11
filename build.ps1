@@ -1,5 +1,5 @@
 <#
-    build.ps1 - one-shot packaging for the OpenPictureStudio beta installer.
+    build.ps1 - one-shot packaging for the OpenPictureStudio installer.
 
     Pipeline: clean -> PyInstaller (full AI, windowed) -> third-party licenses
               -> installation manifest -> Inno Setup -> setup.exe
@@ -14,7 +14,7 @@
 
     Output:
         dist\OpenPictureStudio\                                  portable program folder
-        dist\installer\OpenPictureStudio-<ver>-beta-setup.exe    installer to hand to testers
+        dist\installer\OpenPictureStudio-<ver>-setup.exe         installer
 
     NOTE: kept ASCII-only on purpose. Windows PowerShell 5.1 decodes BOM-less
     scripts with the system ANSI codepage, so non-ASCII text here breaks parsing.
@@ -39,7 +39,7 @@ $AppInfo = Join-Path $RepoRoot "src\utils\app_info.py"
 $VersionMatch = Select-String -Path $AppInfo -Pattern 'APP_VERSION\s*=\s*"([^"]+)"'
 if (-not $VersionMatch) { throw "Could not parse APP_VERSION from $AppInfo" }
 $AppVersion = $VersionMatch.Matches[0].Groups[1].Value
-Write-Step "Building version: $AppVersion (full AI beta)"
+Write-Step "Building version: $AppVersion (full AI)"
 if ($AppVersion -notmatch '^\d{1,9}\.\d{1,9}\.\d{1,9}$') { throw "Invalid version: $AppVersion" }
 $SourceSha = & git rev-parse --verify HEAD
 if ($LASTEXITCODE -ne 0) { throw "Cannot read source commit" }
@@ -124,7 +124,8 @@ $ExePath = Join-Path $ProgramDir "OpenPictureStudio.exe"
 if (-not (Test-Path $ExePath)) { throw "Expected exe not produced: $ExePath" }
 $ProgramFiles = @(Get-ChildItem -LiteralPath $ProgramDir -Recurse -File -Force)
 $ExcludedFiles = @($ProgramFiles | Where-Object {
-    $_.Name -like "opencv_videoio_ffmpeg*.dll" -or $_.Name -in @("opengl32sw.dll", "Qt6Pdf.dll", "qpdf.dll")
+    $_.Name -like "opencv_videoio_ffmpeg*.dll" -or $_.Name -like "icudt*.dll" -or
+        $_.Name -in @("opengl32sw.dll", "Qt6Pdf.dll", "qpdf.dll", "icu.dll", "icuin.dll", "icuuc.dll")
 })
 if ($ExcludedFiles.Count -gt 0) {
     throw "Excluded native libraries found in program folder: $($ExcludedFiles.FullName -join ', ')"
@@ -149,7 +150,7 @@ Write-Step "Running Inno Setup..."
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup compile failed" }
 Assert-SourceCandidate
 
-$Setup = Join-Path $RepoRoot "dist\installer\OpenPictureStudio-$AppVersion-beta-setup.exe"
+$Setup = Join-Path $RepoRoot "dist\installer\OpenPictureStudio-$AppVersion-setup.exe"
 if (-not (Test-Path $Setup)) { throw "Installer not produced: $Setup" }
 
 $SizeMB = [math]::Round((Get-Item $Setup).Length / 1MB, 1)
@@ -159,4 +160,4 @@ Write-Step "Done"
 Write-Host "Installer: $Setup" -ForegroundColor Green
 Write-Host "Size:      $SizeMB MiB" -ForegroundColor Green
 Write-Host "SHA256:    $InstallerHash"
-Write-Host "Hand this setup.exe to your beta testers." -ForegroundColor Green
+Write-Host "Installer build complete." -ForegroundColor Green

@@ -4,13 +4,16 @@ from concurrent.futures import CancelledError
 from math import ceil, floor
 import hashlib
 import logging
+from time import monotonic
 
 import cv2
 import numpy as np
 
 from .contracts.beauty import FaceAnalysisSnapshot, FaceLandmarks
+from .contracts.execution import CPU_BACKEND_IDENTITY, current_execution
 from .face_regions import OVAL, eye_geometry
 from .photo_engine import linear_to_srgb
+from .execution_memo import memo, cancellation_callback
 
 
 DETECTION_SPEC = (1, 1600, 5, 0.5, 0.5, "area-linear-white")
@@ -40,12 +43,16 @@ def preparation_identity(source, context, reference, *, detection_spec=DETECTION
         for start in range(0, source.pixels.shape[0], 64):
             if context["is_cancelled"]():
                 raise CancelledError()
-            digest.update(np.ascontiguousarray(source.pixels[start:start + 64]).data)
-            if source.alpha is not None:
-                digest.update(np.ascontiguousarray(source.alpha[start:start + 64]).data)
+            pixels, alpha = source.read_region((0, start, source.pixels.shape[1],
+                min(start + 64, source.pixels.shape[0])), context["is_cancelled"])
+            digest.update(np.ascontiguousarray(pixels).data)
+            if alpha is not None:
+                digest.update(np.ascontiguousarray(alpha).data)
         origin = (digest.hexdigest(), source.source_format, source.color_pipeline)
-    return (origin, prefix, source.orig_size, source.colorspace,
-            source.white_point, reference, detection_spec)
+    execution = current_execution.get()
+    backend = execution.backend_identity if execution is not None else CPU_BACKEND_IDENTITY
+    return (origin, prefix, context.get("upstream_dependencies", ()), source.orig_size, source.colorspace,
+            source.white_point, reference, detection_spec, backend)
 
 
 class BeautyDetector:
@@ -75,14 +82,7 @@ class BeautyDetector:
         if cancelled():
             raise CancelledError()
         height, width = source.pixels.shape[:2]
-        scale = min(1.0, DETECTION_SPEC[1] / max(width, height))
-        size = max(1, floor(width * scale + 0.5)), max(1, floor(height * scale + 0.5))
-        # 先在线性空间合成白底，再缩小及编码；检测图不进入效果输出。
-        rgb = source.pixels
-        if source.alpha is not None:
-            rgb = rgb * source.alpha[..., None] + (1 - source.alpha[..., None])
-        small = cv2.resize(rgb, size, interpolation=cv2.INTER_AREA) if size != (width, height) else rgb
-        image = np.ascontiguousarray(np.rint(np.clip(linear_to_srgb(small), 0, 1) * 255).astype(np.uint8))
+        image, size = self._detection_input(source, (0, 0, width, height), cancelled)
         if cancelled():
             raise CancelledError()
         result = self._detector.detect(self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=image))
@@ -112,18 +112,45 @@ class BeautyDetector:
             faces[0].status if faces else "no_face")
         return FaceAnalysisSnapshot(identity, (width, height), size, tuple(faces), status)
 
-    def _detection_input(self, source, bounds):
+    def _detection_input(self, source, bounds, cancelled=lambda: False):
         """完整上游的一块区域：线性空间合成白底、面积缩小到长边不超过规格值，再编码为 sRGB 8 位。"""
         left, top, right, bottom = bounds
         width, height = right - left, bottom - top
         scale = min(1.0, self._spec[1] / max(width, height))
         size = max(1, floor(width * scale + 0.5)), max(1, floor(height * scale + 0.5))
-        rgb = source.pixels[top:bottom, left:right]
-        if source.alpha is not None:
-            alpha = source.alpha[top:bottom, left:right, None]
-            rgb = rgb * alpha + (1 - alpha)
-        small = cv2.resize(rgb, size, interpolation=cv2.INTER_AREA) if size != (width, height) else rgb
-        return np.ascontiguousarray(np.rint(np.clip(linear_to_srgb(small), 0, 1) * 255).astype(np.uint8)), size
+        def prepare():
+            abort = cancellation_callback(cancelled)
+            started = monotonic()
+            if source.gpu_image is not None:
+                image = source.gpu_image.face_input(bounds, size, abort)
+                logger.debug("人脸 GPU 预处理 bounds=%s size=%s duration_ms=%.1f",
+                             bounds, size, (monotonic()-started)*1000)
+                return image, size
+            rgb = source.pixels[top:bottom, left:right]
+            if source.alpha is not None:
+                composed = np.empty_like(rgb)
+                for row in range(0, height, 64):
+                    if abort():
+                        raise CancelledError()
+                    stop = min(height, row+64)
+                    alpha = source.alpha[top+row:top+stop, left:right, None]
+                    composed[row:stop] = rgb[row:stop] * alpha + (1-alpha)
+                rgb = composed
+            composed_at = monotonic()
+            if abort():
+                raise CancelledError()
+            small = cv2.resize(rgb, size, interpolation=cv2.INTER_AREA) if size != (width, height) else rgb
+            resized_at = monotonic()
+            image = np.empty((size[1], size[0], 3), np.uint8)
+            for row in range(0, size[1], 64):
+                if abort():
+                    raise CancelledError()
+                stop = min(size[1], row+64)
+                image[row:stop] = np.rint(np.clip(linear_to_srgb(small[row:stop]), 0, 1) * 255).astype(np.uint8)
+            logger.debug("人脸预处理 bounds=%s size=%s compose_ms=%.1f resize_ms=%.1f encode_ms=%.1f",
+                bounds, size, (composed_at-started)*1000, (resized_at-composed_at)*1000, (monotonic()-resized_at)*1000)
+            return image, size
+        return memo("face.detection_input", (self._spec, bounds), prepare, image=True)
 
     def _landmarks(self, image, cancelled):
         if cancelled():
@@ -136,7 +163,7 @@ class BeautyDetector:
     def _detect_window(self, source, bounds, cancelled):
         if cancelled():
             raise CancelledError()
-        image, size = self._detection_input(source, bounds)
+        image, size = self._detection_input(source, bounds, cancelled)
         return self._landmarks(image, cancelled), size
 
     @staticmethod
@@ -274,7 +301,7 @@ class BeautyDetector:
                                                                self._spec[13], self._spec[14])
         if cancelled():
             raise CancelledError()
-        image, size = self._detection_input(source, (0, 0, width, height))
+        image, size = self._detection_input(source, (0, 0, width, height), cancelled)
         candidates = []
         whole = self._landmarks(image, cancelled)
         calls, returned, located = 1, len(whole), 0

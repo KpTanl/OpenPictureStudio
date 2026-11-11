@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from concurrent.futures import CancelledError
 from dataclasses import dataclass
 from hashlib import sha256
 import json
@@ -14,6 +15,7 @@ import zlib
 import numpy as np
 
 from .managed_cache import ManagedCache
+from .source_disk_cache import SourceDiskCodec, SourceDiskKey, SourceCacheLease
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +58,7 @@ class LinearProxyKey:
 
 @dataclass
 class _WriteRequest:
-    key: LinearProxyKey
+    key: LinearProxyKey | SourceDiskKey
     lease: object
     subscribers: dict
     preloading: bool
@@ -73,10 +75,12 @@ class LinearProxyCache:
         self._directory = ManagedCache(directory, max_bytes=max_bytes, suffix=".opslin")
         self._condition = Condition()
         self._closed = Event()
+        self._initialized = Event()
         self._pending = OrderedDict()
         self._pending_bytes = 0
         self._active = None
         self._version = self.VERSION
+        self.sources = SourceDiskCodec(self)
         self._writer = Thread(target=self._write_loop, name="ops-linear-cache")
         self._writer.start()
 
@@ -103,7 +107,12 @@ class LinearProxyCache:
     def prepare(self, version=VERSION):
         if version != self.VERSION:
             raise ValueError("线性缓存格式版本无效")
-        self._directory.prepare(version)
+        try:
+            self._directory.prepare(version)
+        finally:
+            self._initialized.set()
+            with self._condition:
+                self._condition.notify_all()
 
     def status(self):
         return self._directory.status()
@@ -255,10 +264,11 @@ class LinearProxyCache:
         accepted = False
         try:
             generation = self.generation if generation is None else generation
-            if (not self.capacity_ready or not self.is_writer
+            initializing_source = isinstance(key, SourceDiskKey) and not self._initialized.is_set()
+            if (not initializing_source and (not self.capacity_ready or not self.is_writer)
                     or not self._directory.current(generation, is_cancelled, is_current)):
                 return False
-            size = self._source_size(lease.value, key)
+            size = 0 if isinstance(key, SourceDiskKey) else self._source_size(lease.value, key)
             if size > self.PENDING_BYTES:
                 return False
             request = _WriteRequest(key, lease, {bool(preloading): (is_current, is_cancelled)},
@@ -287,6 +297,7 @@ class LinearProxyCache:
                         self._active.subscribers = request.subscribers.copy()
                         if not request.preloading:
                             self._active.preloading = False
+                        return True
                 self._pending[key] = request
                 self._pending_bytes += size
                 accepted = True
@@ -307,17 +318,27 @@ class LinearProxyCache:
             for item in discarded:
                 item.close()
 
+    def submit_source(self, key, factory, **options):
+        if not self.sources.enabled:
+            return False
+        return self.submit(key, SourceCacheLease(factory), **options)
+
     def _write_loop(self):
         while True:
             with self._condition:
-                self._condition.wait_for(lambda: self._pending or self._closed.is_set())
+                self._condition.wait_for(lambda: self._pending and self._initialized.is_set() or self._closed.is_set())
                 if self._closed.is_set():
                     return
                 _, request = self._pending.popitem(last=False)
                 self._pending_bytes -= request.size
                 self._active = request
             try:
-                self._write(request)
+                if isinstance(request.key, SourceDiskKey):
+                    self.sources.write(request)
+                else:
+                    self._write(request)
+            except CancelledError:
+                pass
             except Exception as error:
                 logger.warning("编辑缓存写入失败：%s (%s)", request.key.digest, str(error))
             finally:
@@ -360,7 +381,7 @@ class LinearProxyCache:
 
         def validate(stream):
             _, stored_crc, expected_crc, remaining = self._read_header(stream, request.key)
-            buffer = bytearray(4096)
+            buffer = bytearray(_BLOCK)
             while remaining:
                 if not self._directory.current(request.generation, cancelled, current):
                     raise OSError("编辑缓存校验已取消")

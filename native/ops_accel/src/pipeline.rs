@@ -49,7 +49,14 @@ pub fn render_pipeline_with_mixer_input(
     width: usize,
     height: usize,
     params: &RenderParams,
-    mut mixer_input: Option<&mut [f32]>,
+    mixer_input: Option<&mut [f32]>,
+) {
+    render_pipeline_stages(input, buffer, width, height, params, mixer_input, false);
+}
+
+pub fn render_pipeline_stages(
+    input: &[f32], buffer: &mut [f32], width: usize, height: usize, params: &RenderParams,
+    mut mixer_input: Option<&mut [f32]>, prefix_only: bool,
 ) {
     let gains = white_balance_gains(params.temperature, params.tint);
     let scale = if params.process_version == 2 {
@@ -101,7 +108,7 @@ pub fn render_pipeline_with_mixer_input(
             }
             if !has_local {
                 middle(band, sample);
-                if !has_detail {
+                if !has_detail && !prefix_only {
                     finish(band);
                 }
             }
@@ -120,7 +127,7 @@ pub fn render_pipeline_with_mixer_input(
                    params.blacks, params.whites);
         let apply_middle = |band: &mut [f32], sample: Option<&mut [f32]>| {
             middle(band, sample);
-            if !has_detail {
+            if !has_detail && !prefix_only {
                 finish(band);
             }
         };
@@ -131,7 +138,7 @@ pub fn render_pipeline_with_mixer_input(
             buffer.par_chunks_mut(band_size).for_each(|band| apply_middle(band, None));
         }
     }
-    if has_detail {
+    if has_detail && !prefix_only {
         detail_effects(buffer, width, height, params.texture, params.clarity, params.dehaze);
         buffer.par_chunks_mut(band_size).for_each(finish);
     }

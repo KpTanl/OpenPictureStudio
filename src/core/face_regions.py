@@ -27,7 +27,7 @@ class FaceRegions:
     features: np.ndarray
     under_eyes: np.ndarray
     mouth: np.ndarray
-    support: np.ndarray
+    support: np.ndarray | None
     eyes: np.ndarray
     lips: np.ndarray
 
@@ -42,12 +42,12 @@ def face_bounds(points, size, margin=0.3):
     pixels = np.asarray(points, np.float32) * (width, height)
     _, distance = eye_geometry(pixels)
     pad = distance * margin
-    left, top = np.floor(pixels.min(axis=0) - pad).astype(int)
-    right, bottom = np.ceil(pixels.max(axis=0) + pad + 1).astype(int)
+    left, top = np.floor(pixels.min(axis=0) - pad).astype(int).tolist()
+    right, bottom = np.ceil(pixels.max(axis=0) + pad + 1).astype(int).tolist()
     return max(0, left), max(0, top), min(width, right), min(height, bottom)
 
 
-def face_regions(points, size):
+def face_regions(points, size, *, include_support=True):
     bounds = face_bounds(points, size)
     left, top, right, bottom = bounds
     pixels = np.asarray(points, np.float32) * size - (left, top)
@@ -91,7 +91,9 @@ def face_regions(points, size):
         cv2.ellipse(under, tuple(np.rint(center + normal * (0.13 * distance)).astype(int)),
                     (max(1, round(width * 0.5)), max(1, round(distance * 0.11))), angle, 0, 360, 1, -1)
     under = inward(under) * skin
-    support = inward(cv2.dilate(oval, cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE, (2 * max(1, round(distance * 0.20)) + 1,) * 2)))
+    support = None
+    if include_support:
+        support = inward(cv2.dilate(oval, cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (2 * max(1, round(distance * 0.20)) + 1,) * 2)))
     return FaceRegions(bounds, pixels, distance, skin, features, under, inward(mouth), support,
                        inward(np.maximum.reduce(eyes)), inward(lips))

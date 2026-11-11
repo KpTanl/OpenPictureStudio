@@ -26,6 +26,7 @@ def _channels(pixels, alpha):
 
 
 def write_linear(source, path):
+    source = source.materialize()
     validate_source(source)
     tifffile.imwrite(path, _channels(source.pixels, source.alpha), photometric="rgb",
                      extrasamples=["unassalpha"] if source.alpha is not None else None,
@@ -58,6 +59,7 @@ def read_linear(path):
 def write_tiff(source, path):
     from .photo_engine import linear_to_srgb
 
+    source = source.materialize()
     validate_source(source)
     rgb = np.rint(np.clip(linear_to_srgb(source.pixels), 0, 1) * np.float32(65535)).astype(np.uint16)
     alpha = None if source.alpha is None else np.rint(source.alpha * np.float32(65535)).astype(np.uint16)

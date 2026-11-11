@@ -1,4 +1,4 @@
-use numpy::{PyArray1, PyArray3, PyArrayMethods, PyReadonlyArray2, PyReadonlyArray3, PyUntypedArrayMethods};
+use numpy::{PyArray1, PyArray2, PyArray3, PyArrayMethods, PyReadonlyArray2, PyReadonlyArray3, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use rayon::prelude::*;
@@ -303,17 +303,31 @@ fn tone(buffer: &mut [f32], fields: &Fields, cancelled: &Cancellation) -> PyResu
     })
 }
 
-fn details(buffer: &mut [f32], fields: &Fields, cancelled: &Cancellation) -> PyResult<()> {
+struct PreparedDetails<'a> {
+    luma: &'a [f32],
+    fine: Option<&'a [f32]>,
+    mid: Option<&'a [f32]>,
+    coarse: Option<&'a [f32]>,
+}
+
+fn details(buffer: &mut [f32], fields: &Fields, cancelled: &Cancellation,
+           prepared: Option<&PreparedDetails>) -> PyResult<()> {
     if !fields.active(&[8, 9, 10]) { return Ok(()); }
-    let luma: Vec<f32> = buffer.par_chunks_exact(3).map(|p| calc_rec709_luma(p[0], p[1], p[2])).collect();
-    let size = fields.width.min(fields.height);
-    let base = |needed, radius, eps, subsample| -> PyResult<Option<Vec<f32>>> {
-        check(cancelled)?;
-        Ok(if needed { Some(self_guided(&luma, fields.width, fields.height, radius, eps, subsample, cancelled)?) } else { None })
+    let calculated;
+    let luma = if let Some(values) = prepared { values.luma } else {
+        calculated = buffer.par_chunks_exact(3).map(|p| calc_rec709_luma(p[0], p[1], p[2])).collect::<Vec<_>>();
+        &calculated
     };
-    let fine = base(fields.active(&[8, 9]), 2.max(size / 256), 0.10 * 0.10, (size as f32 / 512.).clamp(1., 4.) as usize)?;
-    let mid = base(fields.active(&[9]), 4.max(size / 24), 0.14 * 0.14, (size as f32 / 200.).clamp(2., 6.) as usize)?;
-    let coarse = base(fields.active(&[10]), 8.max(size / 8), 0.20 * 0.20, (size as f32 / 128.).clamp(4., 12.) as usize)?;
+    let size = fields.width.min(fields.height);
+    let base = |needed, cached, radius, eps, subsample| -> PyResult<Option<std::borrow::Cow<'_, [f32]>>> {
+        check(cancelled)?;
+        Ok(if needed { Some(if let Some(values) = cached { std::borrow::Cow::Borrowed(values) } else {
+            std::borrow::Cow::Owned(self_guided(luma, fields.width, fields.height, radius, eps, subsample, cancelled)?)
+        }) } else { None })
+    };
+    let fine = base(fields.active(&[8, 9]), prepared.and_then(|v| v.fine), 2.max(size / 256), 0.10 * 0.10, (size as f32 / 512.).clamp(1., 4.) as usize)?;
+    let mid = base(fields.active(&[9]), prepared.and_then(|v| v.mid), 4.max(size / 24), 0.14 * 0.14, (size as f32 / 200.).clamp(2., 6.) as usize)?;
+    let coarse = base(fields.active(&[10]), prepared.and_then(|v| v.coarse), 8.max(size / 8), 0.20 * 0.20, (size as f32 / 128.).clamp(4., 12.) as usize)?;
     let band_size = fields.width * BAND_ROWS;
     buffer.par_chunks_mut(band_size * 3).enumerate().try_for_each_init(FieldScratch::default, |scratch, (band, pixels)| -> PyResult<()> {
         check(cancelled)?;
@@ -339,21 +353,64 @@ fn number(params: &Bound<'_, PyDict>, key: &str, default: f32) -> PyResult<f32> 
 }
 
 #[pyfunction]
+#[pyo3(signature = (pixels, params, masks, reference, threads, cancelled, rasters))]
+pub fn render_local_prefix<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>, params: &Bound<'_, PyDict>,
+    masks: Vec<EncodedMask>, reference: (usize, usize), threads: usize, cancelled: Py<PyAny>,
+    rasters: Option<Vec<PyReadonlyArray2<'py, f32>>>) -> PyResult<Bound<'py, PyArray3<f32>>> {
+    Ok(render_internal(py, pixels, params, masks, reference, threads, cancelled, false, rasters, true, None)?.0)
+}
+
+#[pyfunction]
+pub fn local_detail_filter<'py>(py: Python<'py>, luma: PyReadonlyArray2<'py, f32>, radius: usize,
+    eps: f32, subsample: usize, threads: usize, cancelled: Py<PyAny>) -> PyResult<Bound<'py, PyArray2<f32>>> {
+    let (height, width) = (luma.shape()[0], luma.shape()[1]);
+    if width == 0 || height == 0 || !eps.is_finite() || eps <= 0. || subsample == 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err("invalid detail filter specification"));
+    }
+    let source = luma.as_slice()?;
+    let cancelled = Cancellation { callback: cancelled, started: Instant::now(),
+        next_poll: AtomicU64::new(0), cancelled: AtomicBool::new(false), poll_thread: OnceLock::new() };
+    let output = py.allow_threads(|| thread_pools::install(Some(threads), || {
+        let _ = cancelled.poll_thread.set(thread::current().id());
+        self_guided(source, width, height, radius, eps, subsample, &cancelled)
+    }))??;
+    PyArray1::from_vec_bound(py, output).reshape([height, width])
+}
+
+#[pyfunction]
+#[pyo3(signature = (pixels, params, masks, reference, threads, cancelled, rasters, luma, fine, mid, coarse))]
+pub fn finish_local_details<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>, params: &Bound<'_, PyDict>,
+    masks: Vec<EncodedMask>, reference: (usize, usize), threads: usize, cancelled: Py<PyAny>,
+    rasters: Option<Vec<PyReadonlyArray2<'py, f32>>>, luma: PyReadonlyArray2<'py, f32>,
+    fine: Option<PyReadonlyArray2<'py, f32>>, mid: Option<PyReadonlyArray2<'py, f32>>,
+    coarse: Option<PyReadonlyArray2<'py, f32>>) -> PyResult<Bound<'py, PyArray3<f32>>> {
+    let shape = pixels.shape();
+    if luma.shape() != &shape[..2]
+        || [&fine, &mid, &coarse].iter().any(|a| a.as_ref().is_some_and(|v| v.shape() != &shape[..2])) {
+        return Err(pyo3::exceptions::PyValueError::new_err("detail inputs must match RGB dimensions"));
+    }
+    let prepared = PreparedDetails { luma: luma.as_slice()?, fine: fine.as_ref().map(|v| v.as_slice()).transpose()?,
+        mid: mid.as_ref().map(|v| v.as_slice()).transpose()?, coarse: coarse.as_ref().map(|v| v.as_slice()).transpose()? };
+    Ok(render_internal(py, pixels, params, masks, reference, threads, cancelled, false, rasters, false, Some(prepared))?.0)
+}
+
+#[pyfunction]
 pub fn render_local_pipeline<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>, params: &Bound<'_, PyDict>,
     masks: Vec<EncodedMask>, reference: (usize, usize), threads: usize, cancelled: Py<PyAny>, capture: bool) -> PyResult<ImagePair<'py>> {
-    render_internal(py, pixels, params, masks, reference, threads, cancelled, capture, None)
+    render_internal(py, pixels, params, masks, reference, threads, cancelled, capture, None, false, None)
 }
 
 #[pyfunction]
 pub fn render_component_pipeline<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>, params: &Bound<'_, PyDict>,
     masks: Vec<EncodedMask>, reference: (usize, usize), threads: usize, cancelled: Py<PyAny>, capture: bool,
     rasters: Vec<PyReadonlyArray2<'py, f32>>) -> PyResult<ImagePair<'py>> {
-    render_internal(py, pixels, params, masks, reference, threads, cancelled, capture, Some(rasters))
+    render_internal(py, pixels, params, masks, reference, threads, cancelled, capture, Some(rasters), false, None)
 }
 
 fn render_internal<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>, params: &Bound<'_, PyDict>,
     mut masks: Vec<EncodedMask>, reference: (usize, usize), threads: usize, cancelled: Py<PyAny>, capture: bool,
-    rasters: Option<Vec<PyReadonlyArray2<'py, f32>>>) -> PyResult<ImagePair<'py>> {
+    rasters: Option<Vec<PyReadonlyArray2<'py, f32>>>, prefix_only: bool,
+    prepared: Option<PreparedDetails<'_>>) -> PyResult<ImagePair<'py>> {
     let shape = pixels.shape();
     if shape[2] != 3 || shape[0] == 0 || shape[1] == 0 || reference.0 == 0 || reference.1 == 0 {
         return Err(pyo3::exceptions::PyValueError::new_err("invalid dimensions"));
@@ -447,6 +504,12 @@ fn render_internal<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>, par
             gamut_compress_buffer(output);
             srgb_to_linear_buffer(output, eotf);
         };
+        if let Some(prepared) = &prepared {
+            buffer.copy_from_slice(input);
+            details(&mut buffer, &fields, &cancelled, Some(prepared))?;
+            buffer.par_chunks_mut(band_size * 3).for_each(finish);
+            return check(&cancelled);
+        }
         let middle = |output: &mut [f32], values: &[Vec<f32>], sample: Option<&mut [f32]>| -> PyResult<()> {
             check(&cancelled)?;
             local_contrast(output, &values[0]);
@@ -454,7 +517,7 @@ fn render_internal<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>, par
             if let Some(sample) = sample { sample.copy_from_slice(output); }
             apply_color_mixer(output, &mixer);
             local_saturation(output, &values[1], &values[2]);
-            if !has_detail { check(&cancelled)?; finish(output); }
+            if !has_detail && !prefix_only { check(&cancelled)?; finish(output); }
             Ok(())
         };
         let initialize = |scratch: &mut FieldScratch, band: usize, output: &mut [f32], sample: Option<&mut [f32]>| -> PyResult<()> {
@@ -491,8 +554,8 @@ fn render_internal<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>, par
                     .try_for_each_init(FieldScratch::default, |scratch, (band, output)| apply_middle(scratch, band, output, None))?;
             }
         }
-        if has_detail {
-            details(&mut buffer, &fields, &cancelled)?;
+        if has_detail && !prefix_only {
+            details(&mut buffer, &fields, &cancelled, None)?;
             buffer.par_chunks_mut(band_size * 3).try_for_each(|band| -> PyResult<()> {
                 check(&cancelled)?;
                 finish(band);

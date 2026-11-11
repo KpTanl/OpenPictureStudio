@@ -13,6 +13,8 @@ from ..core.tools.id_photo import (ID_PHOTO_RESOURCE_FEATURES, MANAGED_ID_PHOTO_
                                   id_photo_required_resources)
 from ..core.nodes.color_adjust_node import execute as execute_color
 from ..core.photo_engine import mask_working_memory, minimum_render_threads
+from ..core.tools.region_ops import (crop_size, crop_input, preserve, shape_size, shape_input, shape_region,
+                                    lasso_region, color_input, color_region)
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,10 @@ class ToolModule:
     collect_resources: Callable | None = None
     sampling_behavior: str = "unsupported"
     uses_sampling: bool = False
+    output_size: Callable | None = None
+    region_input: Callable | None = None
+    execute_region: Callable | None = None
+    region_memory: Callable | None = None
 
 
 MODULES = {
@@ -39,13 +45,19 @@ MODULES = {
                                minimum_threads=minimum_render_threads, uses_thread_limit=True,
                                uses_cancellation=True, working_memory=mask_working_memory,
                                tool_version="7", implementation_version="7",
-                               sampling_behavior="capture", uses_sampling=True),
+                               sampling_behavior="capture", uses_sampling=True,
+                               output_size=lambda params, size: size, region_input=color_input, execute_region=color_region),
     "crop": ToolModule(CROP_PARAMETERS, execute_crop, ImageCapabilities(alpha="transform", geometry="resize"),
-                       sampling_behavior="transport", uses_sampling=True),
+                       sampling_behavior="transport", uses_sampling=True,
+                       output_size=crop_size, region_input=crop_input, execute_region=preserve),
     "shape_crop": ToolModule(SHAPE_PARAMETERS, execute_shape, ImageCapabilities(alpha="transform", geometry="resize"),
-                             sampling_behavior="transport", uses_sampling=True),
+                             sampling_behavior="transport", uses_sampling=True,
+                             output_size=shape_size, region_input=shape_input, execute_region=shape_region,
+                             region_memory=lambda params, size: size[0]*size[1]*5),
     "lasso": ToolModule(LASSO_PARAMETERS, execute_lasso, ImageCapabilities(alpha="transform"),
-                        sampling_behavior="transport", uses_sampling=True),
+                        sampling_behavior="transport", uses_sampling=True,
+                        output_size=lambda params, size: size, region_input=lambda params, bounds, size: bounds,
+                        execute_region=lasso_region, region_memory=lambda params, size: size[0]*size[1]*10),
 }
 
 MODULE_VERSIONS = {

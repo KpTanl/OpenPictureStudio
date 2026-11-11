@@ -1,0 +1,40 @@
+{
+  "manifest_version": "2.0",
+  "runtime": "subprocess_python",
+  "plugin_id": "org.openpicturestudio.examples",
+  "version": "1.0.0",
+  "entrypoint": "plugin.py",
+  "permissions": {"network": false},
+  "declared_nodes": [
+    {
+      "node_id": "exposure",
+      "contract_version": "image/1",
+      "params_version": 1,
+      "is_deterministic": true,
+      "cache": "deterministic",
+      "supports_proxy": true,
+      "image": {"colorspace": "linear_srgb", "dtype": "float32", "alpha": "preserve", "geometry": "preserve", "intermediate_precision": "float32"},
+      "parameters": [{"name": "stops", "type": "number", "default": 0.0, "minimum": -4, "maximum": 4}]
+    },
+    {
+      "node_id": "grain",
+      "contract_version": "image/1",
+      "params_version": 1,
+      "is_deterministic": false,
+      "cache": "seeded",
+      "seed_parameter": "seed",
+      "supports_proxy": false,
+      "parameters": [{"name": "amount", "type": "number", "default": 0.01, "minimum": 0, "maximum": 0.1}, {"name": "seed", "type": "integer", "default": 1, "minimum": 0, "maximum": 4294967295}]
+    },
+    {
+      "node_id": "random_grain",
+      "contract_version": "image/1",
+      "params_version": 1,
+      "is_deterministic": false,
+      "cache": "never",
+      "supports_proxy": false,
+      "parameters": [{"name": "amount", "type": "number", "default": 0.01, "minimum": 0, "maximum": 0.1}]
+    }
+  ],
+  "resources": {}
+}

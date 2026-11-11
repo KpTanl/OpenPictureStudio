@@ -7,7 +7,23 @@ edition = "2021"
 name = "ops_accel"
 crate-type = ["cdylib"]
 
+[features]
+default = ["static-dxc"]
+gil-refs = ["pyo3/gil-refs"]
+static-dxc = ["wgpu/static-dxc"]
+
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py310"] }
 numpy = "0.22"
 rayon = "1.10"
+lz4_flex = { version = "0.14", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
+bytemuck = "1.24"
+pollster = "0.4"
+wgpu = { version = "27.0.1", default-features = false, features = ["std", "dx12", "wgsl"] }
+
+[build-dependencies]
+naga = { version = "27.0", features = ["wgsl-in"] }
+cc = "1.2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = ["Win32_Graphics_Direct3D12", "Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common", "Win32_AI_MachineLearning_DirectML", "Win32_System_Threading", "Win32_System_LibraryLoader", "Win32_Security"] }

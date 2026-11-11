@@ -19,6 +19,7 @@ class StudioPreloadSettings:
     disk_mib: int = 2048
     thumbnail_mib: int = 512
     canvas_preview_mode: str = "auto"
+    source_cache_enabled: bool = True
 
     CANVAS_MODES = ("auto", "full", "preview1600")
 
@@ -26,6 +27,8 @@ class StudioPreloadSettings:
               "memory_mib": (16, 1024), "disk_mib": (128, 32768), "thumbnail_mib": (16, 32768)}
 
     def __post_init__(self):
+        if type(self.source_cache_enabled) is not bool:
+            raise ValueError("Invalid source cache preference")
         if self.canvas_preview_mode not in self.CANVAS_MODES:
             raise ValueError("Invalid canvas preview mode")
         if self.mode not in ("off", "nearby", "all"):
@@ -42,7 +45,10 @@ class StudioPreloadSettings:
         if canvas_mode not in cls.CANVAS_MODES:
             canvas_mode = defaults.canvas_preview_mode
         try:
-            return cls(mode=str(settings.value("mode", defaults.mode)), canvas_preview_mode=canvas_mode, **{
+            source_cache = settings.value("source_cache_enabled", defaults.source_cache_enabled)
+            enabled = source_cache if type(source_cache) is bool else str(source_cache).lower() in ("true", "1")
+            return cls(mode=str(settings.value("mode", defaults.mode)), canvas_preview_mode=canvas_mode,
+                source_cache_enabled=enabled, **{
                 name: int(settings.value(name, getattr(defaults, name))) for name in cls.RANGES
             })
         except (TypeError, ValueError):
@@ -50,7 +56,7 @@ class StudioPreloadSettings:
             return defaults
 
     def save(self, settings):
-        for name in ("mode", "canvas_preview_mode", *self.RANGES):
+        for name in ("mode", "canvas_preview_mode", "source_cache_enabled", *self.RANGES):
             settings.setValue(name, getattr(self, name))
         settings.sync()
 

@@ -444,7 +444,6 @@ class PreviewService:
         resources=None,
         keep_full_display: bool = False,
         full_source=None,
-        temporary_workflow=None,
     ) -> CoreResult[PreviewResult]:
         """显示预览可同时保留完整帧；缩小帧继续供交互、统计和采样使用。"""
         prepare_started = time.perf_counter()
@@ -473,8 +472,7 @@ class PreviewService:
                     working_memory=lambda size: resources.working_memory(size, cancelled))
             execution_options = {"sampling": sampling} if sampling is not None else {}
             executed = self.runtime.execute_preview(snapshot, engine_source, workflow, is_cancelled=cancelled,
-                full_source=full_source, temporary_workflow=temporary_workflow, resources=resources,
-                describe=True, **execution_options)
+                full_source=full_source, resources=resources, describe=True, **execution_options)
             executed_at = time.perf_counter()
             if not executed.success:
                 return executed  # type: ignore[return-value]
@@ -567,7 +565,7 @@ class PreviewService:
                     return self.render(engine_source, workflow, generation=generation, compute_histogram=compute_histogram,
                         is_cancelled=is_cancelled, display=display, max_dimension=max_dimension, parallelism=parallelism,
                         sampling_request=sampling_request, resources=resources, keep_full_display=keep_full_display,
-                        full_source=full_source, temporary_workflow=temporary_workflow)
+                        full_source=full_source)
             logger.exception("PreviewService.render failed")
             return CoreResult.from_exception(
                 exc, code=ErrorCode.DECODE_FAILED, message_key="error.preview.failed"

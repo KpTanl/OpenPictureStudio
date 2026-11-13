@@ -23,15 +23,6 @@ class BeautyPreparationService:
         return self._store.ready(self._key(key))
 
     @contextmanager
-    def borrow_cached(self, key, cancelled):
-        lease = self._store.cached(self._key(key), cancelled)
-        try:
-            yield lease.value if lease is not None else None
-        finally:
-            if lease is not None:
-                lease.close()
-
-    @contextmanager
     def borrow(self, key, loader, cancelled):
         execution = current_execution.get()
         priority = execution.priority if execution is not None else self._compute.scheduling()[0]

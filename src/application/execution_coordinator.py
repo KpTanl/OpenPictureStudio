@@ -157,6 +157,7 @@ class ExecutionCoordinator:
         from ..core.contracts.source import PixelSpecification
         from ..core.contracts.workflow import WorkflowGraph
         from ..core.contracts.gpu import display_target, ImageOutputSpec
+        from ..core.workflow.executor import geometry_prefix
         required = {item.node_id: item for item in requirements}
         incoming = source
         previous = CPU_BACKEND_IDENTITY if force_cpu else source.backend_identity
@@ -179,19 +180,17 @@ class ExecutionCoordinator:
             preparation = (CPU_BACKEND_IDENTITY if item is not None and
                            any(dep[0] == "preparation" for dep in item.dependencies) else ())
             preparation_stages = ()
-            if preparation and source.is_proxy:
+            if preparation:
                 width, height = source.orig_size
                 full = replace(source, pixels=PixelSpecification((height, width, 3)),
                     alpha=None if source.alpha is None else PixelSpecification((height, width)),
                     is_proxy=False, patches=(), gpu_image=None, backend_identity=CPU_BACKEND_IDENTITY)
-                prefix = nodes[:index]
-                ids = {part.node_id for part in prefix}
-                prefix_graph = WorkflowGraph(nodes=prefix, edges=tuple(edge for edge in graph.edges
-                    if edge[0] in ids and edge[1] in ids))
+                prefix_graph = geometry_prefix(nodes[:index], registry)
+                ids = {part.node_id for part in prefix_graph.nodes}
                 prefix_requirements = tuple(item for item in requirements if item.node_id in ids)
                 preparation_stages = self._plan(full, prefix_graph, registry,
                     replace(target, size=(width, height), proxy=False), prefix_requirements,
-                    tuple(part.node_id for part in prefix), force_cpu, False)
+                    tuple(part.node_id for part in prefix_graph.nodes), force_cpu, False)
             stages.append(ExecutionStage(node_id, backend, reason, preparation, preparation_stages))
             previous = backend
             spec = registry.get(node.node_type, node.version)
@@ -267,32 +266,32 @@ class ExecutionCoordinator:
             device=stage.backend_identity[2], stage_id=stage.node_id or "output", selection_reason=stage.reason,
             input_identity=identity, target=target, is_cancelled=cancelled)
         token = current_execution.set(active)
-        transfers = ExitStack()
         try:
-            if stage.reason != "passthrough":
-                if active.engine == "cpu" and source.gpu_image is not None:
-                    logger.debug("执行交接 request=%s stage=%s direction=gpu_to_cpu input=%s", context.request_id, stage.node_id, identity)
-                    source = source.materialize(cancelled)
-                elif active.engine == "gpu":
-                    if source.patches:
-                        with self.preparation(cancelled):
-                            source = transfers.enter_context(self.materialized(source, cancelled))
-                    if graph is not None:
-                        selected, reason = self.gpu.select(source, graph, target,
-                            (requirement,) if requirement is not None else (),
-                            tuple(node.node_id for node in graph.nodes),
-                            workflow_identity=context.workflow_identity)
-                        if selected != stage.backend_identity:
-                            from ..core.contracts.gpu import GpuExecutionError
-                            raise GpuExecutionError(reason, "GPU stage admission changed")
-                    if source.gpu_image is None:
-                        logger.debug("执行交接 request=%s stage=%s direction=cpu_to_gpu input=%s", context.request_id, stage.node_id, identity)
-                    source = self.begin(source, active)
-            logger.debug("执行阶段 request=%s stage=%s engine=%s device=%s reason=%s",
-                context.request_id, stage.node_id, active.engine, active.device, stage.reason)
-            yield source, active
+            with ExitStack() as transfers:
+                if stage.reason != "passthrough":
+                    if active.engine == "cpu" and source.gpu_image is not None:
+                        logger.debug("执行交接 request=%s stage=%s direction=gpu_to_cpu input=%s", context.request_id, stage.node_id, identity)
+                        source = source.materialize(cancelled)
+                    elif active.engine == "gpu":
+                        if source.patches:
+                            with self.preparation(cancelled):
+                                source = transfers.enter_context(self.materialized(source, cancelled))
+                        if graph is not None:
+                            selected, reason = self.gpu.select(source, graph, target,
+                                (requirement,) if requirement is not None else (),
+                                tuple(node.node_id for node in graph.nodes),
+                                workflow_identity=context.workflow_identity)
+                            if selected != stage.backend_identity:
+                                from ..core.contracts.gpu import GpuExecutionError
+                                raise GpuExecutionError(reason, "GPU stage admission changed")
+                        transfers.enter_context(self.gpu.frame(stage.backend_identity, cancelled))
+                        if source.gpu_image is None:
+                            logger.debug("执行交接 request=%s stage=%s direction=cpu_to_gpu input=%s", context.request_id, stage.node_id, identity)
+                        source = self.begin(source, active)
+                logger.debug("执行阶段 request=%s stage=%s engine=%s device=%s reason=%s",
+                    context.request_id, stage.node_id, active.engine, active.device, stage.reason)
+                yield source, active
         finally:
-            transfers.close()
             current_execution.reset(token)
 
     def complete(self, source, context):

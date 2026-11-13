@@ -5,6 +5,7 @@ import logging
 from collections import OrderedDict, deque
 from concurrent.futures import CancelledError, ThreadPoolExecutor
 from dataclasses import dataclass
+from time import monotonic
 
 from PySide6.QtCore import QObject, QTimer, Qt, Signal, Slot
 from PySide6.QtGui import QImage, QPixmap
@@ -62,6 +63,7 @@ class PhotoBrowserRunner(QObject):
         self._checking = None
         self._check_generation = 0
         self._preview_pending = False
+        self._quiet_until = 0.0
         self._retry_previews = set()
         self._retry_identities = {}
         self._check_version = None
@@ -126,7 +128,8 @@ class PhotoBrowserRunner(QObject):
         if self._active is not None and self._active[0] is not None:
             self._active[3].cancel()
         self._preview_pending = True
-        self._timer.start(200)
+        self._quiet_until = monotonic() + 1.0
+        self._timer.start(1000)
 
     def _cancel_unwanted(self):
         if self._active is None or self._active[0] is None:
@@ -266,6 +269,10 @@ class PhotoBrowserRunner(QObject):
             return
         if self._foreground_busy():
             self._timer.start(200)
+            return
+        quiet = self._quiet_until - monotonic()
+        if quiet > 0:
+            self._timer.start(max(1, int(quiet * 1000)))
             return
         if self._preview_pending:
             self._preview_pending = False

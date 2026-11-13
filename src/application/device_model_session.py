@@ -61,4 +61,4 @@ class DeviceTensorSession(DeviceModelSession):
         model = self.model
         return self.backend.operate(artifact, "model.tensors", (self.identity, self.spec, identity), ((count+3)//4, 1),
             lambda device, abort: device.pack_tensors(model.run_tensors(artifact.resident.carrier, abort), abort),
-            cancelled, working_bytes=count*8)
+            cancelled)

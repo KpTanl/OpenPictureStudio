@@ -18,6 +18,7 @@ from ..core.project.assets import ProjectAssetError
 from ..core.tools import ParameterContract, ToolCatalog, ToolDefinition
 from ..core.tools.denoise import DenoiseBackendUnavailable
 from ..core.workflow import NodeRegistry, NodeSpec, WorkflowExecutor
+from ..core.workflow.executor import input_fingerprint
 from ..core.workflow.validator import inspect_workflow, validate
 from .tool_executor_pool import ToolExecutorPool
 from .image_resources import ComputeBudget
@@ -217,6 +218,7 @@ class ToolRuntime:
         self._bindings = dict(default_bindings if bindings is None else bindings)
         self._legacy_bindings = frozenset(self._bindings)
         self._resources = dict(resources or {})
+        self._digests = {}
         self._disabled = set()
         self._generation = 0
         self._snapshot_catalog = None
@@ -733,6 +735,10 @@ class ToolRuntime:
     def _resource_digest(self, path, is_cancelled):
         path = Path(path).resolve()
         before = path.stat()
+        stamp = before.st_size, before.st_mtime_ns, before.st_ctime_ns
+        known = self._digests.get(path)
+        if known is not None and known[0] == stamp:
+            return str(path), known[1]
         digest = hashlib.sha256()
         with path.open("rb") as stream:
             for chunk in iter(lambda: stream.read(1 << 20), b""):
@@ -740,9 +746,9 @@ class ToolRuntime:
                     raise CancelledError()
                 digest.update(chunk)
         after = path.stat()
-        if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
-                after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+        if stamp != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
             raise OSError("资源在读取期间发生变化")
+        self._digests[path] = stamp, digest.hexdigest()
         return str(path), digest.hexdigest()
 
     def _verified_resources(self, reference, resource_paths, is_cancelled):
@@ -1120,12 +1126,11 @@ class ToolRuntime:
                 return CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled")
 
     def execute_preview(self, snapshot, source, workflow, *, is_cancelled=lambda: False,
-                        full_source=None, temporary_workflow=None, sampling=None, resources=None, describe=False):
+                        full_source=None, sampling=None, resources=None, describe=False):
         from .canonical_input import CanonicalInputPreparer
         cancelled = lambda: snapshot.is_cancelled() or is_cancelled()
         budget = self._resource_budget if resources is None else resources
-        preparer = CanonicalInputPreparer(snapshot, workflow, full_source, budget,
-                                         temporary_workflow=temporary_workflow)
+        preparer = CanonicalInputPreparer(snapshot, full_source, budget)
         result = snapshot.executor.execute(source, workflow, is_cancelled=cancelled,
                                            sampling=sampling, input_preparer=preparer)
         actual_input = source
@@ -1397,13 +1402,14 @@ class ToolRuntime:
                             definition.prepare_execution(borrowed, checked.data, cancelled))
                     with self.execution.preparation(cancelled):
                         if definition.prepare_input is not None:
-                            stage = next((item for item in execution.stages if item.node_id == context["node_id"]), None)
-                            if borrowed.is_proxy and stage is not None and stage.preparation_stages:
-                                required = {item.node_id: item for item in execution.requirements}
-                                execution_context["upstream_dependencies"] = (
-                                    context["upstream_dependencies"][0],
-                                    *((required.get(item.node_id), item.identity) for item in stage.preparation_stages
-                                      if item.node_id is not None))
+                            stage = next(item for item in execution.stages if item.node_id == context["node_id"])
+                            required = {item.node_id: item for item in execution.requirements}
+                            execution_context["upstream_identity"] = (context["upstream_identity"][0],
+                                                                      input_fingerprint(context["preparation"].nodes))
+                            execution_context["upstream_dependencies"] = (
+                                context["upstream_dependencies"][0],
+                                *((required.get(item.node_id), item.identity) for item in stage.preparation_stages
+                                  if item.node_id is not None))
                             key = definition.prepare_input(borrowed, execution_context, reference)
                             prepared = None
                             if definition.reusable_executor and definition.create_prepared_executor is None:
@@ -1422,21 +1428,10 @@ class ToolRuntime:
                                         budget=budget, stage="prepare") as (preparer, _):
                                     return preparer.prepare(full_input, identity, abandoned)
                             def load_preparation(abandoned):
-                                if not borrowed.is_proxy:
-                                    return prepare_full(borrowed, key, abandoned)
-                                if input_preparer is None:
-                                    from .canonical_input import CanonicalInputUnavailable
-                                    raise CanonicalInputUnavailable()
-                                return input_preparer.prepare(borrowed, execution_context, reference, key,
-                                                              definition.prepare_input, prepare_full, abandoned)
-                            if borrowed.is_proxy and input_preparer is not None:
-                                temporary_key = input_preparer.temporary_key(borrowed, execution_context, reference,
-                                                                            definition.prepare_input)
-                                if temporary_key is not None:
-                                    prepared = preparation.enter_context(
-                                        self._input_preparation.borrow_cached(temporary_key, cancelled))
-                            if prepared is None:
-                                prepared = preparation.enter_context(self._input_preparation.borrow(key, load_preparation, cancelled))
+                                from .canonical_input import CanonicalInputPreparer
+                                return (input_preparer or CanonicalInputPreparer(snapshot)).prepare(borrowed,
+                                    execution_context, reference, key, definition.prepare_input, prepare_full, abandoned)
+                            prepared = preparation.enter_context(self._input_preparation.borrow(key, load_preparation, cancelled))
                             execution_context["prepared_input"] = prepared
                             if definition.working_memory is not None:
                                 memory = definition.working_memory(borrowed, checked.data, prepared)
@@ -1455,8 +1450,7 @@ class ToolRuntime:
                         getattr(cancelled, "priority", current_execution.get().priority),
                         self.execution.memo_enabled and bool(context["upstream_identity"][0])
                         and (definition.cacheable is None or definition.cacheable(checked.data))
-                        and context.get("cacheable_input", True)
-                        and not context.get("approximate", False))
+                        and context.get("cacheable_input", True))
                     with self._borrow_executor(execution_reference, definition, resources, generation,
                             context["is_cancelled"], threads=threads, memory_bytes=memory, budget=budget,
                             demand=demand) as (executor, compute), scope.activate():
@@ -1517,6 +1511,9 @@ class ToolRuntime:
                 normalized = definition.parameters.normalize(settings, reference.params_version).data
                 return definition.output_size(normalized, size)
             return size if definition.descriptor.image.geometry == "preserve" else None
+
+        def preserves_geometry(reference):
+            return catalog.resolve(reference).data.descriptor.image.geometry == "preserve"
 
         def region_input(reference, settings, bounds, size):
             definition = catalog.resolve(reference).data
@@ -1582,6 +1579,7 @@ class ToolRuntime:
             sampling_behavior=lambda params: sampling_behavior(ToolReference.from_dict(params)),
             cacheable=lambda params: cacheable(ToolReference.from_dict(params), params["settings"]),
             output_size=lambda params, size: output_size(ToolReference.from_dict(params), params["settings"], size),
+            preserves_geometry=lambda params: preserves_geometry(ToolReference.from_dict(params)),
             region_input=lambda params, bounds, size: region_input(ToolReference.from_dict(params), params["settings"], bounds, size),
             execute_region=lambda incoming, params, *, context: run_region(ToolReference.from_dict(params), incoming, params["settings"], context),
             execution_requirements=lambda params, node_id: execution_requirements(
@@ -1595,6 +1593,7 @@ class ToolRuntime:
                 sampling_behavior=lambda params, ref=reference: sampling_behavior(ref),
                 cacheable=lambda params, ref=reference: cacheable(ref, params),
                 output_size=lambda params, size, ref=reference: output_size(ref, params, size),
+                preserves_geometry=lambda params, ref=reference: preserves_geometry(ref),
                 region_input=lambda params, bounds, size, ref=reference: region_input(ref, params, bounds, size),
                 execute_region=lambda incoming, params, ref=reference, *, context: run_region(ref, incoming, params, context),
                 execution_requirements=lambda params, node_id, ref=reference: execution_requirements(ref, params, node_id)))
@@ -1606,13 +1605,16 @@ class ToolRuntime:
                                    sampling_behavior=lambda params: "preserve",
                                    output_size=lambda params, size: size, region_input=lambda params, bounds, size: bounds,
                                    execute_region=lambda incoming, params, *, context: incoming,
+                                   preserves_geometry=lambda params: True,
                                    execution_requirements=lambda params, node_id: ExecutionRequirement(node_id, ("source", "1"), engines=("cpu", "gpu"))))
         registry.register(NodeSpec("export", execute=export, validate_params=empty, required_threads=lambda params: 1,
                                    sampling_behavior=lambda params: "preserve",
                                    output_size=lambda params, size: size, region_input=lambda params, bounds, size: bounds,
                                    execute_region=lambda incoming, params, *, context: incoming,
+                                   preserves_geometry=lambda params: True,
                                    execution_requirements=lambda params, node_id: ExecutionRequirement(node_id, ("export", "1"), engines=("cpu", "gpu"))))
-        return RuntimeSnapshot(self, generation, registry, self._execution_threads)
+        snapshot = RuntimeSnapshot(self, generation, registry, self._execution_threads)
+        return snapshot
 
     def sampling_capability(self, workflow, request):
         self._prepare_modules(workflow)

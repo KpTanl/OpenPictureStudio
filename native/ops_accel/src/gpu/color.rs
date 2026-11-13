@@ -10,9 +10,7 @@ impl GpuDevice {
             return Err(error("color_specification", "Invalid GPU color specification"));
         }
         py.allow_threads(|| {
-            let _io = self.state.io.lock().unwrap();
-            let cancel = || cancelled.as_ref().map(|v| Python::with_gil(|py| v.clone_ref(py)));
-            Cancellation::new(cancel()).check()?;
+            let mut io = self.state.io.lock().unwrap();
             let target = self.state.allocate((image.width * image.height * 16) as u64)?;
             let mut params = [0u32; 52];
             params[..4].copy_from_slice(&[image.width as u32, image.height as u32, mode, 0]);
@@ -22,28 +20,16 @@ impl GpuDevice {
             }
             for (index, value) in args.iter().enumerate() { params[index+20] = value.to_bits(); }
             let uniform = self.state.uniform("ops-color-parameters", bytemuck::cast_slice(&params))?;
-            let metadata = self.state.allocate((data.len().max(1)*4) as u64)?;
-            if !data.is_empty() {
-                let size = metadata.size;
-                {
-                    let mut pool = self.state.pool.lock().unwrap();
-                    if pool.total()+size > pool.limit { pool.idle.clear(); }
-                    if pool.total()+size > pool.limit { return Err(error("memory_pressure", "Color metadata exceeds GPU budget")); }
-                    pool.transient = size;
-                }
-                self.state.queue.write_buffer(metadata.buffer.as_ref().unwrap(), 0, bytemuck::cast_slice(&data));
-            }
-            let mut encoder = self.state.device.create_command_encoder(&Default::default());
-            self.state.dispatch(&mut encoder, if mode>=32 { "face_regions" } else { "color" }, &[image.storage.buffer.as_ref().unwrap(),
+            let metadata = self.state.data("ops-color-metadata", &data)?;
+            self.state.dispatch(self.state.encoder(&mut io)?, if mode>=32 { "face_regions" } else { "color" }, &[image.storage.buffer.as_ref().unwrap(),
                 auxiliary.storage.buffer.as_ref().unwrap(), field.storage.buffer.as_ref().unwrap(),
                 extra.storage.buffer.as_ref().unwrap(), target.buffer.as_ref().unwrap(),
-                metadata.buffer.as_ref().unwrap(), &uniform],
+                &metadata, &uniform],
                 ((image.width as u32).div_ceil(8), (image.height as u32).div_ceil(8)));
-            let event = self.state.wait(self.state.queue.submit([encoder.finish()]), cancel());
-            self.state.pool.lock().unwrap().transient = 0;
-            let event = event?;
+            let ticket = self.state.ticket(&mut io);
+            self.state.recorded(&mut io, 1, cancelled)?;
             Ok(GpuImage { storage: target, width: image.width, height: image.height,
-                generation: self.state.generation, event, stride: image.width, offset: 0 })
+                generation: self.state.generation, ticket, stride: image.width, offset: 0 })
         })
     }
 }

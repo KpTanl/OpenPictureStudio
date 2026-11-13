@@ -53,14 +53,14 @@ impl GpuDevice {
                 label: Some("ops-resolved-timestamps"), size,
                 usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
             self.state.check()?;
-            let mut encoder = self.state.device.create_command_encoder(&Default::default());
+            let encoder = self.state.encoder(&mut io)?;
             for (page, queries) in timing.queries.iter().enumerate() {
                 let first = page as u32 * wgpu::QUERY_SET_MAX_QUERIES;
                 if first >= count { break; }
                 encoder.resolve_query_set(queries, 0..(count-first).min(wgpu::QUERY_SET_MAX_QUERIES), &resolved, first as u64 * 8);
             }
-            let staging = self.state.read(&mut io, &mut encoder, &resolved, size)?;
-            let bytes = self.state.mapped(encoder, &staging, size, None)?;
+            let staging = self.state.read(&mut io, &resolved, size)?;
+            let bytes = self.state.mapped(&mut io, &staging, size, None)?;
             Ok::<_, PyErr>((timing, bytes))
         })?;
         let period = self.state.queue.get_timestamp_period() as f64 / 1_000_000.0;

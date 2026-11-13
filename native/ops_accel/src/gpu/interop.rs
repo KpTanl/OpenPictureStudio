@@ -123,12 +123,12 @@ impl State {
             };
             let input_buffer = wrap(&input);
             let output_buffer = wrap(&output);
+            self.flush(io, None)?;
             let source = self.allocate(64 * 64 * 16)?;
             let packed: Vec<f32> = (0..64 * 64 * 4).map(|index| (index % 257) as f32 / 256.0).collect();
             self.queue.write_buffer(source.buffer.as_ref().unwrap(), 0, bytemuck::cast_slice(&packed));
-            let mut encoder = self.device.create_command_encoder(&Default::default());
-            self.dispatch(&mut encoder, "interop_prepare", &[source.buffer.as_ref().unwrap(), &input_buffer, &output_buffer], (64, 1));
-            self.wait(self.queue.submit([encoder.finish()]), None)?;
+            self.dispatch(self.encoder(io)?, "interop_prepare", &[source.buffer.as_ref().unwrap(), &input_buffer, &output_buffer], (64, 1));
+            self.flush(io, None)?;
             let descriptors = props.RequiredDescriptorCount.max(init_props.RequiredDescriptorCount).max(1);
             let heap: ID3D12DescriptorHeap = raw.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, NumDescriptors: descriptors * 2,
@@ -172,10 +172,9 @@ impl State {
             self.wait(self.queue.submit([]), None)?;
             let target = self.allocate(16 * 16 * 4)?;
             let uniform = self.uniform("ops-interop-viewport", bytemuck::cast_slice(&[64u32, 64, 16, 16, 64, 0, 0, 0]))?;
-            let mut encoder = self.device.create_command_encoder(&Default::default());
-            self.dispatch(&mut encoder, "display_rgba", &[&output_buffer, target.buffer.as_ref().unwrap(), &uniform], (2, 2));
-            let staging = self.read(io, &mut encoder, target.buffer.as_ref().unwrap(), 16 * 16 * 4)?;
-            let pixels = self.mapped(encoder, &staging, 16 * 16 * 4, None)?;
+            self.dispatch(self.encoder(io)?, "display_rgba", &[&output_buffer, target.buffer.as_ref().unwrap(), &uniform], (2, 2));
+            let staging = self.read(io, target.buffer.as_ref().unwrap(), 16 * 16 * 4)?;
+            let pixels = self.mapped(io, &staging, 16 * 16 * 4, None)?;
             let mut full = Vec::new();
             for rgba in packed.chunks_exact(4) {
                 full.extend_from_slice(&crate::display::pixel([rgba[0].max(0.25) - 0.25, rgba[1].max(0.25) - 0.25,

@@ -3,12 +3,13 @@ from __future__ import annotations
 from collections import OrderedDict, deque
 from concurrent.futures import CancelledError
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
-from threading import Condition, Thread
+from dataclasses import dataclass, field, replace
+from itertools import count
+from threading import Condition, Thread, get_ident, local
 from time import monotonic
 import logging
 import os
-from weakref import WeakSet
+from weakref import WeakSet, WeakValueDictionary
 
 from ..core.contracts.execution import CPU_BACKEND_IDENTITY, current_execution
 from ..core.contracts.gpu import GpuArtifact, GpuResident, GpuExecutionError, cpu_recovery, display_target
@@ -18,11 +19,39 @@ from .image_resources import queue_order
 logger = logging.getLogger(__name__)
 
 
+STABLE_STAGES = ("face.", "color.face.", "color.weight", "color.mask.", "color.brush.", "color.asset.",
+                 "color.field.base", "beauty.field.", "shape.mask", "lasso.mask")
+
+
+def _frame_bound(value):
+    if type(value) is tuple:
+        return bool(value) and value[0] == "gpu.frame" or any(_frame_bound(item) for item in value)
+    return False
+
+
+@dataclass(eq=False)
+class _Frame:
+    identity: tuple
+    device: object
+    budget: int
+    cancelled: object
+    priority: object
+    family: tuple = None
+    results: WeakValueDictionary = field(default_factory=WeakValueDictionary)
+    stable: list = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _Checkpoint:
+    carrier: object
+    key: tuple
+    output: object
+
+
 class _ResidentCache(OrderedDict):
     def __init__(self):
         super().__init__()
         self.allocations = {}
-        self.paths = {}
         self.nbytes = 0
 
     def __setitem__(self, key, value):
@@ -33,7 +62,6 @@ class _ResidentCache(OrderedDict):
         if not users:
             self.nbytes += size
         super().__setitem__(key, value)
-        self.paths.setdefault(key[0], OrderedDict())[key] = None
 
     def pop(self, key, default=None):
         value = super().pop(key, default)
@@ -45,20 +73,11 @@ class _ResidentCache(OrderedDict):
                 self.nbytes -= size
             else:
                 self.allocations[allocation] = size, users - 1
-            path = self.paths[key[0]]
-            del path[key]
-            if not path:
-                del self.paths[key[0]]
         return value
-
-    def move_to_end(self, key, last=True):
-        super().move_to_end(key, last=last)
-        self.paths[key[0]].move_to_end(key, last=last)
 
     def clear(self):
         super().clear()
         self.allocations.clear()
-        self.paths.clear()
         self.nbytes = 0
 
 
@@ -77,6 +96,7 @@ class GpuStatus:
     cache_bytes: int = 0
     uploaded_bytes: int = 0
     readback_bytes: int = 0
+    submissions: int = 0
     cpu_ms: float = 0.0
     gpu_ms: float = 0.0
 
@@ -99,6 +119,9 @@ class GpuBackend:
         self._closed = False
         self._generation = 0
         self._busy = False
+        self._holder = None
+        self._local = local()
+        self._serial = count(1)
         self._waiting = {}
         self._cache = _ResidentCache()
         self._failed = OrderedDict()
@@ -379,7 +402,8 @@ class GpuBackend:
                 self._lost()
                 status = self._status
             return replace(status, allocated_bytes=info["allocated_bytes"] + self._model_bytes, cache_bytes=self._cache.nbytes,
-                uploaded_bytes=info["uploaded_bytes"], readback_bytes=info["readback_bytes"], budget_bytes=self._budget(info))
+                uploaded_bytes=info["uploaded_bytes"], readback_bytes=info["readback_bytes"],
+                submissions=info["completed_event"], budget_bytes=self._budget(info))
 
     @staticmethod
     def _path(path):
@@ -666,6 +690,7 @@ class GpuBackend:
                 if attempt or not pressure:
                     raise
                 self._cache.clear()
+                self._device.flush()
                 self._device.trim()
                 self._release_scratch()
                 self.routes.trim_models()
@@ -706,6 +731,9 @@ class GpuBackend:
 
     @contextmanager
     def borrow(self, cancelled, *, priority=0):
+        if self._holder == get_ident():
+            yield
+            return
         token = object()
         created = monotonic()
         with self.compute.suspend(cancelled):
@@ -719,72 +747,140 @@ class GpuBackend:
                         self._condition.wait(0.05)
                     if self._closed or cancelled():
                         raise CancelledError()
-                    self._busy = True
+                    self._busy, self._holder = True, get_ident()
                 finally:
                     self._waiting.pop(token, None)
             try:
-                logger.debug("GPU 准入 device=%s wait_ms=%.1f", self._status.device, (monotonic() - created) * 1000)
                 yield
             finally:
                 with self._condition:
-                    self._busy = False
+                    self._busy, self._holder = False, None
                     self._condition.notify_all()
 
-    def operate(self, artifact, name, identity, size, operation, cancelled, *, view=False, working_bytes=None,
-                input_identity=None):
-        context = current_execution.get()
-        priority = context.priority if context is not None else self.compute.scheduling()[0]
-        incoming = artifact.resident.identity if input_identity is None else input_identity
-        shared_key = self._stages.key("gpu.operation", (artifact.source_path, incoming, name,
-            identity, tuple(size), artifact.backend_identity))
-        key = artifact.source_path, "operation", name, shared_key[-1], artifact.backend_identity
-        def load(abandoned):
-            with self.borrow(abandoned, priority=getattr(abandoned, "priority", priority)):
-                try:
-                    if self.snapshot().identity != artifact.backend_identity:
-                        raise GpuExecutionError("device_changed", "GPU selection changed", artifact.family)
-                    device = self._device
-                    budget = self._budget(device.info())
-                    retain = self._trim(budget, artifact.source_path)
-                    device.configure(budget, self._idle_limit(budget))
-                    cached = self._cache.get(key)
-                    if cached is not None:
-                        self._cache.move_to_end(key)
-                        return cached
-                    hold = None
-                    try:
-                        if self._status.tier == "B" and not view:
-                            hold = self.resources.try_hold_memory(size[0] * size[1] * 16)
-                        working = working_bytes if working_bytes is not None else size[0] * size[1] * 32
-                        with self.host_memory(working if self._status.tier == "B" else 0, abandoned):
-                            before = device.info()
-                            started = monotonic()
-                            carrier = self._native_call(lambda: operation(device, abandoned))
-                            after = device.info()
-                            if self._status.tier == "B" and monotonic()-started > .5:
-                                raise GpuExecutionError("submission_limit", "GPU operation exceeds the integrated-device limit", artifact.family)
-                        resident = GpuResident(carrier, artifact.backend_identity,
-                            artifact.resident.shared_memory if view else hold, shared_key)
-                        hold = None
-                        if retain:
-                            self._cache[key] = resident
-                            self._trim(budget)
-                        logger.debug("GPU 算子 name=%s device=%s event=%s upload_bytes=%s readback_bytes=%s",
-                            name, artifact.backend_identity[2], carrier.completion,
-                            after["uploaded_bytes"] - before["uploaded_bytes"], after["readback_bytes"] - before["readback_bytes"])
-                        return resident
-                    finally:
-                        if hold is not None:
-                            hold.close()
-                except (CancelledError, InterruptedError):
-                    raise CancelledError() from None
-                except Exception as reason:
-                    self.failed(reason, artifact.family)
-        lease = self._stages.acquire(shared_key, load, cancelled, priority, retain=False, optional=True, transient=True)
+    @contextmanager
+    def _hold(self, frame):
+        with self._condition:
+            fast = not self._busy and not self._waiting and self._device is frame.device
+            if fast:
+                self._busy, self._holder = True, get_ident()
+        if not fast:
+            with self.borrow(frame.cancelled, priority=frame.priority):
+                if self._device is not frame.device:
+                    raise GpuExecutionError("device_changed", "GPU selection changed", frame.family)
+                yield
+            return
         try:
-            return GpuArtifact(lease.value, self, artifact.family, artifact.source_path)
+            yield
         finally:
-            lease.close()
+            with self._condition:
+                self._busy, self._holder = False, None
+                if self._waiting:
+                    self._condition.notify_all()
+
+    @contextmanager
+    def frame(self, identity, cancelled, family=None):
+        current = getattr(self._local, "frame", None)
+        if current is not None:
+            if current.identity != identity:
+                raise GpuExecutionError("device_changed", "GPU frame belongs to another device", family)
+            current.family = current.family or family
+            yield current
+            return
+        context = current_execution.get()
+        priority = getattr(cancelled, "priority", context.priority if context is not None else self.compute.scheduling()[0])
+        with self.borrow(cancelled, priority=priority):
+            try:
+                if self.snapshot().identity != identity:
+                    raise GpuExecutionError("device_changed", "GPU selection changed", family)
+                device = self._device
+                budget = self._budget(device.info())
+                self._trim(budget)
+                device.configure(budget, self._idle_limit(budget), 500 if self._status.tier == "B" else 0)
+            except (CancelledError, InterruptedError):
+                raise CancelledError() from None
+            except Exception as reason:
+                if family is None:
+                    raise
+                self.failed(reason, family)
+        frame = _Frame(identity, device, budget, cancelled, priority, family)
+        self._local.frame = frame
+        try:
+            yield frame
+            with self._hold(frame):
+                self._run(frame, lambda: self._share() or device.flush(cancelled))
+                for key, resident in frame.stable:
+                    self._cache[key] = resident
+                if frame.stable:
+                    self._trim(budget)
+        except BaseException:
+            device.discard()
+            raise
+        finally:
+            self._local.frame = None
+
+    def _run(self, frame, operation):
+        try:
+            return self._native_call(operation)
+        except (CancelledError, InterruptedError):
+            raise CancelledError() from None
+        except GpuExecutionError:
+            raise
+        except Exception as reason:
+            self.failed(reason, frame.family)
+
+    def _share(self):
+        if self._status.tier == "B":
+            allocated = self._device.usage()[0]
+            if allocated > self._scratch_bytes:
+                self._scratch_holds.append(self.resources.try_hold_memory(allocated - self._scratch_bytes))
+                self._scratch_bytes = allocated
+
+    def checkpoint(self, slot, key, identity, cancelled):
+        with self.borrow(cancelled):
+            entry = self._cache.get(slot)
+            if entry is None or entry.key != key or entry.output.backend_identity != identity:
+                return None
+            self._cache.move_to_end(slot)
+            logger.debug("GPU 节点结果命中 node=%s", slot[2])
+            return entry.output
+
+    def keep(self, slot, key, output, cancelled):
+        if output.gpu_image is None:
+            return
+        with self.borrow(cancelled):
+            if self._status.identity == output.backend_identity:
+                self._cache[slot] = _Checkpoint(output.gpu_image.resident.carrier, key,
+                                                replace(output, execution_ownership=None))
+
+    def operate(self, artifact, name, identity, size, operation, cancelled, *, view=False, input_identity=None):
+        frame = getattr(self._local, "frame", None)
+        if frame is None or frame.identity != artifact.backend_identity:
+            with self.frame(artifact.backend_identity, cancelled, artifact.family):
+                return self.operate(artifact, name, identity, size, operation, cancelled, view=view,
+                                    input_identity=input_identity)
+        frame.family = frame.family or artifact.family
+        incoming = artifact.resident.identity if input_identity is None else input_identity
+        key = artifact.source_path, name, incoming, identity, tuple(size)
+        try:
+            hash(key)
+        except TypeError:
+            key = artifact.source_path, name, self._stages.key("gpu.operation", (incoming, identity, tuple(size))), incoming
+        resident = frame.results.get(key)
+        if resident is None:
+            stable = name.startswith(STABLE_STAGES) and not _frame_bound(key)
+            with self._hold(frame):
+                resident = self._cache.get(key) if stable else None
+                if resident is not None:
+                    self._cache.move_to_end(key)
+                else:
+                    carrier = self._run(frame, lambda: operation(frame.device, cancelled))
+                    resident = GpuResident(carrier, artifact.backend_identity,
+                        artifact.resident.shared_memory if view else None,
+                        ("gpu.stage" if stable else "gpu.frame", next(self._serial)))
+                    if stable:
+                        frame.stable.append((key, resident))
+            frame.results[key] = resident
+        return GpuArtifact(resident, self, artifact.family, artifact.source_path)
 
     def _linear_lease(self, artifact, bounds, cancelled):
         context = current_execution.get()
@@ -797,26 +893,17 @@ class GpuBackend:
             bounds = (0, 0, *artifact.resident.carrier.size)
         key = self._stages.key("gpu.linear_readback", (artifact.backend_identity, artifact.resident.identity, bounds))
         def load(abandoned):
-            with self.borrow(abandoned, priority=getattr(abandoned, "priority", 0)):
+            with self.frame(artifact.backend_identity, abandoned, artifact.family) as frame, self._hold(frame):
                 try:
-                    if self.snapshot().identity != artifact.backend_identity:
-                        raise GpuExecutionError("device_changed", "GPU selection changed", artifact.family)
                     left, top, right, bottom = bounds
                     width, height = right-left, bottom-top
                     if left < 0 or top < 0 or width <= 0 or height <= 0 or right > artifact.resident.carrier.size[0] or bottom > artifact.resident.carrier.size[1]:
                         raise ValueError("GPU 读取范围无效")
                     count = width * height * 16
-                    device = self._device
-                    budget = self._budget(device.info())
-                    self._trim(budget)
-                    device.configure(budget, self._idle_limit(budget))
-                    def prepare():
-                        if self._status.tier == "B" and count > self._scratch_bytes:
-                            self._scratch_holds.append(self.resources.try_hold_memory(count-self._scratch_bytes))
-                            self._scratch_bytes = count
+                    device = frame.device
                     with self.host_memory(count * (3 if self._status.tier == "B" else 2), abandoned):
                         result = self._native_call(lambda: device.read_region(artifact.resident.carrier,
-                            left, top, width, height, abandoned), prepare)
+                            left, top, width, height, abandoned), lambda: self._prepare(count))
                     result.setflags(write=False)
                     logger.debug("执行交接 stage=%s direction=gpu_to_cpu bounds=%s readback_bytes=%s",
                         context.stage_id if context is not None else "", bounds, count)
@@ -842,22 +929,13 @@ class GpuBackend:
         if ((width > 2 or height > 60) and not (final is True and width == 486 and height <= 50)
                 and not (final == "region" and width <= 8192 and height <= 8192)):
             raise GpuExecutionError("face_metadata", "Face metadata readback exceeds its boundary")
-        with self.borrow(cancelled, priority=getattr(cancelled, "priority", self.compute.scheduling()[0])):
+        with self.frame(artifact.backend_identity, cancelled, artifact.family) as frame, self._hold(frame):
             try:
-                if self.snapshot().identity != artifact.backend_identity:
-                    raise GpuExecutionError("device_changed", "GPU face metadata belongs to another device")
                 count = width*height*16
-                budget = self._budget(self._device.info())
-                self._trim(budget)
-                self._device.configure(budget,self._idle_limit(budget))
-                def prepare():
-                    if self._status.tier == "B" and count > self._scratch_bytes:
-                        self._scratch_holds.append(self.resources.try_hold_memory(count-self._scratch_bytes))
-                        self._scratch_bytes = count
                 with self.host_memory(count*2,cancelled):
-                    result = self._native_call(lambda:self._device.read_region(artifact.resident.carrier,0,0,width,height,cancelled),prepare)
+                    result = self._native_call(lambda:frame.device.read_region(artifact.resident.carrier,0,0,width,height,cancelled),
+                        lambda: self._prepare(count))
                 result.setflags(write=False)
-                logger.debug("GPU 人脸交付 boundary=%s readback_bytes=%s", "analysis" if final else "control", count)
                 return result
             except (CancelledError, InterruptedError):
                 raise CancelledError() from None
@@ -865,6 +943,13 @@ class GpuBackend:
                 self.failed(reason,artifact.family)
             finally:
                 self._finish_readback()
+
+    def _prepare(self, count):
+        if self._status.tier == "B":
+            allocated = self._device.usage()[0] + count
+            if allocated > self._scratch_bytes:
+                self._scratch_holds.append(self.resources.try_hold_memory(allocated - self._scratch_bytes))
+                self._scratch_bytes = allocated
 
     def face_input(self, artifact, bounds, size, cancelled):
         import numpy as np
@@ -920,21 +1005,11 @@ class GpuBackend:
 
     def _trim(self, budget, path=None):
         limit = self.settings.cache_bytes(budget)
-        if self._cache.nbytes > limit or len(self._cache) > 4096:
-            if not self._window:
-                while self._cache and (self._cache.nbytes > limit or len(self._cache) > 4096):
-                    self._cache.pop(next(iter(self._cache)))
-            else:
-                if any(source not in self._window for source in self._cache.paths):
-                    for key in tuple(self._cache):
-                        if self._cache.nbytes <= limit and len(self._cache) <= 4096:
-                            break
-                        if key[0] not in self._window:
-                            self._cache.pop(key)
-                for source in reversed(self._window):
-                    entries = self._cache.paths.get(source)
-                    while entries and (self._cache.nbytes > limit or len(self._cache) > 4096):
-                        self._cache.pop(next(iter(entries)))
+        if self._cache.nbytes > limit:
+            for key in [key for key in self._cache if key[0] not in self._window] + list(self._cache):
+                if self._cache.nbytes <= limit:
+                    break
+                self._cache.pop(key)
         if path is not None and self._window and path not in self._window:
             return False
         return limit > 0
@@ -1046,7 +1121,8 @@ class GpuBackend:
 
     def display(self, artifact, size, cancelled):
         if artifact.patches:
-            artifact = self.resolve(artifact, cancelled)
+            with self.frame(artifact.backend_identity, cancelled, artifact.family):
+                artifact = self.resolve(artifact, cancelled)
         context = current_execution.get()
         priority = context.priority if context is not None else self.compute.scheduling()[0]
         key = self._stages.key("gpu.readback", (artifact.backend_identity, artifact.resident.identity, size))
@@ -1059,27 +1135,15 @@ class GpuBackend:
 
     def _display(self, artifact, size, cancelled):
         started = monotonic()
-        context = current_execution.get()
-        priority = context.priority if context is not None else self.compute.scheduling()[0]
-        priority = getattr(cancelled, "priority", priority)
-        with self.borrow(cancelled, priority=priority):
+        with self.frame(artifact.backend_identity, cancelled, artifact.family) as frame, self._hold(frame):
             try:
-                if self.snapshot().identity != artifact.backend_identity:
-                    raise GpuExecutionError("device_changed", "GPU result belongs to a different device", artifact.family)
-                device = self._device
                 count = size[0] * size[1] * 4
-                budget = self._budget(device.info())
-                self._trim(budget)
-                device.configure(budget, self._idle_limit(budget))
-                def prepare():
-                    if self._status.tier == "B" and count > self._scratch_bytes:
-                        self._scratch_holds.append(self.resources.try_hold_memory(count - self._scratch_bytes))
-                        self._scratch_bytes = count
                 with self.host_memory(count if self._status.tier == "B" else 0, cancelled):
-                    rgba = self._native_call(lambda: device.display(artifact.resident.carrier, *size, cancelled), prepare)
+                    rgba = self._native_call(lambda: frame.device.display(artifact.resident.carrier, *size, cancelled),
+                        lambda: self._prepare(count))
                 rgba.setflags(write=False)
                 logger.debug("GPU 显示完成 device=%s event=%s readback_bytes=%s duration_ms=%.1f",
-                    artifact.backend_identity[2], device.info()["completed_event"], count, (monotonic() - started) * 1000)
+                    artifact.backend_identity[2], frame.device.usage()[1], count, (monotonic() - started) * 1000)
                 return rgba
             except CancelledError:
                 raise

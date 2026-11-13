@@ -1,6 +1,4 @@
 from math import ceil, prod
-import hashlib
-import struct
 
 from ..core.contracts.gpu import GpuExecutionError
 
@@ -23,8 +21,7 @@ class GpuImageOps:
                        for item in supplied)
         size = size or image.resident.carrier.size
         args, data = tuple(float(v) for v in args), tuple(float(v) for v in data)
-        digest = hashlib.sha256(struct.pack("<" + str(len(data)) + "f", *data)).hexdigest() if data else ""
-        identity = (mode, size, args, digest,
+        identity = (mode, size, args, data,
                     *(item.resident.identity if value is not None else () for item, value in zip(others, supplied)))
         return self.backend.operate(image, kernel, identity, size, lambda device, abort:
             device.beauty_op(image.resident.carrier, *(item.resident.carrier for item in others),
@@ -38,7 +35,7 @@ class GpuImageOps:
         left, top, right, bottom = bounds
         return self.backend.operate(image, "image.view", tuple(bounds), (right-left, bottom-top),
             lambda device, abort: device.view(image.resident.carrier, left, top, right-left, bottom-top),
-            self.cancelled, view=True, working_bytes=0)
+            self.cancelled, view=True)
 
     def channel(self, image, channel=0, scale=1, offset=0):
         return self.stage(image, 3, args=(channel, scale, offset))
@@ -68,7 +65,7 @@ class GpuImageOps:
         size = image.resident.carrier.size
         return self.backend.operate(image, "beauty.guided", (guide.resident.identity, radius, eps), size,
             lambda device, abort: device.guided(image.resident.carrier, guide.resident.carrier, radius, eps, 1, abort),
-            self.cancelled, working_bytes=prod(size)*320)
+            self.cancelled)
 
     def region(self, image, mode, *, auxiliary=None, field=None, extra=None, args=(), data=()):
         image = self.backend.resolve(self.artifact(image), self.cancelled)
@@ -127,8 +124,7 @@ class GpuImageOps:
     def median(self, samples):
         samples = self.backend.resolve(self.artifact(samples), self.cancelled)
         return self.backend.operate(samples, "beauty.median", (), (3, 1),
-            lambda device, abort: device.beauty_median(samples.resident.carrier, abort), self.cancelled,
-            working_bytes=ceil(prod(samples.resident.carrier.size)/1024)*64+32768)
+            lambda device, abort: device.beauty_median(samples.resident.carrier, abort), self.cancelled)
 
     def count(self, mask):
         blocks = ceil(prod(mask.resident.carrier.size)/1024)
@@ -140,7 +136,7 @@ class GpuImageOps:
         count = prod(roots.resident.carrier.size)
         return self.backend.operate(labels, "beauty.components", (roots.resident.identity, distance), (4, count),
             lambda device, abort: device.beauty_components(labels.resident.carrier, roots.resident.carrier, distance, abort),
-            self.cancelled, working_bytes=count*64)
+            self.cancelled)
 
     def total(self, partial):
         value = self.control(self.stage(partial, 15, size=(1, 1), kernel="beauty_stats"))[0, 0]

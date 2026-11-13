@@ -18,6 +18,7 @@ class NodeSpec:
     output_size: Callable | None = None
     region_input: Callable | None = None
     execute_region: Callable | None = None
+    preserves_geometry: Callable | None = None
 
 class NodeRegistry:
     def __init__(self) -> None:

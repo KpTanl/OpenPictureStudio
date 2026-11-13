@@ -1,5 +1,4 @@
 from functools import lru_cache
-import hashlib
 import math
 import struct
 
@@ -86,8 +85,7 @@ class GpuColor:
         others = tuple(self.backend.resolve(item.gpu_image if hasattr(item, "gpu_image") else item, cancelled)
                        if item is not None else artifact for item in supplied)
         data = tuple(float(value) for value in data)
-        digest = hashlib.sha256(struct.pack("<" + str(len(data)) + "f", *data)).hexdigest() if data else ""
-        identity = (mode, tuple(args), digest,
+        identity = (mode, tuple(args), data,
                     *(item.resident.identity if value is not None else () for item, value in zip(others, supplied)))
         size = source.pixels.shape[1], source.pixels.shape[0]
         result = self.backend.operate(artifact, "color." + name, identity, size, lambda device, abort:
@@ -171,7 +169,7 @@ class GpuColor:
         result = self.backend.operate(artifact, "color.filter", (radius, eps, subsample),
             source.pixels.shape[1::-1], lambda device, abort:
                 device.guided(artifact.resident.carrier, artifact.resident.carrier, radius, eps, subsample, abort),
-            cancelled, working_bytes=source.pixels.shape[0]*source.pixels.shape[1]*320)
+            cancelled)
         return GpuGeometry.updated(source, result)
 
     @staticmethod

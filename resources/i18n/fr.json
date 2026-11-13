@@ -2411,7 +2411,6 @@
   "canvas.preview.state.loading": "Chargement",
   "canvas.preview.state.updating": "Actualisation",
   "canvas.preview.state.preview": "Aperçu",
-  "canvas.preview.state.temporary": "Aperçu temporaire",
   "canvas.preview.state.full": "Pleine résolution",
   "canvas.preview.state.region": "Zone visible",
   "canvas.preview.state.original": "Avant",

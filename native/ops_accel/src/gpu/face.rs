@@ -23,31 +23,21 @@ impl GpuDevice {
             return Err(error("face_specification","Face tensor or output shape mismatch"));
         }
         py.allow_threads(|| {
-            let _io=self.state.io.lock().unwrap();
-            let cancel=||cancelled.as_ref().map(|v|Python::with_gil(|py|v.clone_ref(py)));
-            Cancellation::new(cancel()).check()?;
+            let mut io=self.state.io.lock().unwrap();
             let target=self.state.allocate((width*height*16) as u64)?;
             let mut params=[0u32;48];
             params[..12].copy_from_slice(&[width as u32,height as u32,mode,0,image.width as u32,image.height as u32,
                 image.stride as u32,image.offset as u32,auxiliary.width as u32,auxiliary.height as u32,auxiliary.stride as u32,auxiliary.offset as u32]);
             for (index,value) in args.iter().enumerate() {params[index+16]=value.to_bits();}
             let uniform=self.state.uniform("ops-face-parameters", bytemuck::cast_slice(&params))?;
-            let metadata=self.state.allocate((data.len().max(1)*4) as u64)?;
-            if !data.is_empty() {
-                let mut pool=self.state.pool.lock().unwrap();
-                if pool.total()+metadata.size>pool.limit {pool.idle.clear();}
-                if pool.total()+metadata.size>pool.limit {return Err(error("memory_pressure","Face metadata exceeds GPU budget"));}
-                pool.transient=metadata.size;
-                self.state.queue.write_buffer(metadata.buffer.as_ref().unwrap(),0,bytemuck::cast_slice(&data));
-            }
-            let mut encoder=self.state.device.create_command_encoder(&Default::default());
-            self.state.dispatch(&mut encoder,"face",&[image.storage.buffer.as_ref().unwrap(),auxiliary.storage.buffer.as_ref().unwrap(),
+            let metadata=self.state.data("ops-face-metadata",&data)?;
+            self.state.dispatch(self.state.encoder(&mut io)?,"face",&[image.storage.buffer.as_ref().unwrap(),auxiliary.storage.buffer.as_ref().unwrap(),
                 a.map_or(image.storage.buffer.as_ref().unwrap(),|v|v.storage.buffer.as_ref().unwrap()),
-                target.buffer.as_ref().unwrap(),metadata.buffer.as_ref().unwrap(),&uniform],
+                target.buffer.as_ref().unwrap(),&metadata,&uniform],
                 ((width as u32).div_ceil(8),(height as u32).div_ceil(8)));
-            let event=self.state.wait(self.state.queue.submit([encoder.finish()]),cancel());
-            self.state.pool.lock().unwrap().transient=0;
-            Ok(GpuImage{storage:target,width,height,generation:self.state.generation,event:event?,stride:width,offset:0})
+            let ticket=self.state.ticket(&mut io);
+            self.state.recorded(&mut io,1,cancelled)?;
+            Ok(GpuImage{storage:target,width,height,generation:self.state.generation,ticket,stride:width,offset:0})
         })
     }
 
@@ -57,14 +47,14 @@ impl GpuDevice {
         }
         let allocations:Vec<_>=tensors.iter().map(|tensor|tensor.storage.clone()).collect();
         py.allow_threads(|| {
-            let _io=self.state.io.lock().unwrap();
+            let mut io=self.state.io.lock().unwrap();
             let bytes=allocations.iter().map(|v|v.size).sum();let storage=self.state.allocate(bytes)?;
-            let mut encoder=self.state.device.create_command_encoder(&Default::default());let mut offset=0;
+            let encoder=self.state.encoder(&mut io)?;let mut offset=0;
             for allocation in &allocations {
                 encoder.copy_buffer_to_buffer(allocation.buffer.as_ref().unwrap(),0,storage.buffer.as_ref().unwrap(),offset,allocation.size);
                 offset+=allocation.size;
             }
-            let event=self.state.wait(self.state.queue.submit([encoder.finish()]),cancelled)?;
+            let event=self.state.flush(&mut io,cancelled)?;
             Ok(GpuTensor{storage,shape:vec![bytes as usize/4],event})
         })
     }

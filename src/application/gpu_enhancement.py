@@ -136,8 +136,7 @@ class GpuEnhancement:
                 image = ops.stage(image, 14, kernel="enhance")
             elif hidden:
                 nearest = self.backend.operate(image, "enhance.nearest", (), size,
-                    lambda device, abort: device.nearest_visible(image.resident.carrier, abort), self.cancelled,
-                    working_bytes=prod(size)*64)
+                    lambda device, abort: device.nearest_visible(image.resident.carrier, abort), self.cancelled)
                 image = ops.stage(image, 2, auxiliary=nearest, kernel="enhance")
         if params["luminance"] or params["chroma"]:
             restored = self.restoration(source, image, "denoise")

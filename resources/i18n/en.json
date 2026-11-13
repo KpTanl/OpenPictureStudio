@@ -2411,7 +2411,6 @@
   "canvas.preview.state.loading": "Loading",
   "canvas.preview.state.updating": "Updating",
   "canvas.preview.state.preview": "Preview",
-  "canvas.preview.state.temporary": "Temporary preview",
   "canvas.preview.state.full": "Full resolution",
   "canvas.preview.state.region": "Visible region",
   "canvas.preview.state.original": "Original",

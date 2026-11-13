@@ -119,7 +119,7 @@ def stage_order(session):
                  if node.node_type not in ("source", "export")} if mapped else {}
     ordered = list(originals)
     # 已有工作流里的先后不动；新加入的步骤按这个次序插入
-    defaults = ["color_adjust", "denoise", "beauty", "crop",
+    defaults = ["beauty", "color_adjust", "denoise", "crop",
                 *(name for name in session.tool_params if name not in FINAL_STAGES),
                 *(name for name in FINAL_STAGES if name in session.tool_params)]
     for name in defaults:

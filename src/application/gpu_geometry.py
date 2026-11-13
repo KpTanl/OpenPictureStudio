@@ -173,7 +173,7 @@ class GpuGeometry:
             result = self.backend.resolve(artifact, cancelled, bounds)
             return self.updated(source, result, size=formal_size)
         result = self.backend.operate(artifact, "view", (identity, bounds), size, lambda device, abort:
-            device.view(artifact.resident.carrier, left, top, *size), cancelled, view=True, working_bytes=0)
+            device.view(artifact.resident.carrier, left, top, *size), cancelled, view=True)
         return self.updated(source, result, size=formal_size)
 
     def execute(self, reference, source, params, upstream_identity, cancelled):
@@ -266,8 +266,7 @@ class GpuGeometry:
         artifact=self.backend.resolve(source.gpu_image,cancelled)
         guide=self.backend.resolve(guide,cancelled)
         result=self.backend.operate(artifact,"guided",(identity,guide.resident.identity,radius,eps,subsample),size,lambda device,abort:
-            device.guided(artifact.resident.carrier,guide.resident.carrier,radius,eps,subsample,abort),cancelled,
-            working_bytes=size[0]*size[1]*160)
+            device.guided(artifact.resident.carrier,guide.resident.carrier,radius,eps,subsample,abort),cancelled)
         return self.updated(source,result)
 
     def with_patch(self, source, patch, bounds, identity, *, has_alpha=False):

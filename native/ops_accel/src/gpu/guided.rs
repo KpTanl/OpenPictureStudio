@@ -2,61 +2,51 @@ use super::*;
 
 struct GuidedBatch<'a> {
     state: &'a Arc<State>,
-    encoder: wgpu::CommandEncoder,
-    retained: Vec<Arc<Allocation>>,
+    io: &'a mut Io,
+    passes: u32,
     cancelled: Option<Py<PyAny>>,
 }
 
 impl GuidedBatch<'_> {
-    fn cancellation(&self) -> Option<Py<PyAny>> {
-        self.cancelled.as_ref().map(|value| Python::with_gil(|py| value.clone_ref(py)))
-    }
-
     fn image(&mut self, source: &GpuImage, mode: u32, width: usize, height: usize) -> PyResult<GpuImage> {
-        let cancelled = self.cancellation();
-        let image = self.state.encode_image_op(&mut self.encoder, source, source, mode, &[], width, height, cancelled)?;
-        self.retained.push(image.storage.clone());
-        Ok(image)
+        self.passes += 1;
+        self.state.encode_image_op(self.io, source, source, mode, &[], width, height)
     }
 
     fn guide(&mut self, a: &GpuImage, b: &GpuImage, c: &GpuImage, mode: u32,
              eps: f32, center_g: &GpuImage, center_p: &GpuImage) -> PyResult<GpuImage> {
-        Cancellation::new(self.cancellation()).check()?;
         let target = self.state.allocate((a.width*a.height*16) as u64)?;
-        self.retained.push(target.clone());
         let params = [a.width as u32, a.height as u32, mode, eps.to_bits()];
         let uniform = self.state.uniform("ops-guided-params", bytemuck::cast_slice(&params))?;
-        self.state.dispatch_named(&mut self.encoder, "guided", &format!("guided.{mode}"), &[
+        self.passes += 1;
+        self.state.dispatch_named(self.state.encoder(self.io)?, "guided", &format!("guided.{mode}"), &[
             a.storage.buffer.as_ref().unwrap(), b.storage.buffer.as_ref().unwrap(), c.storage.buffer.as_ref().unwrap(),
             center_g.storage.buffer.as_ref().unwrap(), center_p.storage.buffer.as_ref().unwrap(),
             target.buffer.as_ref().unwrap(), &uniform], ((a.width as u32).div_ceil(8), (a.height as u32).div_ceil(8)));
         Ok(GpuImage { storage: target, width: a.width, height: a.height, generation: self.state.generation,
-            event: 0, stride: a.width, offset: 0 })
+            ticket: self.state.ticket(self.io), stride: a.width, offset: 0 })
     }
 
     fn box_filter(&mut self, image: &GpuImage, radius: u32) -> PyResult<GpuImage> {
         let mut input = image.storage.clone();
         for axis in 0..2 {
-            Cancellation::new(self.cancellation()).check()?;
             let target = self.state.allocate((image.width*image.height*16) as u64)?;
-            self.retained.push(target.clone());
             let params = [image.width as u32, image.height as u32, radius, axis];
             let uniform = self.state.uniform("ops-box-params", bytemuck::cast_slice(&params))?;
             let lines = if axis == 0 { image.height } else { image.width };
-            self.state.dispatch(&mut self.encoder, "box_vec", &[
+            self.passes += 1;
+            self.state.dispatch(self.state.encoder(self.io)?, "box_vec", &[
                 input.buffer.as_ref().unwrap(), target.buffer.as_ref().unwrap(), &uniform],
                 ((lines as u32).div_ceil(16), 1));
             input = target;
         }
         Ok(GpuImage { storage: input, width: image.width, height: image.height, generation: self.state.generation,
-            event: 0, stride: image.width, offset: 0 })
+            ticket: self.state.ticket(self.io), stride: image.width, offset: 0 })
     }
 
     fn finish(self, output: GpuImage) -> PyResult<GpuImage> {
-        let cancelled = self.cancellation();
-        let event = self.state.wait(self.state.queue.submit([self.encoder.finish()]), cancelled);
-        drop(self.retained);
-        Ok(GpuImage { event: event?, ..output })
+        self.state.recorded(self.io, self.passes, self.cancelled)?;
+        Ok(output)
     }
     fn run(mut self, image: &GpuImage, guide: &GpuImage, radius: u32, eps: f32, subsample: usize) -> PyResult<GpuImage> {
         if radius == 0 {
@@ -98,13 +88,8 @@ impl GpuDevice {
             return Err(error("target_limit", "Unsupported guided filter specification"));
         }
         py.allow_threads(|| {
-            let _io = self.state.io.lock().unwrap();
-            let result = GuidedBatch { state: &self.state,
-                encoder: self.state.device.create_command_encoder(&Default::default()), retained: Vec::new(), cancelled }
-                .run(image, guide, radius, eps, subsample);
-            let _ = self.state.device.poll(wgpu::PollType::Poll);
-            self.state.check()?;
-            result
+            let mut io = self.state.io.lock().unwrap();
+            GuidedBatch { state: &self.state, io: &mut io, passes: 0, cancelled }.run(image, guide, radius, eps, subsample)
         })
     }
 }

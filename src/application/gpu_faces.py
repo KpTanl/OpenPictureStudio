@@ -332,7 +332,7 @@ class GpuFaceSession(FaceGeometry):
             args=(*counts[:2],self.spec[7],self.spec[11],*size),data=offsets)
         all_rois = self.op(boxes,3,(2,self.spec[13]+5000),cancelled,args=(1,self.spec[10],self.spec[11],self.spec[13],*size))
         rois = self.backend.operate(all_rois,"face.locator.view",(self.spec[13],),(2,self.spec[13]),
-            lambda device,abort:device.view(all_rois.resident.carrier,0,0,2,self.spec[13]),cancelled,view=True,working_bytes=0)
+            lambda device,abort:device.view(all_rois.resident.carrier,0,0,2,self.spec[13]),cancelled,view=True)
         for index in range(self.spec[13]):
             for factor in self.spec[12]:
                 control = self.op(rois,14,(2,1),cancelled,auxiliary=state,

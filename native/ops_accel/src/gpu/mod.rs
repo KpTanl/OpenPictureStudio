@@ -23,7 +23,11 @@ mod ort;
 pub use ort::{GpuModel, GpuTensor};
 
 pyo3::create_exception!(ops_accel, GpuError, pyo3::exceptions::PyRuntimeError);
-pub const REVISION: &str = "wgpu27-dx12-beauty-3";
+pub const REVISION: &str = "wgpu27-dx12-beauty-4";
+const PENDING: u64 = u64::MAX;
+const PASS_LIMIT: u32 = 512;
+const TRANSIENT_LIMIT: u64 = 64 << 20;
+const RETIRED_LIMIT: u64 = 512 << 20;
 const STORAGE: wgpu::BufferUsages = wgpu::BufferUsages::from_bits_retain(
     wgpu::BufferUsages::STORAGE.bits() | wgpu::BufferUsages::COPY_SRC.bits() | wgpu::BufferUsages::COPY_DST.bits());
 
@@ -61,6 +65,8 @@ const SHADERS: &[(&str, &str)] = &[
     ("combine", include_str!("shaders/combine.wgsl")),
     ("remap_cubic", include_str!("shaders/remap_cubic.wgsl")),
 ];
+
+fn done(event: u64) -> Arc<AtomicU64> { Arc::new(AtomicU64::new(event)) }
 
 fn error(code: &str, message: impl ToString) -> PyErr {
     GpuError::new_err((code.to_owned(), message.to_string()))
@@ -133,17 +139,26 @@ struct Pool {
     idle: Vec<(u64, wgpu::Buffer)>,
     staging: u64,
     transient: u64,
+    retired: u64,
+    recording: bool,
     limit: u64,
     idle_limit: u64,
 }
 
 impl Pool {
     fn idle_bytes(&self) -> u64 { self.idle.iter().map(|entry| entry.0).sum() }
-    fn total(&self) -> u64 { self.active + self.idle_bytes() + self.staging + self.transient }
+    fn total(&self) -> u64 { self.active + self.idle_bytes() + self.staging + self.transient + self.retired }
 }
 
 #[derive(Default)]
-struct Io { staging: Option<wgpu::Buffer>, size: u64 }
+struct Io {
+    staging: Option<wgpu::Buffer>,
+    size: u64,
+    encoder: Option<wgpu::CommandEncoder>,
+    passes: u32,
+    owner: Option<std::thread::ThreadId>,
+    ticket: Option<Arc<AtomicU64>>,
+}
 
 struct State {
     adapter: wgpu::Adapter,
@@ -162,6 +177,7 @@ struct State {
     lost: Arc<AtomicBool>,
     failure: Arc<Mutex<Option<(String, String)>>>,
     completed: AtomicU64,
+    submission_ms: AtomicU64,
     uploaded: AtomicU64,
     downloaded: AtomicU64,
     generation: u64,
@@ -177,6 +193,8 @@ impl Drop for Allocation {
             pool.active -= self.size;
             if !state.lost.load(Ordering::Acquire) && pool.idle_bytes() + self.size <= pool.idle_limit {
                 if let Some(buffer) = self.buffer.take() { pool.idle.push((self.size, buffer)); }
+            } else if pool.recording {
+                pool.retired += self.size;
             }
         }
     }
@@ -188,7 +206,7 @@ pub struct GpuImage {
     width: usize,
     height: usize,
     generation: u64,
-    event: u64,
+    ticket: Arc<AtomicU64>,
     stride: usize,
     offset: usize,
 }
@@ -202,22 +220,22 @@ impl GpuImage {
     #[getter]
     fn generation(&self) -> u64 { self.generation }
     #[getter]
-    fn completion(&self) -> u64 { self.event }
+    fn completion(&self) -> u64 { self.ticket.load(Ordering::Acquire) }
     #[getter]
     fn allocation_id(&self) -> usize { Arc::as_ptr(&self.storage) as usize }
     #[getter]
     fn ready(&self) -> bool {
-        !self.storage.state.lost.load(Ordering::Acquire) && self.storage.state.completed.load(Ordering::Acquire) >= self.event
+        let event = self.ticket.load(Ordering::Acquire);
+        event != PENDING && !self.storage.state.lost.load(Ordering::Acquire) && self.storage.state.completed.load(Ordering::Acquire) >= event
     }
 }
 
 impl State {
     fn upload_data(self: &Arc<Self>, data: &[f32], width: usize, height: usize,
                    cancelled: Option<Py<PyAny>>) -> PyResult<GpuImage> {
-        let _io = self.io.lock().unwrap();
+        let mut io = self.io.lock().unwrap();
         self.check()?;
-        let mut check = Cancellation::new(cancelled.as_ref().map(|value| Python::with_gil(|py| value.clone_ref(py))));
-        check.check()?;
+        self.flush(&mut io, cancelled.as_ref().map(|value| Python::with_gil(|py| value.clone_ref(py))))?;
         let storage = self.allocate((width * height * 16) as u64)?;
         {
             let mut pool = self.pool.lock().unwrap();
@@ -229,7 +247,7 @@ impl State {
             self.queue.write_buffer(storage.buffer.as_ref().unwrap(), 0, bytemuck::cast_slice(data));
             let event = self.wait(self.queue.submit([]), cancelled)?;
             self.uploaded.fetch_add(storage.size, Ordering::Relaxed);
-            Ok(GpuImage { storage: storage.clone(), width, height, generation: self.generation, event, stride: width, offset: 0 })
+            Ok(GpuImage { storage: storage.clone(), width, height, generation: self.generation, ticket: done(event), stride: width, offset: 0 })
         })();
         self.pool.lock().unwrap().transient = 0;
         result
@@ -269,6 +287,95 @@ impl State {
         self.queue.write_buffer(&buffer, 0, data);
         self.check()?;
         Ok(buffer)
+    }
+
+    fn data(&self, label: &str, data: &[f32]) -> PyResult<wgpu::Buffer> {
+        use wgpu::util::DeviceExt;
+        self.check()?;
+        let size = (data.len().max(1) * 4) as u64;
+        {
+            let mut pool = self.pool.lock().unwrap();
+            if pool.total() + size > pool.limit { pool.idle.clear(); }
+            if pool.total() + size > pool.limit { return Err(error("memory_pressure", "GPU metadata exceeds budget")); }
+            pool.transient += size;
+        }
+        let buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some(label),
+            contents: if data.is_empty() { &[0u8; 4] } else { bytemuck::cast_slice(data) }, usage: STORAGE });
+        self.check()?;
+        Ok(buffer)
+    }
+
+    fn encoder<'a>(&self, io: &'a mut Io) -> PyResult<&'a mut wgpu::CommandEncoder> {
+        let thread = std::thread::current().id();
+        if io.encoder.is_some() && (io.owner != Some(thread) || self.pool.lock().unwrap().retired >= RETIRED_LIMIT) {
+            self.flush(io, None)?;
+        }
+        io.owner = Some(thread);
+        if io.encoder.is_none() { self.pool.lock().unwrap().recording = true; }
+        Ok(io.encoder.get_or_insert_with(|| self.device.create_command_encoder(&Default::default())))
+    }
+
+    fn ticket(&self, io: &mut Io) -> Arc<AtomicU64> {
+        io.ticket.get_or_insert_with(|| Arc::new(AtomicU64::new(PENDING))).clone()
+    }
+
+    fn recorded(&self, io: &mut Io, passes: u32, cancelled: Option<Py<PyAny>>) -> PyResult<()> {
+        io.passes += passes;
+        let full = {
+            let pool = self.pool.lock().unwrap();
+            pool.transient >= TRANSIENT_LIMIT || pool.retired >= RETIRED_LIMIT
+        };
+        if io.passes >= PASS_LIMIT || full { self.flush(io, cancelled)?; }
+        Ok(())
+    }
+
+    fn discard(&self, io: &mut Io) {
+        io.encoder = None;
+        io.passes = 0;
+        io.owner = None;
+        io.ticket = None;
+        let mut pool = self.pool.lock().unwrap();
+        pool.transient = 0;
+        pool.retired = 0;
+        pool.recording = false;
+    }
+
+    fn launch(&self, io: &mut Io, cancelled: Option<Py<PyAny>>) -> PyResult<(Option<wgpu::SubmissionIndex>, Option<Arc<AtomicU64>>)> {
+        if io.encoder.is_none() || io.owner == Some(std::thread::current().id()) {
+            if let Err(reason) = self.check().and_then(|_| Cancellation::new(cancelled).check()) {
+                self.discard(io);
+                return Err(reason);
+            }
+        }
+        let Some(encoder) = io.encoder.take() else { return Ok((None, None)); };
+        io.passes = 0;
+        io.owner = None;
+        self.pool.lock().unwrap().recording = false;
+        Ok((Some(self.queue.submit([encoder.finish()])), io.ticket.take()))
+    }
+
+    fn settle(&self, index: wgpu::SubmissionIndex, ticket: Option<Arc<AtomicU64>>, started: Instant) -> PyResult<u64> {
+        let waited = self.wait(index, None);
+        {
+            let mut pool = self.pool.lock().unwrap();
+            pool.transient = 0;
+            pool.retired = 0;
+        }
+        let event = waited?;
+        if let Some(ticket) = ticket { ticket.store(event, Ordering::Release); }
+        let limit = self.submission_ms.load(Ordering::Relaxed);
+        if limit != 0 && started.elapsed() > Duration::from_millis(limit) {
+            return Err(error("submission_limit", "GPU submission exceeds the integrated-device limit"));
+        }
+        Ok(event)
+    }
+
+    fn flush(&self, io: &mut Io, cancelled: Option<Py<PyAny>>) -> PyResult<u64> {
+        let started = Instant::now();
+        match self.launch(io, cancelled)? {
+            (Some(index), ticket) => self.settle(index, ticket, started),
+            _ => Ok(self.completed.load(Ordering::Acquire)),
+        }
     }
 
     fn wait(&self, index: wgpu::SubmissionIndex, cancelled: Option<Py<PyAny>>) -> PyResult<u64> {
@@ -334,7 +441,7 @@ impl State {
         pass.dispatch_workgroups(groups.0, groups.1, 1);
     }
 
-    fn read(&self, io: &mut Io, encoder: &mut wgpu::CommandEncoder, source: &wgpu::Buffer, size: u64) -> PyResult<wgpu::Buffer> {
+    fn read(&self, io: &mut Io, source: &wgpu::Buffer, size: u64) -> PyResult<wgpu::Buffer> {
         if io.size < size {
             let mut pool = self.pool.lock().unwrap();
             let additional = size - io.size;
@@ -351,16 +458,18 @@ impl State {
             pool.staging = size;
         }
         let staging = io.staging.as_ref().unwrap().clone();
-        encoder.copy_buffer_to_buffer(source, 0, &staging, 0, size);
+        self.encoder(io)?.copy_buffer_to_buffer(source, 0, &staging, 0, size);
         Ok(staging)
     }
 
-    fn mapped(&self, encoder: wgpu::CommandEncoder, staging: &wgpu::Buffer, size: u64,
+    fn mapped(&self, io: &mut Io, staging: &wgpu::Buffer, size: u64,
               cancelled: Option<Py<PyAny>>) -> PyResult<Vec<u8>> {
-        let index = self.queue.submit([encoder.finish()]);
+        let started = Instant::now();
+        let (index, ticket) = self.launch(io, cancelled)?;
+        let index = index.ok_or_else(|| error("readback_failed", "GPU readback was not recorded"))?;
         let (sender, receiver) = std::sync::mpsc::channel();
         staging.slice(..size).map_async(wgpu::MapMode::Read, move |result| { let _ = sender.send(result); });
-        let waited = self.wait(index, cancelled);
+        let waited = self.settle(index, ticket, started);
         if let Err(reason) = waited { staging.unmap(); return Err(reason); }
         receiver.recv().map_err(|reason| error("readback_failed", reason))?
             .map_err(|reason| error("readback_failed", reason))?;
@@ -433,7 +542,7 @@ impl GpuDevice {
                 first_submission_ms: Mutex::new(HashMap::new()), pending_kernels: Mutex::new(Vec::new()),
                 timing: Mutex::new(None), io: Mutex::new(Io::default()),
                 pool: Mutex::new(Pool { limit: budget, idle_limit: budget / 8, ..Default::default() }), lost, failure,
-                completed: AtomicU64::new(0),
+                completed: AtomicU64::new(0), submission_ms: AtomicU64::new(0),
                 uploaded: AtomicU64::new(0), downloaded: AtomicU64::new(0), generation });
             state.check()?;
             Ok(Self { state, index, compiler_probe, compiler_reason: String::new() })
@@ -490,11 +599,32 @@ impl GpuDevice {
         Ok(record)
     }
 
-    fn configure(&self, budget: u64, idle_limit: u64) {
+    #[pyo3(signature = (budget, idle_limit, submission_ms=0))]
+    fn configure(&self, budget: u64, idle_limit: u64, submission_ms: u64) {
+        self.state.submission_ms.store(submission_ms, Ordering::Relaxed);
         let mut pool = self.state.pool.lock().unwrap();
         pool.limit = budget;
         pool.idle_limit = idle_limit.min(budget);
         while !pool.idle.is_empty() && (pool.idle_bytes() > pool.idle_limit || pool.total() > budget) { pool.idle.pop(); }
+    }
+
+    #[pyo3(signature = (cancelled=None))]
+    fn flush(&self, py: Python<'_>, cancelled: Option<Py<PyAny>>) -> PyResult<u64> {
+        py.allow_threads(|| {
+            let mut io = self.state.io.lock().unwrap();
+            self.state.flush(&mut io, cancelled)
+        })
+    }
+
+    fn discard(&self, py: Python<'_>) {
+        py.allow_threads(|| {
+            let mut io = self.state.io.lock().unwrap();
+            if io.owner == Some(std::thread::current().id()) { self.state.discard(&mut io); }
+        });
+    }
+
+    fn usage(&self) -> (u64, u64) {
+        (self.state.pool.lock().unwrap().total(), self.state.completed.load(Ordering::Acquire))
     }
 
     fn trim(&self, py: Python<'_>) {
@@ -513,6 +643,7 @@ impl GpuDevice {
     fn close(&self, py: Python<'_>) {
         py.allow_threads(|| {
             let mut io = self.state.io.lock().unwrap();
+            self.state.discard(&mut io);
             self.state.lost.store(true, Ordering::Release);
             self.state.pool.lock().unwrap().idle.clear();
             io.staging = None;
@@ -539,12 +670,11 @@ impl GpuDevice {
         let (data, index) = (data.as_slice()?, blocks.as_slice()?);
         let output = py.allow_threads(|| {
             let clone_cancel = || cancelled.as_ref().map(|value| Python::with_gil(|py| value.clone_ref(py)));
-            let buffer = self.state.source_blocks(data, index, expected, clone_cancel())?;
             let mut io = self.state.io.lock().unwrap();
+            let buffer = self.state.source_blocks(&mut io, data, index, expected, clone_cancel())?;
             let size = expected.next_multiple_of(4) as u64;
-            let mut encoder = self.state.device.create_command_encoder(&Default::default());
-            let staging = self.state.read(&mut io, &mut encoder, buffer.buffer.as_ref().unwrap(), size)?;
-            let mut bytes = self.state.mapped(encoder, &staging, size, clone_cancel())?;
+            let staging = self.state.read(&mut io, buffer.buffer.as_ref().unwrap(), size)?;
+            let mut bytes = self.state.mapped(&mut io, &staging, size, clone_cancel())?;
             bytes.truncate(expected);
             Ok::<_, PyErr>(bytes)
         })?;
@@ -600,11 +730,10 @@ impl GpuDevice {
             let target = self.state.allocate(size)?;
             let uniform = self.state.uniform("ops-display-spec", bytemuck::cast_slice(&[image.width as u32, image.height as u32, width as u32, height as u32,
                     image.stride as u32, image.offset as u32, 0, 0]))?;
-            let mut encoder = self.state.device.create_command_encoder(&Default::default());
-            self.state.dispatch(&mut encoder, "display_rgba", &[image.storage.buffer.as_ref().unwrap(), target.buffer.as_ref().unwrap(), &uniform],
+            self.state.dispatch(self.state.encoder(&mut io)?, "display_rgba", &[image.storage.buffer.as_ref().unwrap(), target.buffer.as_ref().unwrap(), &uniform],
                 ((width as u32).div_ceil(8), (height as u32).div_ceil(8)));
-            let staging = self.state.read(&mut io, &mut encoder, target.buffer.as_ref().unwrap(), size)?;
-            self.state.mapped(encoder, &staging, size, cancelled)
+            let staging = self.state.read(&mut io, target.buffer.as_ref().unwrap(), size)?;
+            self.state.mapped(&mut io, &staging, size, cancelled)
         })?;
         PyArray1::from_vec_bound(py, output).reshape([height, width, 4])
     }

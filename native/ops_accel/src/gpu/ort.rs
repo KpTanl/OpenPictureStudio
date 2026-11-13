@@ -99,7 +99,7 @@ impl GpuDevice {
             return Err(error("target_limit","GPU model tensor exceeds adapter limits"));
         }
         let session=py.allow_threads(|| unsafe {
-            let _io=self.state.io.lock().unwrap(); self.state.check()?;
+            let mut io=self.state.io.lock().unwrap(); self.state.flush(&mut io,None)?;
             let runtime=Library::load(runtime_path)?; let directml=Library::load(directml_path)?;
             let get_base=GetProcAddress(runtime.handle(),PCSTR(b"OrtGetApiBase\0".as_ptr())).ok_or_else(||error("model_runtime","OrtGetApiBase is unavailable"))?;
             let get_base:unsafe extern "system" fn()->*const c_void=std::mem::transmute(get_base);
@@ -161,28 +161,29 @@ impl GpuModel {
         if self.tensor_shapes.is_some() { return Err(error("model_layout","Tensor models require run_tensors")); }
         if (image.width,image.height)!=self.input_size { return Err(error("model_layout","GPU input size mismatch")); }
         py.allow_threads(|| unsafe {
-            let _io=self.state.io.lock().unwrap();
+            let mut io=self.state.io.lock().unwrap();
             let session=self.session.lock().unwrap(); let session=session.as_ref().ok_or_else(||error("model_closed","GPU model is closed"))?;
             let cancel=||cancelled.as_ref().map(|v|Python::with_gil(|py|v.clone_ref(py)));
-            Cancellation::new(cancel()).check()?;
             let (width,height)=self.output_size; let target=self.state.allocate((width*height*16) as u64)?;
-            let pass=|mode:u32,tensor:&wgpu::Buffer|->PyResult<u64>{
+            let pass=|io:&mut Io,mode:u32,tensor:&wgpu::Buffer|->PyResult<()>{
                 let mut params=[0u32;16]; params[..12].copy_from_slice(&[image.width as u32,image.height as u32,image.stride as u32,image.offset as u32,
                     width as u32,height as u32,self.channels,self.nchw as u32,mode,self.input_srgb as u32,self.output_srgb as u32,0]);
                 params[12]=self.scale.to_bits(); params[13]=self.bias.to_bits();
                 let uniform=self.state.uniform("ops-tensor-layout", bytemuck::cast_slice(&params))?;
-                let mut encoder=self.state.device.create_command_encoder(&Default::default());
                 let size=if mode==0 {self.input_size} else {self.output_size};
-                self.state.dispatch(&mut encoder,"tensor_transfer",&[image.storage.buffer.as_ref().unwrap(),tensor,target.buffer.as_ref().unwrap(),&uniform],
+                self.state.dispatch(self.state.encoder(io)?,"tensor_transfer",&[image.storage.buffer.as_ref().unwrap(),tensor,target.buffer.as_ref().unwrap(),&uniform],
                     ((size.0 as u32).div_ceil(8),(size.1 as u32).div_ceil(8)));
-                self.state.wait(self.state.queue.submit([encoder.finish()]),cancel())
+                Ok(())
             };
-            pass(0,&session.input)?; pass(2,&session.output[0])?;
+            pass(&mut io,0,&session.input)?; pass(&mut io,2,&session.output[0])?;
+            self.state.flush(&mut io,cancel())?;
             let mut message=[0i8;4096]; let status=ops_ort_run(session.handle,message.as_mut_ptr(),message.len());
             self.state.wait(self.state.queue.submit([]),cancel())?;
             if status!=0 { return Err(error("model_execution",CStr::from_ptr(message.as_ptr()).to_string_lossy())); }
-            let event=pass(1,&session.output[0])?;
-            Ok(GpuImage{storage:target,width,height,generation:self.state.generation,event,stride:width,offset:0})
+            pass(&mut io,1,&session.output[0])?;
+            let ticket=self.state.ticket(&mut io);
+            self.state.recorded(&mut io,1,cancel())?;
+            Ok(GpuImage{storage:target,width,height,generation:self.state.generation,ticket,stride:width,offset:0})
         })
     }
 
@@ -192,38 +193,37 @@ impl GpuModel {
         let shapes=self.tensor_shapes.as_ref().ok_or_else(||error("model_layout","Image model requires run"))?;
         if (image.width,image.height)!=self.input_size { return Err(error("model_layout","GPU input size mismatch")); }
         py.allow_threads(|| unsafe {
-            let _io=self.state.io.lock().unwrap();
+            let mut io=self.state.io.lock().unwrap();
             let session=self.session.lock().unwrap(); let session=session.as_ref().ok_or_else(||error("model_closed","GPU model is closed"))?;
             let cancel=||cancelled.as_ref().map(|v|Python::with_gil(|py|v.clone_ref(py)));
-            Cancellation::new(cancel()).check()?;
             let mut params=[0u32;16];
             params[..12].copy_from_slice(&[image.width as u32,image.height as u32,image.stride as u32,image.offset as u32,
                 image.width as u32,image.height as u32,self.channels,self.nchw as u32,0,self.input_srgb as u32,0,0]);
             params[12]=self.scale.to_bits();params[13]=self.bias.to_bits();
             let uniform=self.state.uniform("ops-tensor-input", bytemuck::cast_slice(&params))?;
             let dummy=self.state.allocate(16)?;
-            let mut encoder=self.state.device.create_command_encoder(&Default::default());
-            self.state.dispatch(&mut encoder,"tensor_transfer",&[image.storage.buffer.as_ref().unwrap(),&session.input,dummy.buffer.as_ref().unwrap(),&uniform],
+            let encoder=self.state.encoder(&mut io)?;
+            self.state.dispatch(encoder,"tensor_transfer",&[image.storage.buffer.as_ref().unwrap(),&session.input,dummy.buffer.as_ref().unwrap(),&uniform],
                 ((image.width as u32).div_ceil(8),(image.height as u32).div_ceil(8)));
             for (shape,output) in shapes.iter().zip(&session.output) {
                 let count=shape.iter().product::<usize>() as u32;
                 let groups=count.div_ceil(64).min(self.state.limits.max_compute_workgroups_per_dimension);
                 let values=[count,groups*64,0,0];
                 let uniform=self.state.uniform("ops-tensor-clear", bytemuck::cast_slice(&values))?;
-                self.state.dispatch(&mut encoder,"tensor_clear",&[output,&uniform],(groups,count.div_ceil(groups*64)));
+                self.state.dispatch(encoder,"tensor_clear",&[output,&uniform],(groups,count.div_ceil(groups*64)));
             }
-            self.state.wait(self.state.queue.submit([encoder.finish()]),cancel())?;
+            self.state.flush(&mut io,cancel())?;
             let mut message=[0i8;4096]; let status=ops_ort_run(session.handle,message.as_mut_ptr(),message.len());
             self.state.wait(self.state.queue.submit([]),cancel())?;
             if status!=0 { return Err(error("model_execution",CStr::from_ptr(message.as_ptr()).to_string_lossy())); }
-            let mut targets=Vec::new();let mut encoder=self.state.device.create_command_encoder(&Default::default());
+            let mut targets=Vec::new();let encoder=self.state.encoder(&mut io)?;
             for (shape,output) in shapes.iter().zip(&session.output) {
                 let bytes=(shape.iter().product::<usize>()*4) as u64;
                 let target=self.state.allocate(bytes)?;
                 encoder.copy_buffer_to_buffer(output,0,target.buffer.as_ref().unwrap(),0,bytes);
                 targets.push(target);
             }
-            let event=self.state.wait(self.state.queue.submit([encoder.finish()]),cancel())?;
+            let event=self.state.flush(&mut io,cancel())?;
             Ok(targets.into_iter().zip(shapes).map(|(storage,shape)|GpuTensor{storage,shape:shape.clone(),event}).collect())
         })
     }

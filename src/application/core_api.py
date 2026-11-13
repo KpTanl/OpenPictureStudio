@@ -1239,15 +1239,13 @@ class CoreAPI:
         self, session_id, workflow, *, generation=0, compute_histogram=False,
         is_cancelled=None, update_draft=True, max_dimension=None, allow_intermediate=False,
         display=False, sampling_request=None, priority=0, keep_full_display=False, expected_state=None,
-        temporary_workflow=None, source_is_cancelled=None,
+        source_is_cancelled=None,
     ):
         """display=True 时结果的 image 为 None，display 为显示用 RGBA8 帧；其余契约相同。"""
         started = monotonic()
         if ((allow_intermediate and update_draft) or (display and compute_histogram)
                 or sampling_request is not None and (update_draft or allow_intermediate)
-                or keep_full_display and not display
-                or temporary_workflow is not None and (not allow_intermediate or update_draft or not display
-                                                       or sampling_request is not None or keep_full_display)):
+                or keep_full_display and not display):
             return CoreResult.fail(ErrorCode.INVALID_INPUT, "error.preview.invalid")
         if max_dimension is not None:
             if type(max_dimension) is not int or max_dimension < 1:
@@ -1325,7 +1323,6 @@ class CoreAPI:
                     display=display, max_dimension=max_dimension, parallelism=compute.threads,
                     full_source=lambda abort: self.image_sources.borrow_deferred(source.path,
                         identity=render_identity, is_cancelled=abort, priority=priority, source_cancelled=source_is_cancelled),
-                    temporary_workflow=temporary_workflow,
                     **({"sampling_request": sampling_request} if sampling_request is not None else {}),
                     **({"resources": self.image_sources.resources}
                        if sampling_request is not None or keep_full_display else {}),

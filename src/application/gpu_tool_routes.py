@@ -372,7 +372,8 @@ class GpuToolRoutes:
             try:
                 context = {"node_id": node_id, "is_cancelled": cancelled,
                     "upstream_identity": (source.content_identity, source.gpu_image.resident.identity)}
-                result = route.execute(source, checked.data, context, cancelled, snapshot=snapshot)
+                with self.backend.frame(source.gpu_image.backend_identity, cancelled):
+                    result = route.execute(source, checked.data, context, cancelled, snapshot=snapshot)
                 actual = result.materialize(cancelled)
                 expected = expected.materialize(cancelled)
                 passed = (actual.orig_size == expected.orig_size and actual.pixels.shape == expected.pixels.shape

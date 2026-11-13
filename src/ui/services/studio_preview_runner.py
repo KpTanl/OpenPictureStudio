@@ -111,10 +111,8 @@ class StudioPreviewWorker(QRunnable):
                 is_cancelled=request.is_cancelled, source_identity=request.context.source_identity,
                 source_preview=request.context.source_preview, max_dimension=request.context.max_dimension,
                 source_is_cancelled=request.source_cancellation.is_set)
-            if request.temporary_workflow is not None:
-                options["temporary_workflow"] = request.temporary_workflow
             if (self.cache is not None and request.preview_key is not None and not request.keep_full_display
-                    and request.sampling_request is None and request.temporary_workflow is None
+                    and request.sampling_request is None
                     and request.context.gesture_id is None and not request.context.source_preview.half_size
                     and request.preview_key.matches_file()):
                 cached = self.cache.get(request.preview_key)

@@ -126,8 +126,8 @@ class StudioRenderService:
 
     def _render(self, session, *, display, use_proxy=True, editing_tool=None, is_cancelled=lambda: False,
                 allow_intermediate=False, source_identity=None, source_preview=None, sampling_request=None,
-                priority=0, keep_full_display=False, temporary_workflow=None,
-                max_dimension=STUDIO_PREVIEW_MAX_DIMENSION, source_is_cancelled=None):
+                priority=0, keep_full_display=False, max_dimension=STUDIO_PREVIEW_MAX_DIMENSION,
+                source_is_cancelled=None):
         caller_cancelled = is_cancelled
         is_cancelled = lambda: caller_cancelled() or (
             source_identity is not None and self.core.source_identity(session.core_id) != source_identity) or (
@@ -160,7 +160,6 @@ class StudioRenderService:
             priority=priority, keep_full_display=keep_full_display,
             expected_state=session.state_version if not allow_intermediate else None,
             source_is_cancelled=source_is_cancelled,
-            **({"temporary_workflow": temporary_workflow} if temporary_workflow is not None else {}),
             **({"sampling_request": sampling_request} if sampling_request is not None else {}),
         )
         if not result.success:

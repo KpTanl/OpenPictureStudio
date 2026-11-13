@@ -57,10 +57,11 @@ impl Case {
 
     fn run(&self, state: &State, io: &mut Io, floats: bool) -> PyResult<Vec<u8>> {
         let buffer = |index: usize| self.buffers[index].buffer.as_ref().unwrap();
+        state.flush(io, None)?;
         state.queue.write_buffer(buffer(0), 0, bytemuck::cast_slice(&self.rgb));
         state.queue.write_buffer(buffer(1), 0, bytemuck::cast_slice(&self.field));
         state.queue.write_buffer(buffer(2), 0, bytemuck::cast_slice(&self.guide));
-        let mut encoder = state.device.create_command_encoder(&Default::default());
+        let encoder = state.encoder(io)?;
         for (name, group, counts) in &self.groups {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some(name), timestamp_writes: None });
             pass.set_pipeline(&state.pipelines[name]);
@@ -69,8 +70,8 @@ impl Case {
         }
         let size = (self.width * self.height * 4) as u64;
         let source = if floats { 11 } else { 13 };
-        let staging = state.read(io, &mut encoder, buffer(source), size)?;
-        state.mapped(encoder, &staging, size, None)
+        let staging = state.read(io, buffer(source), size)?;
+        state.mapped(io, &staging, size, None)
     }
 
     fn cpu(&self, threads: usize) -> PyResult<(Vec<u8>, Vec<f32>)> {
@@ -147,13 +148,13 @@ impl State {
         let packed: Vec<_> = case.rgb.chunks_exact(3).zip(&alpha).flat_map(|(rgb, a)| [rgb[0], rgb[1], rgb[2], *a]).collect();
         let source = self.allocate((packed.len() * 4) as u64)?;
         let target = self.allocate(127 * 93 * 4)?;
+        self.flush(io, None)?;
         self.queue.write_buffer(source.buffer.as_ref().unwrap(), 0, bytemuck::cast_slice(&packed));
         let params = [case.width as u32, case.height as u32, 127, 93, case.width as u32, 0, 0, 0];
         let uniform = self.uniform("ops-alpha-check", bytemuck::cast_slice(&params))?;
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        self.dispatch(&mut encoder, "display_rgba", &[source.buffer.as_ref().unwrap(), target.buffer.as_ref().unwrap(), &uniform], (16, 12));
-        let staging = self.read(io, &mut encoder, target.buffer.as_ref().unwrap(), 127 * 93 * 4)?;
-        let output = self.mapped(encoder, &staging, 127 * 93 * 4, None)?;
+        self.dispatch(self.encoder(io)?, "display_rgba", &[source.buffer.as_ref().unwrap(), target.buffer.as_ref().unwrap(), &uniform], (16, 12));
+        let staging = self.read(io, target.buffer.as_ref().unwrap(), 127 * 93 * 4)?;
+        let output = self.mapped(io, &staging, 127 * 93 * 4, None)?;
         let mut full = vec![0; alpha.len() * 4];
         crate::display::linear_to_display_rgba8(&case.rgb, Some(&alpha), case.width, &mut full);
         let reference = crate::display_output::area(&full, case.width, case.height, 127, 93, &mut Cancellation::new(None))?;
@@ -166,10 +167,9 @@ impl State {
         params[0] = case.width as i32; params[1] = case.height as i32;
         params[2] = 127; params[3] = 93;
         let uniform = self.uniform("ops-area-check", bytemuck::cast_slice(&params))?;
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        self.dispatch(&mut encoder, "display_area", &[case.buffers[0].buffer.as_ref().unwrap(), target.buffer.as_ref().unwrap(), &uniform], (2, 93));
-        let staging = self.read(io, &mut encoder, target.buffer.as_ref().unwrap(), 127 * 93 * 4)?;
-        let output = self.mapped(encoder, &staging, 127 * 93 * 4, None)?;
+        self.dispatch(self.encoder(io)?, "display_area", &[case.buffers[0].buffer.as_ref().unwrap(), target.buffer.as_ref().unwrap(), &uniform], (2, 93));
+        let staging = self.read(io, target.buffer.as_ref().unwrap(), 127 * 93 * 4)?;
+        let output = self.mapped(io, &staging, 127 * 93 * 4, None)?;
         let mut full = vec![0; case.width * case.height * 4];
         crate::display::linear_to_display_rgba8(&case.rgb, None, case.width, &mut full);
         let reference = crate::display_output::area(&full, case.width, case.height, 127, 93, &mut Cancellation::new(None))?;

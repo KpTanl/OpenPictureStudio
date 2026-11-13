@@ -2411,7 +2411,6 @@
   "canvas.preview.state.loading": "加载中",
   "canvas.preview.state.updating": "正在更新",
   "canvas.preview.state.preview": "预览",
-  "canvas.preview.state.temporary": "临时预览",
   "canvas.preview.state.full": "完整分辨率",
   "canvas.preview.state.region": "可见区域",
   "canvas.preview.state.original": "改前",

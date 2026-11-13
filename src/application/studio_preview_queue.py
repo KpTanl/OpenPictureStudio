@@ -18,7 +18,6 @@ class StudioPreviewContext:
     preview_target: PreviewTarget = field(default_factory=PreviewTarget)
     gesture_id: str | None = None
     geometry_generation: int = 0
-    interaction_id: str | None = None
     preview_mode: str = "auto"
     max_dimension: int | None = 1600
 
@@ -35,7 +34,6 @@ class StudioPreviewRequest:
     requested_at: float = field(default_factory=monotonic, compare=False)
     sampling_request: MixerSamplingRequest | None = None
     keep_full_display: bool = False
-    temporary_workflow: object = None
     source_cancellation: Event = field(default_factory=Event, compare=False)
 
     def is_cancelled(self):

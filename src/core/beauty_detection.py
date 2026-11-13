@@ -55,6 +55,13 @@ def preparation_identity(source, context, reference, *, detection_spec=DETECTION
             source.white_point, reference, detection_spec, backend)
 
 
+def preload_runtime():
+    """提前导入检测器要用的人脸库。首次导入要半秒到数秒，放到空闲时做，开启美颜时不再等它。"""
+    from importlib import import_module
+    for name in ("mediapipe", "mediapipe.tasks.python", "mediapipe.tasks.python.vision"):
+        import_module(name)
+
+
 class BeautyDetector:
     def __init__(self, model_path, *, detection_spec=DETECTION_SPEC, locator_path=None):
         if detection_spec not in DETECTION_SPECS.values():

@@ -1,5 +1,5 @@
 from importlib.metadata import version
-from functools import partial
+from functools import lru_cache, partial
 from pathlib import Path
 
 from ..core.contracts.result import CoreError, CoreOperationError, ErrorCode
@@ -99,6 +99,7 @@ def default_face_locator(models):
                                      for item in models.list(None)) else ""
 
 
+@lru_cache(maxsize=None)
 def detail_beauty_version(algorithm=DETAIL_BEAUTY_ALGORITHM):
     if algorithm not in DETAIL_BEAUTY_PROFILES:
         raise ValueError("美颜算法版本不受支持")

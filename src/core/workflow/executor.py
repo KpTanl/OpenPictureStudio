@@ -11,7 +11,7 @@ from time import monotonic
 
 from ..contracts.result import CoreResult, ErrorCode, memory_error_key
 from ..contracts.gpu import GpuExecutionError, cpu_recovery, recover_cpu
-from ..contracts.workflow import _canonical_json
+from ..contracts.workflow import WorkflowGraph, _canonical_json
 from .validator import validate
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,15 @@ def input_fingerprint(nodes):
     for node in nodes:
         prefix = _node_fingerprint(prefix, node)
     return prefix
+
+
+def geometry_prefix(nodes, registry):
+    kept = []
+    for node in nodes:
+        spec = registry.get(node.node_type, node.version)
+        if spec.preserves_geometry is None or not spec.preserves_geometry(node.params):
+            kept.append(replace(node, inputs=(kept[-1].node_id,) if kept else ()))
+    return WorkflowGraph(nodes=tuple(kept))
 
 
 class WorkflowExecutor:
@@ -124,9 +133,7 @@ class WorkflowExecutor:
         context = {"task_id": execution.request_id if execution else uuid.uuid4().hex,
                    "progress": lambda value: None, "execution": execution}
         origin = getattr(value, "content_identity", ())
-        approximate = input_preparer is not None and input_preparer.temporary_workflow is not None
-        cacheable = (execution is not None and self.coordinator.memo_enabled and origin
-                     and sampling is None and not approximate)
+        cacheable = execution is not None and self.coordinator.memo_enabled and origin and sampling is None
         prefixes, reusable_prefixes = [], []
         for identity in order:
             node = graph.node(identity)
@@ -165,12 +172,12 @@ class WorkflowExecutor:
                     "upstream_identity": (origin, prefix), "input_preparer": input_preparer,
                     "upstream_dependencies": (("input", root_identity), *dependencies[:position]),
                     "cacheable_input": reusable_prefixes[position-1] if position else True,
-                    "approximate": approximate}
+                    "source": value,
+                    "preparation": geometry_prefix(tuple(graph.node(item) for item in order[:position]), self.registry)}
                 if sampling is not None and (sampling.request.target_node == node.node_id
                         or sampling.active and spec.sampling_behavior(params) == "transport"):
                     node_context["sampling"] = sampling
                 started = monotonic()
-                from ..contracts.workflow import WorkflowGraph
                 admission = (self.coordinator.stage(incoming, execution, stage, abandoned,
                     graph=WorkflowGraph(nodes=(node,), edges=()), requirement=requirements.get(node.node_id))
                     if execution else nullcontext((incoming, None)))
@@ -199,10 +206,18 @@ class WorkflowExecutor:
                 return output
             if not cacheable or not reusable_prefixes[position] or node.node_type in ("source", "export"):
                 return load(cancelled)
+            device = stage.backend_identity[0] == "gpu"
+            slot = getattr(value, "source_path", ""), "checkpoint", node.node_id, execution.target
+            if device and stage.reason != "passthrough":
+                kept = self.coordinator.gpu.checkpoint(slot, key, stage.backend_identity, cancelled)
+                if kept is not None:
+                    return kept
             lease = self.coordinator.results.acquire(key, load, cancelled,
-                getattr(cancelled, "priority", execution.priority), retain=stage.backend_identity[0] != "gpu",
-                optional=stage.backend_identity[0] == "gpu")
-            return replace(lease.value, execution_ownership=ResourceOwner((lease,)))
+                getattr(cancelled, "priority", execution.priority), retain=not device, optional=device)
+            output = replace(lease.value, execution_ownership=ResourceOwner((lease,)))
+            if device and stage.reason != "passthrough":
+                self.coordinator.gpu.keep(slot, key, output, cancelled)
+            return output
         try:
             result = evaluate(len(order) - 1, is_cancelled)
             if is_cancelled():

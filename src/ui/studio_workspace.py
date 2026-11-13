@@ -190,6 +190,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._models_runner.changed.connect(self._on_model_availability_changed)
         self._model_generation = self.core.tools.generation
         self._model_check_job = None
+        self._beauty_warmup = None
         from ..application.storage_workspaces import ManagedWorkspace
         self._audit_directory = ManagedWorkspace("audit")
         self.agent = AgentService(self.core, AuditLog(str(Path(self._audit_directory.name) / "audit.jsonl"),
@@ -246,9 +247,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._mask_timer.timeout.connect(self._flush_mask_preview)
 
         self._render_generation = 0
+        self._render_gpu_before = None
         self._displayed_generation = -1
         self._preview_queue = StudioPreviewQueue()
-        self._color_preview_gesture = None
         # 手动预览的工具：请求代次 -> 面板发起时的预览凭据
         self._manual_preview_tickets: dict[int, int] = {}
         self._sampling_counter = 0
@@ -297,6 +298,12 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._render_timer = QTimer(self)
         self._render_timer.setSingleShot(True)
         self._render_timer.timeout.connect(self._do_pipeline_render)
+        # 人脸库每个进程导入一次：进入编辑并停手 1 秒后在后台做
+        self._face_runtime_requested = False
+        self._face_runtime_timer = QTimer(self)
+        self._face_runtime_timer.setSingleShot(True)
+        self._face_runtime_timer.setInterval(1000)
+        self._face_runtime_timer.timeout.connect(self._preload_face_runtime)
         self._histogram_runner = StudioHistogramRunner(self._render_service, self)
         self._histogram_runner.ready.connect(self._on_histogram_ready)
         self.destroyed.connect(self._histogram_runner.shutdown)
@@ -1124,6 +1131,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             if hasattr(panel, "result_view"):
                 panel.result_view.set_viewing(False)
 
+            if tool_id == "beauty":
+                # 预热会登记美颜的实现，工具代次随之变化：放在本次渲染入队之前
+                self._warm_beauty(panel)
             self._schedule_pipeline_render()
             self._bind_overlay(panel)
             self._update_actions_state()
@@ -1489,6 +1499,86 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         return BeautyAnalysisTask(self.core, self.session.core_id, workflow, self.session.state_version,
                                   self.core.source_identity(self.session.core_id), self.core.tools.generation, preset)
 
+    def _warm_beauty(self, panel) -> None:
+        """打开美颜面板而美颜还没有生效时，在后台按预览的同一条路径算一帧最小美颜并丢弃。
+
+        人脸库的导入、检测器和这张图的人脸分析由此提前就位，第一次调美颜时不再等它们。"""
+        from types import SimpleNamespace
+        from .adapters.studio_adapter import to_workflow
+        from ..application.studio_service import STUDIO_PREVIEW_MAX_DIMENSION
+        session = self.session
+        if (session is None or session.read_only or self._image_loading
+                or not _STAGE_SPECS["beauty"][1](session.beauty_params)):
+            return
+        settings = {**panel.parameters, "skin_smooth": 1}
+        source_identity = self.core.source_identity(session.core_id)
+        key = (session.core_id, source_identity, settings.get("face_detection_model"),
+               settings.get("face_locator_model"))
+        if self._beauty_warmup is not None and self._beauty_warmup[0] == key:
+            return
+        self._cancel_beauty_warmup()
+        mapper = session.detached()
+        mapper.beauty_params = settings
+        try:
+            workflow = to_workflow(mapper)
+        except ValueError:
+            # 人脸模型还用不了：面板自己会说明，这里不预热
+            return
+        snapshot = SimpleNamespace(core_id=session.core_id, workflow=workflow, read_only=False,
+                                   revision_id=session.history_revision, state_version=session.state_version)
+        options = dict(use_proxy=True, allow_intermediate=True, priority=2, source_identity=source_identity,
+                       source_preview=self.core.source_preview(session.core_id),
+                       max_dimension=self.preview_max_dimension(workflow) or STUDIO_PREVIEW_MAX_DIMENSION)
+        service = self._render_service
+
+        def warm(_image, cancelled):
+            started = monotonic()
+            failed = False
+            try:
+                result = service.render_preview(snapshot, is_cancelled=cancelled, **options)
+                if result is not None:
+                    result.close()
+            except CoreOperationError as error:
+                failed = True
+                logger.debug("OPS 美颜预热失败 code=%s key=%s", error.error.code, error.error.message_key)
+            logger.debug("OPS 美颜预热 session=%s duration_ms=%.1f cancelled=%s failed=%s",
+                         snapshot.core_id, (monotonic() - started) * 1000, cancelled(), failed)
+
+        def finished(_result):
+            if self._beauty_warmup is not None and self._beauty_warmup[0] == key:
+                self._beauty_warmup = (key, None)
+
+        job = self._panel_services["preview_runner"].submit_work(0, None, warm, finished, cancellable=True)
+        self._beauty_warmup = (key, job)
+
+    def _preload_face_runtime(self) -> None:
+        """进入编辑并停手之后，在后台导入人脸库。美颜用不了（工具停用、没有人脸模型）时不导入。"""
+        if self._face_runtime_requested or self.session is None:
+            return
+        if self._preview_queue.active is not None or self._preview_queue.pending is not None:
+            self._face_runtime_timer.start()
+            return
+        if self._assistant_beauty_state():
+            return
+        self._face_runtime_requested = True
+
+        def preload(_image):
+            from ..core.beauty_detection import preload_runtime
+            started = monotonic()
+            try:
+                preload_runtime()
+            except (ImportError, OSError) as error:
+                logger.debug("OPS 人脸库预载失败 error=%s", error)
+                return
+            logger.debug("OPS 人脸库预载 duration_ms=%.1f", (monotonic() - started) * 1000)
+
+        self._panel_services["preview_runner"].submit_work(0, None, preload, lambda _result: None)
+
+    def _cancel_beauty_warmup(self) -> None:
+        warmup, self._beauty_warmup = self._beauty_warmup, None
+        if warmup is not None and warmup[1] is not None:
+            self._panel_services["preview_runner"].cancel(warmup[1])
+
     def _build_panel(self, tool_id: str) -> Optional[BaseToolPanel]:
         panel = create_tool_panel(
             tool_id,
@@ -1584,15 +1674,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
     def _on_edit_group_started(self, panel):
         if self.session is None or self._panel_sessions.get(panel.TOOL_ID) is not self.session:
             return
-        self._color_preview_gesture = None
-        shown = self._displayed_request
-        if (self._canvas_preview_mode != "full" and panel.TOOL_ID == "color_adjust"
-                and shown is not None and shown is self._preview_queue.latest
-                and shown.temporary_workflow is None and self._accept_preview(shown)
-                and not shown.context.source_preview.half_size
-                and self.core.tools.uses_prepared_inputs(shown.session.workflow)
-                and self.core.tools.supports_proxy(shown.session.workflow, canonical_inputs=True)):
-            self._color_preview_gesture = (panel.edit_group, shown)
         self._detail_timer.stop()
         if (self._detail_request is not None and self._detail_resources.detail is None
                 and not self._detail_error_key):
@@ -1604,10 +1685,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
     def _on_edit_group_finished(self, panel):
         if self.session is not None and self._panel_sessions.get(panel.TOOL_ID) is self.session:
             self.core.end_edit_group(self.session.core_id)
-            if self._color_preview_gesture is not None:
-                self._color_preview_gesture = None
-                self._preview_queue.cancel()
-                self._schedule_pipeline_render()
             self._refresh_detail()
 
     def _on_panel_params_changed(self, tool_id: str, params: Dict[str, Any]) -> None:
@@ -1892,21 +1969,12 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                                        geometry_generation=self._mask_gesture.generation if self._mask_gesture is not None else 0,
                                        preview_mode=self._canvas_preview_mode,
                                        max_dimension=self.preview_max_dimension(snapshot.workflow))
-        temporary_workflow = None
-        if self._color_preview_gesture is not None and sampling_request is None and self._mask_gesture is None:
-            interaction, baseline = self._color_preview_gesture
-            panel = self._tool_panels.get("color_adjust")
-            if (editing_tool == "color_adjust" and panel is not None and panel.edit_group == interaction
-                    and context == baseline.context and not snapshot.read_only):
-                temporary_workflow = baseline.session.workflow
-                context = replace(context, interaction_id=interaction)
         dropped = (self._preview_queue.pending if self._preview_queue.latest is not None
                    and context != self._preview_queue.latest.context else None)
         self._render_generation += 1
         request = StudioPreviewRequest(self._render_generation, context, snapshot,
             self.preview_key(self._current_path, snapshot.workflow, preview_target=target), self.session.source_size,
             sampling_request=sampling_request,
-            temporary_workflow=temporary_workflow,
             keep_full_display=self._canvas_preview_mode == "full" or not self.core.tools.cacheable_workflow(snapshot.workflow))
         request = self._preview_queue.submit(request)
         if dropped is not None:
@@ -1931,6 +1999,8 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             snapshot.workflow.workflow_hash()[:12], [node.node_id for node in snapshot.workflow.nodes],
             (monotonic() - prepare_started) * 1000)
         self._arm_preview_render()
+        if not self._face_runtime_requested:
+            self._face_runtime_timer.start()
 
     def _manual_preview_panel(self, tool_id):
         panel = self._tool_panels.get(tool_id)
@@ -1969,6 +2039,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             return
         delivery = SamplingDelivery(request) if request.sampling_request is not None or request.keep_full_display else None
         self._sampling_resources.delivery = delivery
+        self._render_gpu_before = self.core.tools.execution.gpu.snapshot()
         worker = StudioPreviewWorker(request, self._render_service, delivery, cache=self._preview_cache)
         if delivery is None:
             worker.signals.finished.connect(self._on_pipeline_render_finished)
@@ -2093,17 +2164,21 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                         and not self.session.read_only and canvas.image_path == self._current_path
                         and self._panel_sessions.get(self._active_tool_id) is self.session):
                     canvas.on_step_input(qimg)
-                logger.debug("OPS 预览交付 request=%s session=%s delivery_ms=%.1f final=%s",
+                gpu_before, gpu_after = self._render_gpu_before, self.core.tools.execution.gpu.snapshot()
+                logger.debug("OPS 预览交付 request=%s session=%s delivery_ms=%.1f final=%s engine=%s size=%sx%s "
+                    "submissions=%s readback_bytes=%s upload_bytes=%s",
                     request.generation, request.context.session_id,
-                    (monotonic() - request.requested_at) * 1000, request is self._preview_queue.latest)
-                if request.context.editing_tool == "color_adjust" and request.temporary_workflow is None:
+                    (monotonic() - request.requested_at) * 1000, request is self._preview_queue.latest,
+                    frame.backend_identity[0], *frame.size, gpu_after.submissions - gpu_before.submissions,
+                    gpu_after.readback_bytes - gpu_before.readback_bytes,
+                    gpu_after.uploaded_bytes - gpu_before.uploaded_bytes)
+                if request.context.editing_tool == "color_adjust":
                     self._histogram_runner.submit(request, frame)
                 else:
                     self._histogram_runner.cancel()
                 if (self._preview_cache is not None and request.preview_key is not None
                         and self.core.tools.cacheable_workflow(request.session.workflow)
-                        and not request.context.source_preview.half_size and request.temporary_workflow is None
-                        and self._canvas_preview_mode != "full"):
+                        and not request.context.source_preview.half_size and self._canvas_preview_mode != "full"):
                     self._preview_cache.put(request.preview_key, frame,
                         is_cancelled=request.is_cancelled)
                 old_frames = self._canvas_full_frames[:]
@@ -2251,8 +2326,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                     kind = "original" if is_full else "original_preview"
                 else:
                     kind = "region" if regional else "full" if is_full else "preview"
-                    if current is not None and current.temporary_workflow is not None:
-                        kind = "temporary"
                     if self._preview_queue.latest is not current:
                         kind = ("failed" if self._preview_queue.latest is not None
                                 and self._canvas_failed_generation == self._preview_queue.latest.generation else "updating")
@@ -2306,7 +2379,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
     def _detail_candidate(self):
         request = self._displayed_request
         if (request is None
-                or request.temporary_workflow is not None
                 or self._preview_queue.active is not None or self._preview_queue.pending is not None
                 or not self.isVisible() or self._commit_busy or not self._accept_preview(request)
                 or request.context.source_preview.half_size
@@ -2921,12 +2993,12 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
 
     def stop_preview(self) -> None:
         self._preview_layout_timer.stop()
-        self._color_preview_gesture = None
         self._canvas_image_key = None
         if self._preview_target_session is not None and self._displayed_request is not None and not self._comparing:
             self._stage_views[self._preview_target_session, self._preview_target] = self.viewer.view_state()
         self._cancel_mask_gesture(resume=False)
         self._cancel_mask_generation()
+        self._cancel_beauty_warmup()
         panel = self._tool_panels.get("color_adjust")
         if panel is not None:
             panel.clear_mask_range()
@@ -2969,6 +3041,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self.photo_info_panel.cleanup()
         self.cancel_project_operation(force=True, resume=False)
         self._project_runner.shutdown()
+        self._face_runtime_timer.stop()
         self.stop_preview()
         self._histogram_runner.shutdown()
         self._original_runner.shutdown()

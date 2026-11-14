@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 STABLE_STAGES = ("face.", "color.face.", "color.weight", "color.mask.", "color.brush.", "color.asset.",
                  "color.field.base", "beauty.field.", "shape.mask", "lasso.mask")
+# 帧内结果按槽位保留时单份的字节上限（100 万像素）：原尺寸下的人脸区域不保留，显存留给节点结果
+RETAINED_BYTES = 16 * 1024 ** 2
 
 
 def _frame_bound(value):
@@ -851,6 +853,24 @@ class GpuBackend:
             if self._status.identity == output.backend_identity:
                 self._cache[slot] = _Checkpoint(output.gpu_image.resident.carrier, key,
                                                 replace(output, execution_ownership=None))
+
+    def retained(self, slot, key):
+        """帧内取用按槽位保留的结果；没有或键不同时为 None。"""
+        frame = getattr(self._local, "frame", None)
+        if frame is None:
+            return None
+        with self._hold(frame):
+            entry = self._cache.get(slot)
+            if entry is None or entry.key != key:
+                return None
+            self._cache.move_to_end(slot)
+            return entry.output
+
+    def retain(self, slot, key, artifact, output):
+        """登记一份帧内结果：这一帧提交成功后按槽位保留，替换该槽位原有的一份。"""
+        frame = getattr(self._local, "frame", None)
+        if frame is not None and artifact.resident.carrier.nbytes <= RETAINED_BYTES:
+            frame.stable.append((slot, _Checkpoint(artifact.resident.carrier, key, output)))
 
     def operate(self, artifact, name, identity, size, operation, cancelled, *, view=False, input_identity=None):
         frame = getattr(self._local, "frame", None)

@@ -105,13 +105,28 @@ class GpuImageOps:
     def control(self, image):
         return self.backend.face_metadata(self.artifact(image), self.cancelled)
 
-    def selected(self, image, mask, *, limit=None):
+    def tally(self, image, mask, *, limit=None):
+        """蒙版选中像素的分块前缀和；最后一格是总数。"""
         image = self.artifact(image)
-        count = prod(image.resident.carrier.size)
-        blocks = ceil(count/1024)
+        blocks = ceil(prod(image.resident.carrier.size)/1024)
         counts = self.stage(image, 0, auxiliary=mask, size=(blocks, 1), kernel="beauty_stats")
-        prefix = self.stage(counts, 1, size=(blocks+1, 1), args=(limit or 1,), kernel="beauty_stats")
-        total = int(self.control(self.view(prefix, (blocks, 0, blocks+1, 1)))[0, 0, 0])
+        return self.stage(counts, 1, size=(blocks+1, 1), args=(limit or 1,), kernel="beauty_stats")
+
+    def totals(self, prefixes):
+        """一次读回多份前缀和的总数。"""
+        cells = []
+        for prefix in prefixes:
+            blocks = prefix.resident.carrier.size[0]-1
+            cells.append(self.view(prefix, (blocks, 0, blocks+1, 1)))
+        packed = cells[0] if len(cells) == 1 else self.assemble(
+            cells[0], cells, [(0, row) for row in range(len(cells))], (1, len(cells)))
+        return [int(value) for value in self.control(packed)[:, 0, 0]]
+
+    def selected(self, image, mask, *, limit=None):
+        prefix = self.tally(image, mask, limit=limit)
+        return self.gather(image, mask, prefix, self.totals([prefix])[0], limit=limit)
+
+    def gather(self, image, mask, prefix, total, *, limit=None):
         if not total:
             return None, 0
         samples = ceil(total/max(1, ceil(total/limit))) if limit else total

@@ -11,12 +11,25 @@ from .gpu_image_ops import GpuImageOps
 
 COLOR_KEYS = ("skin_smooth", "skin_brighten", "skin_rosy", "sharpen", "teeth_whiten", "spot_remove", "eye_bag_remove")
 WARP_KEYS = ("face_slim", "eye_enlarge", "eye_distance", "nose_slim")
+BATCH_BYTES = 16 * 1024 ** 2
 
 
 class GpuBeauty:
     def __init__(self, backend, cancelled):
         self.ops = GpuImageOps(backend, cancelled)
         self.backend, self.cancelled = backend, cancelled
+
+    def retained(self, name, part, key, compute, *, pixels=True):
+        """与美颜强度无关的结果按槽位保留最近一份：输入没变时直接取用，拖动美颜滑块不重算。
+
+        compute 返回元组，首项是承载这份结果的 GPU 图像。pixels=False 表示结果只取决于人脸关键点。"""
+        slot = (*self.slot, name, part)
+        key = (self.pixels if pixels else self.landmarks, key)
+        kept = self.backend.retained(slot, key)
+        if kept is None:
+            kept = compute()
+            self.backend.retain(slot, key, kept[0], kept)
+        return kept
 
     def distribution(self, image, mask):
         ops = self.ops
@@ -180,21 +193,24 @@ class GpuBeauty:
             used = ops.stage(used, 13, auxiliary=donor, field=statistics, kernel="beauty_spots")
         return ops.stage(total, 15, kernel="beauty_spots"), skipped
 
-    def independent(self, image, regions, params):
+    def independent(self, image, regions, params, index):
         ops = self.ops
         result, skipped = ops.zero(image), 0
-        lab = ops.stage(image, 0) if params["teeth_whiten"] or params["spot_remove"] else None
-        y = ops.stage(image, 2) if params["sharpen"] or params["spot_remove"] else None
         if params["sharpen"]:
+            y = ops.stage(image, 2)
             fine = ops.guided(y, y, max(1, round(.015*regions.distance)), .02**2)
             delta = ops.stage(y, 15, auxiliary=fine, field=regions.features, args=(params["sharpen"]/100,))
             result = ops.stage(result, 8, auxiliary=delta, args=(1,))
         if params["teeth_whiten"]:
-            delta = ops.stage(image, 14, auxiliary=lab, field=regions.mouth, args=(params["teeth_whiten"]/100,))
+            delta = ops.stage(image, 14, auxiliary=ops.stage(image, 0), field=regions.mouth,
+                              args=(params["teeth_whiten"]/100,))
             result = ops.stage(result, 8, auxiliary=delta, args=(1,))
         if params["spot_remove"]:
-            skin = ops.stage(lab, 4, auxiliary=regions.skin)
-            delta, skipped = self.spots(image, lab, y, skin, regions.distance)
+            def spots():
+                lab = ops.stage(image, 0)
+                return self.spots(image, lab, ops.stage(image, 2), ops.stage(lab, 4, auxiliary=regions.skin),
+                                  regions.distance)
+            delta, skipped = self.retained("spots", index, regions.bounds, spots)
             result = ops.stage(result, 8, auxiliary=delta, args=(params["spot_remove"]/100,))
         return result, skipped
 
@@ -204,20 +220,34 @@ class GpuBeauty:
         base = ops.guided(lab, ops.stage(lab, 40), max(1, round(.08*distance)), .04**2)
         result = ops.zero(candidate)
         protected_candidate = ops.stage(candidate, 10, auxiliary=ops.channel(weights, 2))
+        # 两只眼 18 个采样点的计数合并成一次读回；人脸区域很大时逐点读回，蒙版用完即放，不多占显存
+        batch = candidate.resident.carrier.nbytes <= BATCH_BYTES
+        eyes = []
         for (upper, lower), (outer, inner) in zip(UNDER_EYE_CHAINS, ((33, 133), (263, 362))):
             arguments = (index, *size, outer, *bounds[:2], inner)
             geometry = ops.stage(candidate, 21, auxiliary=snapshot.artifact, args=arguments,
                                  data=(*upper, *lower), source_dependent=False)
-            control = ops.stage(candidate, 36, auxiliary=snapshot.artifact, size=(1, 1), args=arguments,
-                                source_dependent=False)
-            width = float(ops.control(control)[0, 0, 0])
+
+            def measure(arguments=arguments):
+                control = ops.stage(candidate, 36, auxiliary=snapshot.artifact, size=(1, 1), args=arguments,
+                                    source_dependent=False)
+                return control, float(ops.control(control)[0, 0, 0])
+            width = self.retained("eye.width", (index, outer), arguments, measure, pixels=False)[1]
+
+            def mask(site, geometry=geometry, width=width):
+                return ops.stage(geometry, 22, auxiliary=weights, args=(distance, width, site))
+            eyes.append((geometry, width, mask, [ops.tally(base, mask(site)) for site in range(9)] if batch else None))
+        counts = iter(ops.totals([prefix for *_, prefixes in eyes for prefix in prefixes])) if batch else None
+        for geometry, width, mask, prefixes in eyes:
             sites = []
             for site in range(9):
-                mask = ops.stage(geometry, 22, auxiliary=weights, args=(distance, width, site))
-                samples, count = ops.selected(base, mask)
+                selection = mask(site)
+                prefix = prefixes[site] if batch else ops.tally(base, selection)
+                count = next(counts) if batch else ops.totals([prefix])[0]
                 if count < 8:
                     sites.append(ops.zero(candidate, (1, 1)))
                     continue
+                samples, _ = ops.gather(base, selection, prefix, count)
                 filtered, center = ops.robust(samples, (3, 2, 2), 2.5)
                 sites.append(ops.stage(filtered, 8, auxiliary=center, size=(1, 1), args=(distance,), kernel="beauty_stats"))
             targets = ops.assemble(candidate, sites, [(i, 0) for i in range(9)], (9, 1))
@@ -232,12 +262,13 @@ class GpuBeauty:
         result = ops.zero(image)
         skipped = 0
         if any(params[key] for key in ("sharpen", "teeth_whiten", "spot_remove")):
-            previous, skipped = self.independent(ops.view(source, regions.bounds), regions, params)
+            previous, skipped = self.independent(ops.view(source, regions.bounds), regions, params, index)
             result = ops.embed(result, previous, (regions.bounds[0]-bounds[0], regions.bounds[1]-bounds[1]))
         if any(params[key] for key in ("skin_smooth", "skin_brighten", "skin_rosy", "eye_bag_remove")):
             lab = ops.stage(image, 0)
             size = source.pixels.shape[1::-1]
-            weights = self.skin_weights(lab, snapshot, index, regions, bounds, size)
+            weights, = self.retained("skin.weights", index, bounds,
+                                     lambda: (self.skin_weights(lab, snapshot, index, regions, bounds, size),))
             if any(params[key] for key in ("skin_smooth", "skin_brighten", "skin_rosy")):
                 delta = self.skin_delta(image, lab, weights, regions.distance, params)
                 result = ops.stage(result, 8, auxiliary=delta, args=(1,))
@@ -267,8 +298,17 @@ class GpuBeauty:
         if snapshot.reference_size != source.orig_size:
             raise GpuExecutionError("beauty_input", "Beauty snapshot reference size mismatch")
         ops = self.ops
-        control = snapshot.session.op(snapshot.artifact, 17, (2, snapshot.artifact.resident.carrier.size[1]), self.cancelled)
-        records = ops.control(control)
+        size = source.pixels.shape[1::-1]
+        image = source.gpu_image
+        self.slot = image.source_path, "beauty", node_id, size
+        self.landmarks = snapshot.artifact.resident.identity
+        self.pixels = self.landmarks, image.resident.identity, tuple(patch.identity for patch in image.patches)
+
+        def read_records():
+            control = snapshot.session.op(snapshot.artifact, 17, (2, snapshot.artifact.resident.carrier.size[1]),
+                                          self.cancelled)
+            return control, ops.control(control)
+        records = self.retained("records", 0, (), read_records, pixels=False)[1]
         present = [index for index, row in enumerate(records) if row[0, 1]]
         ready = [index for index in present if records[index, 1, 0] == 1]
         skipped = len(present)-len(ready)
@@ -291,14 +331,15 @@ class GpuBeauty:
         if has_warp:
             required.add("support")
         entries = []
-        size = source.pixels.shape[1::-1]
         for index in ready:
             regions = snapshot.regions(index, size, self.cancelled, required=required)
             bounds = regions.bounds
             if has_color and expanded:
-                metadata = snapshot.session.op(snapshot.artifact, 16, (2, 1), self.cancelled,
-                    args=(index, .65, 0, 0, *size), data=(*EYES[0], *EYES[1]))
-                bounds = tuple(int(v) for v in ops.control(metadata)[0, 0])
+                def expand(index=index):
+                    metadata = snapshot.session.op(snapshot.artifact, 16, (2, 1), self.cancelled,
+                        args=(index, .65, 0, 0, *size), data=(*EYES[0], *EYES[1]))
+                    return metadata, tuple(int(v) for v in ops.control(metadata)[0, 0])
+                bounds = self.retained("bounds", index, (), expand, pixels=False)[1]
             if prod((bounds[2]-bounds[0], bounds[3]-bounds[1])) > 4_000_000:
                 raise GpuExecutionError("beauty_target_limit", "Face statistics target exceeds GPU submission limits")
             entries.append((index, regions, bounds))
@@ -311,7 +352,8 @@ class GpuBeauty:
         spots_skipped = 0
         for index, regions, color_bounds in entries:
             if has_color:
-                delta, missed = self.color(source, snapshot, index, regions, color_bounds, params)
+                delta, missed = self.retained("color", index, (color_bounds, *(params[key] for key in COLOR_KEYS)),
+                    lambda: self.color(source, snapshot, index, regions, color_bounds, params))
                 colors = ops.embed(colors, delta, (color_bounds[0]-left, color_bounds[1]-top), add=True)
                 spots_skipped += missed
             if has_warp:

@@ -214,14 +214,23 @@ class GpuBeauty:
             result = ops.stage(result, 8, auxiliary=delta, args=(params["spot_remove"]/100,))
         return result, skipped
 
+    def eye_sites(self, candidate, masks):
+        """各采样点蒙版选中像素的前缀和（每点一行）与总数，总数一次读回。
+
+        只取决于蒙版，也就是关键点与皮肤权重，与美颜强度无关。"""
+        ops = self.ops
+        prefixes = [ops.tally(candidate, mask(site)) for mask in masks for site in range(9)]
+        counts = ops.totals(prefixes)
+        columns = prefixes[0].resident.carrier.size[0]
+        table = ops.assemble(candidate, prefixes, [(0, row) for row in range(len(prefixes))], (columns, len(prefixes)))
+        return table, tuple(counts)
+
     def eyes(self, candidate, weights, snapshot, index, bounds, size, distance, strength):
         ops = self.ops
         lab = ops.stage(candidate, 0)
         base = ops.guided(lab, ops.stage(lab, 40), max(1, round(.08*distance)), .04**2)
         result = ops.zero(candidate)
         protected_candidate = ops.stage(candidate, 10, auxiliary=ops.channel(weights, 2))
-        # 两只眼 18 个采样点的计数合并成一次读回；人脸区域很大时逐点读回，蒙版用完即放，不多占显存
-        batch = candidate.resident.carrier.nbytes <= BATCH_BYTES
         eyes = []
         for (upper, lower), (outer, inner) in zip(UNDER_EYE_CHAINS, ((33, 133), (263, 362))):
             arguments = (index, *size, outer, *bounds[:2], inner)
@@ -236,14 +245,24 @@ class GpuBeauty:
 
             def mask(site, geometry=geometry, width=width):
                 return ops.stage(geometry, 22, auxiliary=weights, args=(distance, width, site))
-            eyes.append((geometry, width, mask, [ops.tally(base, mask(site)) for site in range(9)] if batch else None))
-        counts = iter(ops.totals([prefix for *_, prefixes in eyes for prefix in prefixes])) if batch else None
-        for geometry, width, mask, prefixes in eyes:
+            eyes.append((geometry, width, mask))
+        # 两只眼 18 个采样点的计数合并成一次读回并保留，拖动美颜滑块时不再重算、不再读回；
+        # 人脸区域很大时逐点读回，蒙版用完即放，不多占显存
+        batch = candidate.resident.carrier.nbytes <= BATCH_BYTES
+        if batch:
+            table, counts = self.retained("eye.sites", index, bounds,
+                                          lambda: self.eye_sites(candidate, [mask for *_, mask in eyes]))
+            columns = table.resident.carrier.size[0]
+        for number, (geometry, width, mask) in enumerate(eyes):
             sites = []
             for site in range(9):
                 selection = mask(site)
-                prefix = prefixes[site] if batch else ops.tally(base, selection)
-                count = next(counts) if batch else ops.totals([prefix])[0]
+                if batch:
+                    row = number*9+site
+                    prefix, count = ops.view(table, (0, row, columns, row+1)), counts[row]
+                else:
+                    prefix = ops.tally(base, selection)
+                    count = ops.totals([prefix])[0]
                 if count < 8:
                     sites.append(ops.zero(candidate, (1, 1)))
                     continue
@@ -348,7 +367,6 @@ class GpuBeauty:
         left, top, right, bottom = bounds
         composition = ops.view(source, bounds)
         colors = ops.zero(composition) if has_color else None
-        fields, weights = (ops.zero(composition), ops.zero(composition)) if has_warp else (None, None)
         spots_skipped = 0
         for index, regions, color_bounds in entries:
             if has_color:
@@ -356,22 +374,27 @@ class GpuBeauty:
                     lambda: self.color(source, snapshot, index, regions, color_bounds, params))
                 colors = ops.embed(colors, delta, (color_bounds[0]-left, color_bounds[1]-top), add=True)
                 spots_skipped += missed
-            if has_warp:
-                field = self.warp(source, snapshot, index, regions, params)
-                offset = regions.bounds[0]-left, regions.bounds[1]-top
-                fields = ops.embed(fields, field, offset, add=True)
-                weights = ops.embed(weights, regions.support, offset, add=True)
         result = source
         geometry = GpuGeometry(self.backend)
         if has_color:
             composed = ops.stage(composition, 12, auxiliary=colors, args=(1,))
             result = geometry.with_patch(result, composed, bounds, (composed.resident.identity,), has_alpha=False)
         if has_warp:
-            field = ops.stage(fields, 28, auxiliary=weights)
-            blocks = ceil((right-left)*(bottom-top)/1024)
-            extents = ops.stage(field, 38, size=(min(blocks, 32768), ceil(blocks/32768)), args=(left, top, *size))
-            extent = ops.stage(extents, 39, size=(1, 1), args=size)
-            sample_bounds = tuple(int(v) for v in ops.control(extent)[0, 0])
+            def displacement():
+                fields, weights = ops.zero(composition), ops.zero(composition)
+                for index, regions, _ in entries:
+                    offset = regions.bounds[0]-left, regions.bounds[1]-top
+                    fields = ops.embed(fields, self.warp(source, snapshot, index, regions, params), offset, add=True)
+                    weights = ops.embed(weights, regions.support, offset, add=True)
+                field = ops.stage(fields, 28, auxiliary=weights)
+                blocks = ceil((right-left)*(bottom-top)/1024)
+                extents = ops.stage(field, 38, size=(min(blocks, 32768), ceil(blocks/32768)), args=(left, top, *size))
+                extent = ops.stage(extents, 39, size=(1, 1), args=size)
+                return field, tuple(int(v) for v in ops.control(extent)[0, 0])
+            # 位移场和它的取样范围只取决于关键点与形变参数：拖动其他美颜滑块时沿用，不再重算、不再读回
+            field, sample_bounds = self.retained("warp", 0, (
+                bounds, tuple((index, regions.bounds) for index, regions, _ in entries),
+                *(params[key] for key in WARP_KEYS)), displacement, pixels=False)
             image = self.backend.resolve(result.gpu_image, self.cancelled, sample_bounds)
             warped = self.backend.operate(image, "beauty.remap", (field.resident.identity, bounds, sample_bounds), (right-left, bottom-top),
                 lambda device, abort: device.image_op(image.resident.carrier, field.resident.carrier, 15,

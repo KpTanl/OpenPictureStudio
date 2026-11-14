@@ -3254,8 +3254,13 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         if companion is None and not self._comparing:
             companion = self._comparison_image()
             companion_reference = actual_size or (self.session.source_size if self.session is not None else None)
-        self.viewer.set_display_pair(image, reference_size, companion, companion_reference, sampling=sampling)
+        # 装入画面的过程中视图会回调到 _sync_canvas_display：先记下这张图，免得它再装一遍
         self._canvas_image_key = (image.cacheKey(), (reference_size.width(), reference_size.height()), self._comparing)
+        try:
+            self.viewer.set_display_pair(image, reference_size, companion, companion_reference, sampling=sampling)
+        except BaseException:
+            self._canvas_image_key = None
+            raise
         if sampling is not None:
             panel = self._tool_panels.get(self._active_tool_id)
             if panel is not None and hasattr(panel, "set_sampling_state"):

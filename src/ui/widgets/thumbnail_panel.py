@@ -574,7 +574,7 @@ class ThumbnailPanel(QWidget):
             self.list_widget.blockSignals(blocked)
         self._restored_selection_paths = set(self._browser.selected) - self._path_to_item.keys()
         self.list_widget.viewport().update()
-        self._schedule_requests()
+        self._schedule_requests(settle=True)
 
     def _browser_image_ready(self, path):
         if path in self._path_to_item:
@@ -914,12 +914,20 @@ class ThumbnailPanel(QWidget):
         return PhotoSelection(tuple(path for path in filtered if key(path) in selected), filtered,
                               active_path, self._list_version, self._filter_revision)
 
-    def _schedule_requests(self, *_):
+    def _schedule_requests(self, *_, settle=False):
+        """安排一次缩略图请求刷新。
+
+        settle 用于由编辑引起的刷新：调整滑块时每一帧都会来一次，而缩略图要等调整停下才重算，
+        所以推迟到那时一起做；滚动、换图、尺寸变化这些仍然立即刷新。"""
         if self._closed:
             return
-        self._viewport_timer.start(0)
+        delay = self._browser_runner.quiet_ms() if settle and self._browser_runner is not None else 0
+        if delay and self._viewport_timer.isActive() and self._viewport_timer.remainingTime() <= delay:
+            return
+        self._viewport_timer.start(delay)
 
     def set_loading_paused(self, paused):
+        resumed = self._loading_paused and not paused
         self._loading_paused = paused
         if paused:
             self._viewport_timer.stop()
@@ -927,7 +935,7 @@ class ThumbnailPanel(QWidget):
             if self._browser_runner is not None:
                 self._browser_runner.forget(self._browser_channel)
         else:
-            self._schedule_requests()
+            self._schedule_requests(settle=not resumed)
 
     def _refresh_requests(self):
         if self._closed or self._loading_paused:

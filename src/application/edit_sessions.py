@@ -17,6 +17,9 @@ from ..core.tools.stage_defaults import (is_color_default as _is_color_default, 
 from .workflow_mapping import (WorkflowParameterError, restore_workflow,
                                to_workflow, workflow_stages, stage_identity, stage_order)
 
+_PATH_KEYS: dict[str, str] = {}
+_PATH_KEY_LIMIT = 8192
+
 STAGE_SPECS = {
     "color_adjust": ("color_params", _is_color_default),
     "beauty": ("beauty_params", _is_beauty_default),
@@ -290,7 +293,13 @@ class EditSessionService:
 
     @staticmethod
     def key(path):
-        return path_key(path)
+        # 解析真实路径要访问文件系统；界面每帧会按路径查会话几十次，同一写法只解析一次
+        key = _PATH_KEYS.get(path)
+        if key is None:
+            if len(_PATH_KEYS) >= _PATH_KEY_LIMIT:
+                _PATH_KEYS.clear()
+            key = _PATH_KEYS[path] = path_key(path)
+        return key
 
     def get(self, path):
         with self._registry_lock:

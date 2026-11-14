@@ -287,6 +287,13 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._detail_timer.setSingleShot(True)
         self._detail_timer.setInterval(200)
         self._detail_timer.timeout.connect(self._start_detail_render)
+        # 拖动滑块时助手面板不逐帧跟随：每次刷新都要把整份编辑状态送给助手再收回一份新状态，停手后补一次
+        self._assistant_refresh_timer = QTimer(self)
+        self._assistant_refresh_timer.setSingleShot(True)
+        self._assistant_refresh_timer.setInterval(200)
+        self._assistant_refresh_timer.timeout.connect(lambda: self.assistant_panel.refresh())
+        # 预览输出尺寸只取决于工作流、源图尺寸与工具代次；一帧里会按同一份工作流问好几次
+        self._output_size_memo = None
         self._thread_pool = QThreadPool(self)
         self._thread_pool.setMaxThreadCount(1)
         self._restoring = False
@@ -655,7 +662,12 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         session = self.session if path is None else self.edit_sessions.get(path)
         if session is not None and session.source_size is not None:
             workflow = self.preview_workflow(path or self._current_path) if workflow is None else workflow
-            size = self.core.tools.preview_output_size(workflow, session.source_size)
+            memo, context = self._output_size_memo, (session.source_size, self.core.tools.generation)
+            if memo is not None and memo[0] is workflow and memo[1] == context:
+                size = memo[2]
+            else:
+                size = self.core.tools.preview_output_size(workflow, session.source_size)
+                self._output_size_memo = workflow, context, size
             if size is not None:
                 scale = min(1, width / size[0], height / size[1])
                 return max(1, round(max(size) * scale))
@@ -1683,6 +1695,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._set_detail_state("")
 
     def _on_edit_group_finished(self, panel):
+        if self._assistant_refresh_timer.isActive():
+            self._assistant_refresh_timer.stop()
+            self.assistant_panel.refresh()
         if self.session is not None and self._panel_sessions.get(panel.TOOL_ID) is self.session:
             self.core.end_edit_group(self.session.core_id)
             self._refresh_detail()
@@ -2916,7 +2931,11 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         tool_available = self.core.tools.check_enabled(self._active_tool_id).success
         self.tool_rail.setEnabled(not read_only and not self._commit_busy and not self._image_loading)
         self.assistant_panel.setEnabled(not self._commit_busy)
-        self.assistant_panel.refresh()
+        if self._detail_editing():
+            self._assistant_refresh_timer.start()
+        else:
+            self._assistant_refresh_timer.stop()
+            self.assistant_panel.refresh()
         self.tool_sidebar.setEnabled(not read_only and tool_available and not self._commit_busy and not self._image_loading)
         compare_tip = "studio.compare_tip"
         if has_session and self._comparison_image() is None:

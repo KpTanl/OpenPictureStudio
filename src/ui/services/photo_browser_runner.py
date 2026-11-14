@@ -131,6 +131,10 @@ class PhotoBrowserRunner(QObject):
         self._quiet_until = monotonic() + 1.0
         self._timer.start(1000)
 
+    def quiet_ms(self):
+        """编辑预览还在更新时，缩略图要再等多少毫秒才会重算；不在等待时为 0。"""
+        return max(0, int((self._quiet_until - monotonic()) * 1000))
+
     def _cancel_unwanted(self):
         if self._active is None or self._active[0] is None:
             return

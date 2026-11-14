@@ -528,6 +528,8 @@ class ImageViewer(QLabel):
         self._overlay = overlay
         if hasattr(overlay, "set_viewer"):
             overlay.set_viewer(self)
+        # 不开追踪时，没按键的移动根本不会到 mouseMoveEvent
+        self.setMouseTracking(bool(getattr(overlay, "HOVER_TRACKING", False)))
         self.update()
 
     def uninstall_overlay(self) -> None:
@@ -535,6 +537,7 @@ class ImageViewer(QLabel):
         if hasattr(self._overlay, "set_viewer"):
             self._overlay.set_viewer(None)
         self._overlay = None
+        self.setMouseTracking(False)
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.update()
 
@@ -920,6 +923,10 @@ class ImageViewer(QLabel):
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         """鼠标释放：优先询问覆盖层，否则停止拖动"""
+        if event.button() == Qt.MouseButton.LeftButton and self._drag_start is not None:
+            # 平移是画布自己开始的，松手就结束，不看覆盖层怎么答；否则留下的状态会让之后的悬停移动带着画面跑
+            self._drag_start = None
+            self.setCursor(Qt.CursorShape.OpenHandCursor if self.space_pan_active else Qt.CursorShape.ArrowCursor)
         if getattr(self, "_overlay", None) is not None:
             if self._overlay.handle_mouse_release(event, self.get_image_display_rect()):
                 event.accept()

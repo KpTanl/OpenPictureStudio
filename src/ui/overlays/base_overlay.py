@@ -21,6 +21,9 @@ class ViewerOverlay(QObject):
     drag_started = Signal()
     drag_finished = Signal()
 
+    # 没按键时的鼠标移动也交给覆盖层：悬停换光标、套索的预览线都靠它。自己管追踪开关的覆盖层设为 False
+    HOVER_TRACKING = True
+
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
         self._viewer = None

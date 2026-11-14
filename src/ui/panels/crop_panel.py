@@ -148,7 +148,7 @@ class CropPanel(BaseToolPanel):
     def _sync_ui_from_params(self) -> None:
         box = self._params.get("crop_rect")
         ratio = self._params.get("aspect_ratio")
-        self.overlay.restore_geometry(box, ratio)
+        self.overlay.restore_geometry(box, ratio, self.source_size if self.source_bundle is not None else None)
         self._ratio_chips.set_current(_ratio_key(ratio))
         self._sync_size_label()
         self.overlay.update_view()

@@ -15,6 +15,9 @@ from .base_overlay import ViewerOverlay
 
 
 class MaskOverlay(ViewerOverlay):
+    # 只有画笔需要悬停时的移动，开始涂抹时打开、结束时关掉
+    HOVER_TRACKING = False
+
     selected = Signal(object)
     gesture_started = Signal(object)
     gesture_changed = Signal(object)

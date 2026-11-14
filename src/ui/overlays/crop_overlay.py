@@ -22,6 +22,8 @@ class CropOverlay(ViewerOverlay):
         # [l, t, r, b] 归一化选区
         self._norm = [0.1, 0.1, 0.9, 0.9]
         self._aspect_ratio: Optional[float] = None
+        # 画面的像素宽高：固定比例按像素算，归一化坐标要靠它换算；不知道时用画布上的显示尺寸
+        self._image_size: Optional[Tuple[int, int]] = None
         self._drag_mode: Optional[str] = None
         self._drag_start_pos = QPoint()
         self._drag_start_norm = [0.1, 0.1, 0.9, 0.9]
@@ -34,9 +36,11 @@ class CropOverlay(ViewerOverlay):
     def aspect_ratio(self) -> Optional[float]:
         return self._aspect_ratio
 
-    def restore_geometry(self, rect=None, aspect_ratio=None):
+    def restore_geometry(self, rect=None, aspect_ratio=None, image_size=None):
         self._norm = list(rect or (0, 0, 1, 1))
         self._aspect_ratio = aspect_ratio
+        if image_size is not None:
+            self._image_size = tuple(image_size)
         self.update_view()
 
     def set_aspect_ratio(self, ratio: Optional[float | str], image_width: int = 1, image_height: int = 1) -> None:
@@ -54,6 +58,8 @@ class CropOverlay(ViewerOverlay):
                 except ValueError:
                     ratio = None
         self._aspect_ratio = ratio
+        if image_width > 1 and image_height > 1:
+            self._image_size = (image_width, image_height)
         if ratio and ratio > 0 and image_width > 0 and image_height > 0:
             # 调整归一化选区以满足宽高比
             l, t, r, b = self._norm
@@ -210,12 +216,15 @@ class CropOverlay(ViewerOverlay):
         sl, st, sr, sb = self._drag_start_norm
 
         min_span = 0.05
+        shape = self._view_ratio(image_rect)
         if self._drag_mode == "move":
             w = sr - sl
             h = sb - st
             nl = max(0.0, min(1.0 - w, sl + dx))
             nt = max(0.0, min(1.0 - h, st + dy))
             self._norm = [nl, nt, nl + w, nt + h]
+        elif shape is not None:
+            self._norm = self._resized_in_ratio(self._drag_mode, dx, dy, shape, min_span)
         elif self._drag_mode == "se":
             self._norm[2] = max(sl + min_span, min(1.0, sr + dx))
             self._norm[3] = max(st + min_span, min(1.0, sb + dy))
@@ -240,6 +249,48 @@ class CropOverlay(ViewerOverlay):
         self.geometry_changed.emit()
         self.update_view()
         return True
+
+    def _view_ratio(self, image_rect: QRect) -> Optional[float]:
+        """选了固定比例时，框在归一化坐标里的宽除以高；自由裁切时为 None。"""
+        if not self._aspect_ratio or self._aspect_ratio <= 0:
+            return None
+        width, height = self._image_size or (image_rect.width(), image_rect.height())
+        return self._aspect_ratio * height / width
+
+    def _resized_in_ratio(self, mode: str, dx: float, dy: float, shape: float, min_span: float) -> list[float]:
+        """按固定比例拖手柄之后的框。
+
+        拖角时对角不动，宽高取鼠标带出的较大一边；拖边时对边不动，另一个方向以原来的中线为中心伸缩。
+        框碰到画面边缘就停在能保持比例的最大尺寸。"""
+        sl, st, sr, sb = self._drag_start_norm
+        smallest = min_span * max(1.0, shape)
+        if len(mode) == 2:
+            east, south = "e" in mode, "s" in mode
+            anchor_x, anchor_y = (sl if east else sr), (st if south else sb)
+            width = (sr + dx - anchor_x) if east else (anchor_x - sl - dx)
+            height = (sb + dy - anchor_y) if south else (anchor_y - st - dy)
+            limit = min(1.0 - anchor_x if east else anchor_x, shape * (1.0 - anchor_y if south else anchor_y))
+            width = min(limit, max(width, shape * height, smallest))
+            height = width / shape
+            left, right = (anchor_x, anchor_x + width) if east else (anchor_x - width, anchor_x)
+            top, bottom = (anchor_y, anchor_y + height) if south else (anchor_y - height, anchor_y)
+        elif mode in ("e", "w"):
+            middle = (st + sb) / 2.0
+            width = (sr + dx - sl) if mode == "e" else (sr - sl - dx)
+            limit = min(1.0 - sl if mode == "e" else sr, shape * 2.0 * min(middle, 1.0 - middle))
+            width = min(limit, max(width, smallest))
+            height = width / shape
+            left, right = (sl, sl + width) if mode == "e" else (sr - width, sr)
+            top, bottom = middle - height / 2.0, middle + height / 2.0
+        else:
+            middle = (sl + sr) / 2.0
+            height = (sb + dy - st) if mode == "s" else (sb - st - dy)
+            limit = min(shape * (1.0 - st if mode == "s" else sb), 2.0 * min(middle, 1.0 - middle))
+            width = min(limit, max(shape * height, smallest))
+            height = width / shape
+            top, bottom = (st, st + height) if mode == "s" else (sb - height, sb)
+            left, right = middle - width / 2.0, middle + width / 2.0
+        return [min(1.0, max(0.0, value)) for value in (left, top, right, bottom)]
 
     def handle_mouse_release(self, event: QMouseEvent, image_rect: QRect) -> bool:
         if self._drag_mode is not None:

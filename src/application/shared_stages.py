@@ -31,6 +31,8 @@ class _Stage:
     producer: object = None
     error: BaseException | None = None
     ready: bool = False
+    # 已经有订阅者拿到了结果：之后别的订阅者再取消，这份结果也有人在用，不再丢弃
+    delivered: bool = False
 
 
 class SharedStageStore:
@@ -138,6 +140,8 @@ class SharedStageStore:
                     raise entry.error
                 result = (_DirectLease(entry.producer.value) if transient else self.resources.borrow_cached(key))
                 if result is not None:
+                    with self._condition:
+                        entry.delivered = True
                     logger.debug("阶段交付 name=%s key=%s leader=%s wait_ms=%.1f", key[1], key[-1][:12], leader,
                                  (monotonic() - started) * 1000)
                     return result
@@ -146,6 +150,7 @@ class SharedStageStore:
                 discard = abandoned()
                 with self._condition:
                     entry.subscribers.pop(token, None)
+                    discard = discard and not entry.delivered
                     if not entry.subscribers and entry.ready:
                         if self._entries.get(key) is entry:
                             self._entries.pop(key)

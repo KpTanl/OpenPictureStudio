@@ -7,7 +7,6 @@ from concurrent.futures import CancelledError
 from threading import Event
 from time import monotonic
 
-from PIL import Image
 from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QRunnable, Signal, Slot, QThreadPool, QTimer, QSettings, QPropertyAnimation
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
@@ -37,7 +36,7 @@ from .dialogs.settings_dialog import SettingsDialog, SettingsValues
 from .dialogs.enhancement_dialog import EnhancementDialog
 from .dialogs.wallpaper_dialog import WallpaperDialog
 from .services import ApplyService
-from .services.transform_save import TransformSaveRequest, TransformSaveWorker
+from .services.transform_save import PendingImage, TransformSaveRequest, TransformSaveWorker
 from .shortcut_manager import ShortcutManager
 from .theme import ThemeManager, get_theme_manager
 from .window_actions import WindowActions
@@ -54,7 +53,6 @@ from resources.styles.theme_variables import (CANVAS_TOOLBAR_HEIGHT, CANVAS_TOOL
 from ..core.constants import SUPPORTED_OUTPUT_FORMATS_FILTER, SUPPORTED_FORMATS_FILTER
 from ..core.image_manager import ImageManager
 from ..core.image_processor import ImageProcessor
-from ..core.raw_loader import load_image
 from ..core.edit_state import EditStateStore
 from ..application.studio_preload import StudioPreloadSettings
 from ..application.image_display_settings import ImageDisplaySettings
@@ -311,6 +309,7 @@ class MainWindow(BaseWindow):
 
         self.shortcut_manager = ShortcutManager()
 
+        # 看图模式里旋转 / 翻转后的结果（PendingImage，在后台线程算出）及其对应的图片版本
         self._current_pil_image = None
         self._current_pil_revision: int | None = None
         self._save_generation = 0
@@ -1027,7 +1026,7 @@ class MainWindow(BaseWindow):
             if image is not None:
                 path = jobs[0][1]
                 return service.batch([(path, lambda: service.save(
-                    image, path, overwrite=True, cancellation=cancellation))], cancellation)
+                    image.result(), path, overwrite=True, cancellation=cancellation))], cancellation)
             return service.convert_many(jobs, overwrite=overwrite, cancellation=cancellation)
         try:
             result = run_background(self, save)
@@ -1096,39 +1095,16 @@ class MainWindow(BaseWindow):
     ):
         """通用变换处理：即时显示更新 + 后台保存。
 
-        即时更新通过 QTransform 作用于当前 QPixmap（无 I/O），
-        PIL 变换在主线程中执行后缓存，文件写入在后台线程异步完成。
+        即时更新通过 QTransform 作用于当前 QPixmap（无 I/O）；
+        原图的解码、变换与文件写入都在后台线程完成，界面线程只登记这次变换。
         """
         source_path = self.manager.current_path
         source_revision = self.manager.current_revision
-        if not source_path or self.viewer.is_loading:
+        if not source_path or self.viewer.is_loading or not self.viewer.has_image:
             return
 
-        if (
-            self._current_pil_image is not None
-            and self._current_pil_revision == source_revision
-        ):
-            source = self._current_pil_image
-        else:
-            try:
-                source = load_image(source_path)
-            except Exception:
-                logger.exception("Failed to open image for transform: %s", source_path)
-                return
-
-        try:
-            result = transform_func(source)
-        except Exception:
-            logger.exception(
-                "Failed to apply transform %s to %s",
-                getattr(transform_func, "__name__", str(transform_func)),
-                source_path,
-            )
-            return
-
-        if result is None:
-            return
-
+        previous = self._current_pil_image if self._current_pil_revision == source_revision else None
+        result = PendingImage(previous or source_path, transform_func)
         self._current_pil_image = result
         self._current_pil_revision = source_revision
         self._save_generation += 1
@@ -1141,13 +1117,14 @@ class MainWindow(BaseWindow):
         elif display_flip_v:
             self.viewer.flip_display(horizontal=False)
 
+        width, height = self.viewer.image_size
         self.show_toast(
             self._tr(
                 "status.transform.result",
                 "{label}: {width} × {height} px",
                 label=label,
-                width=result.width,
-                height=result.height,
+                width=width,
+                height=height,
             )
         )
         try:
@@ -1163,7 +1140,7 @@ class MainWindow(BaseWindow):
 
     def _start_transform_save(
         self,
-        pil_image: Image.Image,
+        pil_image: PendingImage,
         source_path: str,
         source_revision: int,
         generation: int,
@@ -1233,6 +1210,10 @@ class MainWindow(BaseWindow):
 
         if error:
             self._safe_remove_temp(tmp_dir)
+            if self._current_pil_image is not None and not self._current_pil_image.ready:
+                # 原图没读出来，变换没有结果：撤回已经显示的旋转 / 翻转
+                self._invalidate_transform_save()
+                self.viewer.set_image(request.source_path)
             if error.startswith("storage."):
                 error = self._tr(error)
             self.show_toast(self._tr("status.save_failed", "Save failed: {error}", error=error), 5000)

@@ -297,6 +297,11 @@ class ImageViewer(QLabel):
     def has_image(self):
         return self._pixmap is not None and not self._pixmap.isNull()
 
+    @property
+    def image_size(self):
+        """当前图片的像素尺寸（宽, 高），含已做的即时旋转；与显示用位图的大小无关。"""
+        return self._display_size.width(), self._display_size.height()
+
     def display_snapshot(self, path: str) -> DisplaySnapshot | None:
         if (self.is_loading or not self.has_image or self._display_key is None
                 or self._display_size.isEmpty()

@@ -58,9 +58,8 @@ def prepare(backend, source_input, metadata, context, cancelled):
                 budget = backend._budget(device.info())
                 retain = backend._trim(budget, metadata.source_path)
                 device.configure(budget, backend._idle_limit(budget))
-                cached = backend._cache.get(cache_key)
+                cached = backend._cache.recent(cache_key)
                 if cached is not None:
-                    backend._cache.move_to_end(cache_key)
                     return cached
                 if source_peak(spec, size) > budget:
                     raise GpuExecutionError("target_budget", "Integer source exceeds the device budget")
@@ -128,8 +127,7 @@ def cached_source(backend, metadata, context, cancelled):
                 return None
             if not resident.carrier.ready or resident.backend_identity != context.backend_identity:
                 raise GpuExecutionError("device_changed", "Cached source is unavailable")
-            if cache_key in backend._cache:
-                backend._cache.move_to_end(cache_key)
+            backend._cache.recent(cache_key)
             family = backend.family(metadata.source_path, context.workflow_identity, display_target.get())
             logger.debug("GPU 源驻留命中 source=%s size=%s", metadata.source_path, metadata.pixels.shape[1::-1])
             return replace(metadata, pixels=DevicePixels(metadata.pixels.shape),

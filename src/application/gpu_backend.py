@@ -51,36 +51,53 @@ class _Checkpoint:
 
 
 class _ResidentCache(OrderedDict):
-    def __init__(self):
+    """显存里保留的结果。渲染线程持占用标记读写它；界面换图、预算判定、改设置的线程不持
+    占用标记、只持后端的状态锁也会删它。所以每个操作都在同一把状态锁（lock，可重入）里完成，
+    跨多步的读写由调用处用 lock 包住。不另设一把锁：删除条目时可能触发要取状态锁的析构。"""
+
+    def __init__(self, lock):
         super().__init__()
         self.allocations = {}
         self.nbytes = 0
+        self.lock = lock
 
     def __setitem__(self, key, value):
-        self.pop(key, None)
-        allocation = value.carrier.allocation_id
-        size, users = self.allocations.get(allocation, (value.carrier.nbytes, 0))
-        self.allocations[allocation] = size, users + 1
-        if not users:
-            self.nbytes += size
-        super().__setitem__(key, value)
+        with self.lock:
+            self.pop(key, None)
+            allocation = value.carrier.allocation_id
+            size, users = self.allocations.get(allocation, (value.carrier.nbytes, 0))
+            self.allocations[allocation] = size, users + 1
+            if not users:
+                self.nbytes += size
+            super().__setitem__(key, value)
 
     def pop(self, key, default=None):
-        value = super().pop(key, default)
-        if value is not default:
-            allocation = value.carrier.allocation_id
-            size, users = self.allocations[allocation]
-            if users == 1:
-                del self.allocations[allocation]
-                self.nbytes -= size
-            else:
-                self.allocations[allocation] = size, users - 1
-        return value
+        with self.lock:
+            value = super().pop(key, default)
+            if value is not default:
+                allocation = value.carrier.allocation_id
+                size, users = self.allocations[allocation]
+                if users == 1:
+                    del self.allocations[allocation]
+                    self.nbytes -= size
+                else:
+                    self.allocations[allocation] = size, users - 1
+            return value
 
     def clear(self):
-        super().clear()
-        self.allocations.clear()
-        self.nbytes = 0
+        with self.lock:
+            super().clear()
+            self.allocations.clear()
+            self.nbytes = 0
+
+    def recent(self, key, match=None):
+        """取一份并标为最近使用；给了 match 时只认保存键相同的那份。没有则为 None。"""
+        with self.lock:
+            value = self.get(key)
+            if value is None or match is not None and value.key != match:
+                return None
+            self.move_to_end(key)
+            return value
 
 
 @dataclass(frozen=True)
@@ -125,7 +142,7 @@ class GpuBackend:
         self._local = local()
         self._serial = count(1)
         self._waiting = {}
-        self._cache = _ResidentCache()
+        self._cache = _ResidentCache(self._condition)
         self._failed = OrderedDict()
         self._window = ()
         self._window_generation = 0
@@ -839,10 +856,9 @@ class GpuBackend:
 
     def checkpoint(self, slot, key, identity, cancelled):
         with self.borrow(cancelled):
-            entry = self._cache.get(slot)
-            if entry is None or entry.key != key or entry.output.backend_identity != identity:
+            entry = self._cache.recent(slot, key)
+            if entry is None or entry.output.backend_identity != identity:
                 return None
-            self._cache.move_to_end(slot)
             logger.debug("GPU 节点结果命中 node=%s", slot[2])
             return entry.output
 
@@ -860,11 +876,8 @@ class GpuBackend:
         if frame is None:
             return None
         with self._hold(frame):
-            entry = self._cache.get(slot)
-            if entry is None or entry.key != key:
-                return None
-            self._cache.move_to_end(slot)
-            return entry.output
+            entry = self._cache.recent(slot, key)
+            return None if entry is None else entry.output
 
     def retain(self, slot, key, artifact, output):
         """登记一份帧内结果：这一帧提交成功后按槽位保留，替换该槽位原有的一份。"""
@@ -889,10 +902,8 @@ class GpuBackend:
         if resident is None:
             stable = name.startswith(STABLE_STAGES) and not _frame_bound(key)
             with self._hold(frame):
-                resident = self._cache.get(key) if stable else None
-                if resident is not None:
-                    self._cache.move_to_end(key)
-                else:
+                resident = self._cache.recent(key) if stable else None
+                if resident is None:
                     carrier = self._run(frame, lambda: operation(frame.device, cancelled))
                     resident = GpuResident(carrier, artifact.backend_identity,
                         artifact.resident.shared_memory if view else None,
@@ -1025,11 +1036,12 @@ class GpuBackend:
 
     def _trim(self, budget, path=None):
         limit = self.settings.cache_bytes(budget)
-        if self._cache.nbytes > limit:
-            for key in [key for key in self._cache if key[0] not in self._window] + list(self._cache):
-                if self._cache.nbytes <= limit:
-                    break
-                self._cache.pop(key)
+        with self._cache.lock:
+            if self._cache.nbytes > limit:
+                for key in [key for key in self._cache if key[0] not in self._window] + list(self._cache):
+                    if self._cache.nbytes <= limit:
+                        break
+                    self._cache.pop(key)
         if path is not None and self._window and path not in self._window:
             return False
         return limit > 0
@@ -1076,9 +1088,8 @@ class GpuBackend:
                     self.set_window((source.source_path, *(path for path in self._window if path != source.source_path))[:4])
                 retain = self._trim(budget, source.source_path)
                 device.configure(budget, self._idle_limit(budget))
-                resident = self._cache.get(key)
+                resident = self._cache.recent(key)
                 if resident is not None:
-                    self._cache.move_to_end(key)
                     logger.debug("GPU 内容命中 source=%s bytes=%s", source.source_path, resident.carrier.nbytes)
                 else:
                     shared = None
@@ -1186,9 +1197,10 @@ class GpuBackend:
             if paths == self._window:
                 return
             self._window, self._window_generation = paths, self._window_generation + 1
-            for key in tuple(self._cache):
-                if key[0] not in paths:
-                    self._cache.pop(key)
+            with self._cache.lock:
+                for key in tuple(self._cache):
+                    if key[0] not in paths:
+                        self._cache.pop(key)
 
     def _release_scratch(self):
         holds, self._scratch_holds = self._scratch_holds, []

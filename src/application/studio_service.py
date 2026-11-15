@@ -116,9 +116,10 @@ class StudioRenderService:
                     detail=detail, full_size=region.full_size, effect_status=source.effect_status,
                     input_size=lease.value.pixels.shape[1::-1], input_is_proxy=False)
 
-    def render_original(self, session_id, workflow, *, proxy_input, is_cancelled):
+    def render_original(self, session_id, workflow, *, proxy_input, is_cancelled, max_dimension=None):
+        """改前画面。max_dimension 是改后画面所用的显示上限，两边取同样的输入，画质才对得上。"""
         result = self.core.preview(session_id, workflow, update_draft=False, allow_intermediate=True,
-            max_dimension=STUDIO_PREVIEW_MAX_DIMENSION if proxy_input else None,
+            max_dimension=(max_dimension or STUDIO_PREVIEW_MAX_DIMENSION) if proxy_input else None,
             is_cancelled=is_cancelled, priority=2)
         if not result.success:
             raise CoreOperationError(result.error)

@@ -2282,16 +2282,22 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         full = (self._canvas_preview_mode == "full"
                 or self._canvas_preview_mode == "auto" and self._view_needs_detail())
         proxy_input = not full and (self._displayed_frame is None or self._displayed_frame.input_is_proxy is not False)
+        # 带裁切旋转的改前画面与改后画面用同一个显示上限渲染，两边取到的输入才一致
+        limit = None
+        if geometry_key and proxy_input:
+            request = self._displayed_request
+            limit = request.context.max_dimension if request is not None else self.preview_max_dimension()
         display = self._original_display
-        if display is not None and (display.full is not None if full else display.preview_proxy_input == proxy_input):
+        if display is not None and (display.full is not None if full else
+                                    display.preview_proxy_input == proxy_input and display.preview_limit == limit):
             return
-        requested = (full, proxy_input, geometry_key)
+        requested = (full, proxy_input, geometry_key, limit)
         if (self._original_level_requested is not None
                 and (self._original_level_requested[0] or self._original_level_requested == requested)):
             return
         self._original_level_requested = requested
         self._original_runner.submit(self.session.core_id, self.core.source_identity(self.session.core_id),
-                                     full=full, proxy_input=proxy_input, workflow=workflow)
+                                     full=full, proxy_input=proxy_input, workflow=workflow, max_dimension=limit)
 
     def _comparison_image(self):
         display = self._original_display

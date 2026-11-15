@@ -26,6 +26,8 @@ class OriginalDisplay:
     full_memory: object = None
     preview_proxy_input: bool = True
     geometry_key: str = ""
+    # 带裁切旋转的改前画面渲染时所用的显示上限；不带几何或按完整输入渲染时为 None
+    preview_limit: int | None = None
 
     def close(self):
         self.preview = self.full = None
@@ -56,9 +58,9 @@ class StudioOriginalRunner(QObject):
         self._completed.connect(self._deliver, Qt.ConnectionType.QueuedConnection)
         self._source_completed.connect(self._deliver_source, Qt.ConnectionType.QueuedConnection)
 
-    def submit(self, session_id, identity, *, full=True, proxy_input=True, workflow=None):
+    def submit(self, session_id, identity, *, full=True, proxy_input=True, workflow=None, max_dimension=None):
         geometry_key = workflow.canonical_json() if workflow is not None and workflow.nodes else ""
-        for request in self._queue.replace([(session_id, identity, full, proxy_input, geometry_key)]):
+        for request in self._queue.replace([(session_id, identity, full, proxy_input, geometry_key, max_dimension)]):
             self._pool.submit(self._run, request)
 
     def cancel(self):
@@ -102,7 +104,7 @@ class StudioOriginalRunner(QObject):
                 if geometry_key:
                     rendered = self._render_original(request.key[0],
                         WorkflowGraph.from_dict(json.loads(geometry_key)), proxy_input=proxy_input,
-                        is_cancelled=request.cancellation.is_set)
+                        max_dimension=request.key[5], is_cancelled=request.cancellation.is_set)
                     try:
                         original, rendered.image = rendered.image, None
                         size = rendered.full_size or original.size
@@ -123,7 +125,7 @@ class StudioOriginalRunner(QObject):
                         preview = source_qimage(original)
                         image = OriginalDisplay(preview, full_image if full else (
                             preview if (preview.width(), preview.height()) == size else None), size,
-                            memory, full_memory, proxy_input, geometry_key)
+                            memory, full_memory, proxy_input, geometry_key, request.key[5])
                         memory = full_memory = None
                 finally:
                     original.close()

@@ -85,7 +85,8 @@ def _detector(scene):
 
 
 def _prepare(scene):
-    source = SimpleNamespace(pixels=np.zeros((HEIGHT, WIDTH, 3), np.float32), alpha=None, is_proxy=False)
+    source = SimpleNamespace(pixels=np.zeros((HEIGHT, WIDTH, 3), np.float32), alpha=None, is_proxy=False,
+                             gpu_image=None)
     return _detector(scene).prepare(source, "identity", lambda: False)
 
 

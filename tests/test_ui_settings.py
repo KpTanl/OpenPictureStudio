@@ -463,7 +463,7 @@ def test_settings_dialog_retranslates_in_place(qapp, monkeypatch):
         assert dialog.current_page() == "performance"
         assert dialog._pages["performance"].title.text() == "性能与内存"
         assert dialog.preload_mode_row.title() == "预加载范围" and dialog.preload_section.title() == "预加载"
-        assert dialog.theme_combo.itemText(0) == "深色" and dialog.edit_cache_clear.text() == "清除编辑代理缓存"
+        assert dialog.theme_combo.itemText(0) == "深色" and dialog.edit_cache_clear.text() == "清除编辑缓存"
         assert dialog._shortcut_sections[0][1].title() == "文件"
         assert dialog._shortcut_widgets["File/Open File"][0] is row
         dialog.close()

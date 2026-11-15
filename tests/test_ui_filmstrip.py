@@ -349,6 +349,9 @@ def test_edited_thumbnails_are_cropped_to_squares_like_source_thumbnails(filmstr
         def forget(self, channel):
             pass
 
+        def quiet_ms(self):
+            return 0
+
         def image(self, path, maximum=300, *, square=False):
             return squares[path] if square else images[path]
 

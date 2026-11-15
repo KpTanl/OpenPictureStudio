@@ -494,7 +494,8 @@ def test_preview_and_full_modes_update_canvas_and_original_together(window_facto
     assert studio._original_display.full is None
     old_request = studio._displayed_request
     monkeypatch.setattr(studio.core.tools, "supports_proxy", lambda workflow, **options: False)
-    studio._schedule_pipeline_render()
+    # 参数不变时会直接用已有的预览帧；改一个参数，让这一帧真的按完整输入重算
+    studio._on_panel_params_changed("color_adjust", {**studio.session.color_params, "exposure_amt": 31})
     wait_until(lambda: studio._displayed_request is not None and studio._displayed_request is not old_request
                and studio._displayed_frame.input_is_proxy is False
                and studio._original_display is not None and not studio._original_display.preview_proxy_input,

@@ -136,10 +136,14 @@ class GpuImageOps:
         return self.stage(image, 2, auxiliary=mask, field=prefix, size=size, args=(int(limit is not None),),
                           kernel="beauty_stats"), total
 
-    def median(self, samples):
+    def median(self, samples, *, rows=False):
+        """各通道的中位数，3×1。rows 为真时每一行各自求，结果 3 列、行数与样本表相同。"""
         samples = self.backend.resolve(self.artifact(samples), self.cancelled)
-        return self.backend.operate(samples, "beauty.median", (), (3, 1),
-            lambda device, abort: device.beauty_median(samples.resident.carrier, abort), self.cancelled)
+        if not rows:
+            return self.backend.operate(samples, "beauty.median", (), (3, 1),
+                lambda device, abort: device.beauty_median(samples.resident.carrier, abort), self.cancelled)
+        return self.backend.operate(samples, "beauty.median", ("rows",), (3, samples.resident.carrier.size[1]),
+            lambda device, abort: device.beauty_median(samples.resident.carrier, abort, True), self.cancelled)
 
     def count(self, mask):
         blocks = ceil(prod(mask.resident.carrier.size)/1024)
@@ -157,10 +161,11 @@ class GpuImageOps:
         value = self.control(self.stage(partial, 15, size=(1, 1), kernel="beauty_stats"))[0, 0]
         return int(value[0])+(int(value[1]) << 16)
 
-    def robust(self, samples, floors, multiplier):
-        center = self.median(samples)
+    def robust(self, samples, floors, multiplier, *, rows=False):
+        """剔除离群样本后的样本与中位数。rows 为真时样本表的每一行是独立的一组，各组一起算。"""
+        center = self.median(samples, rows=rows)
         deviation = self.stage(samples, 4, auxiliary=center, kernel="beauty_stats")
-        spread = self.median(deviation)
+        spread = self.median(deviation, rows=rows)
         filtered = self.stage(samples, 5, auxiliary=center, field=spread, args=(multiplier,), data=floors, kernel="beauty_stats")
-        center = self.median(filtered)
+        center = self.median(filtered, rows=rows)
         return filtered, center

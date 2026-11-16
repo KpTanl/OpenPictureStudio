@@ -31,10 +31,13 @@ impl State {
 }
 
 impl GpuDevice {
-    pub(super) fn median_image(&self, py: Python<'_>, image: &GpuImage, cancelled: Option<Py<PyAny>>) -> PyResult<GpuImage> {
+    /// rows 为真时每一行各自求中位数，输出 3 列、每行对应输入的一行；行内 alpha 为零的格子不参与。
+    pub(super) fn median_image(&self, py: Python<'_>, image: &GpuImage, rows: bool, cancelled: Option<Py<PyAny>>) -> PyResult<GpuImage> {
         self.state.image_check(image)?;
         let count = image.width * image.height;
-        if count > 4_000_000 { return Err(error("beauty_target_limit", "Face statistics exceed GPU submission limits")); }
+        if count > 4_000_000 || (rows && (image.width > 32768 || image.height > 4096)) {
+            return Err(error("beauty_target_limit", "Face statistics exceed GPU submission limits"));
+        }
         py.allow_threads(|| {
             let mut io = self.state.io.lock().unwrap();
             self.state.encoder(&mut io)?;
@@ -43,12 +46,14 @@ impl GpuDevice {
                 Ok(GpuImage { storage: self.state.allocate((width*height*16) as u64)?, width, height,
                     generation: self.state.generation, ticket: ticket.clone(), stride: width, offset: 0 })
             };
-            let output = allocate(3, 1)?;
-            if count <= 4096 {
-                let params = [image.width as u32, image.height as u32, image.stride as u32, image.offset as u32];
+            let lines = if rows { image.height } else { 1 };
+            let output = allocate(3, lines)?;
+            if rows || count <= 4096 {
+                let params = [image.width as u32, image.height as u32, image.stride as u32, image.offset as u32,
+                    rows as u32, 0, 0, 0];
                 let uniform = self.state.uniform("ops-median-parameters", bytemuck::cast_slice(&params))?;
                 self.state.dispatch(self.state.encoder(&mut io)?, "beauty_median", &[
-                    image.storage.buffer.as_ref().unwrap(), output.storage.buffer.as_ref().unwrap(), &uniform], (3, 1));
+                    image.storage.buffer.as_ref().unwrap(), output.storage.buffer.as_ref().unwrap(), &uniform], (3, lines as u32));
                 self.state.recorded(&mut io, 1, cancelled)?;
                 return Ok(output);
             }

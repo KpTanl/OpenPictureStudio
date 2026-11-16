@@ -12,6 +12,8 @@ from .gpu_image_ops import GpuImageOps
 COLOR_KEYS = ("skin_smooth", "skin_brighten", "skin_rosy", "sharpen", "teeth_whiten", "spot_remove", "eye_bag_remove")
 WARP_KEYS = ("face_slim", "eye_enlarge", "eye_distance", "nose_slim")
 BATCH_BYTES = 16 * 1024 ** 2
+# 眼袋采样点按行一起统计时单个点的像素数上限：一次提交内的中位数只处理到这个规模，超过时逐点统计
+ROW_SAMPLES = 4096
 
 
 class GpuBeauty:
@@ -215,15 +217,23 @@ class GpuBeauty:
         return result, skipped
 
     def eye_sites(self, candidate, masks):
-        """各采样点蒙版选中像素的前缀和（每点一行）与总数，总数一次读回。
+        """各采样点蒙版选中的像素：序号表（每点一行）、各点像素数、表是否为序号表。像素数一次读回。
 
-        只取决于蒙版，也就是关键点与皮肤权重，与美颜强度无关。"""
+        只取决于蒙版，也就是关键点与皮肤权重，与美颜强度无关。不足 8 个像素的采样点在序号表里是空行。
+        有采样点超过 ROW_SAMPLES 个像素时不建序号表，首项改为各点的前缀和表，由调用方逐点统计。"""
         ops = self.ops
-        prefixes = [ops.tally(candidate, mask(site)) for mask in masks for site in range(9)]
-        counts = ops.totals(prefixes)
-        columns = prefixes[0].resident.carrier.size[0]
-        table = ops.assemble(candidate, prefixes, [(0, row) for row in range(len(prefixes))], (columns, len(prefixes)))
-        return table, tuple(counts)
+        selections = [mask(site) for mask in masks for site in range(9)]
+        prefixes = [ops.tally(candidate, selection) for selection in selections]
+        counts = tuple(ops.totals(prefixes))
+        if max(counts) > ROW_SAMPLES:
+            columns = prefixes[0].resident.carrier.size[0]
+            table = ops.assemble(candidate, prefixes, [(0, row) for row in range(len(prefixes))], (columns, len(prefixes)))
+            return table, counts, False
+        rows = [row for row, count in enumerate(counts) if count >= 8]
+        indices = [ops.stage(candidate, 3, auxiliary=selections[row], field=prefixes[row], size=(counts[row], 1),
+                             args=(0,), kernel="beauty_stats") for row in rows]
+        columns = max([1, *(counts[row] for row in rows)])
+        return ops.assemble(candidate, indices, [(0, row) for row in rows], (columns, len(counts))), counts, True
 
     def eyes(self, candidate, weights, snapshot, index, bounds, size, distance, strength):
         ops = self.ops
@@ -246,30 +256,40 @@ class GpuBeauty:
             def mask(site, geometry=geometry, width=width):
                 return ops.stage(geometry, 22, auxiliary=weights, args=(distance, width, site))
             eyes.append((geometry, width, mask))
-        # 两只眼 18 个采样点的计数合并成一次读回并保留，拖动美颜滑块时不再重算、不再读回；
-        # 人脸区域很大时逐点读回，蒙版用完即放，不多占显存
+        # 两只眼 18 个采样点选中哪些像素只取决于蒙版：序号表与计数按人脸保留，拖动美颜滑块时不再算蒙版、
+        # 不再读回，18 个点的稳健统计按行一起算。人脸区域很大时逐点读回，蒙版用完即放，不多占显存
         batch = candidate.resident.carrier.nbytes <= BATCH_BYTES
+        indexed = False
         if batch:
-            table, counts = self.retained("eye.sites", index, bounds,
-                                          lambda: self.eye_sites(candidate, [mask for *_, mask in eyes]))
+            table, counts, indexed = self.retained("eye.sites", index, bounds,
+                                                   lambda: self.eye_sites(candidate, [mask for *_, mask in eyes]))
             columns = table.resident.carrier.size[0]
+        if indexed:
+            samples = ops.stage(base, 16, auxiliary=table, size=table.resident.carrier.size, kernel="beauty_stats")
+            filtered, center = ops.robust(samples, (3, 2, 2), 2.5, rows=True)
+            statistics = ops.stage(filtered, 10, auxiliary=center, size=(9, len(eyes)), args=(distance,),
+                                   kernel="beauty_stats")
         for number, (geometry, width, mask) in enumerate(eyes):
-            sites = []
-            for site in range(9):
-                selection = mask(site)
-                if batch:
-                    row = number*9+site
-                    prefix, count = ops.view(table, (0, row, columns, row+1)), counts[row]
-                else:
-                    prefix = ops.tally(base, selection)
-                    count = ops.totals([prefix])[0]
-                if count < 8:
-                    sites.append(ops.zero(candidate, (1, 1)))
-                    continue
-                samples, _ = ops.gather(base, selection, prefix, count)
-                filtered, center = ops.robust(samples, (3, 2, 2), 2.5)
-                sites.append(ops.stage(filtered, 8, auxiliary=center, size=(1, 1), args=(distance,), kernel="beauty_stats"))
-            targets = ops.assemble(candidate, sites, [(i, 0) for i in range(9)], (9, 1))
+            if indexed:
+                targets = ops.view(statistics, (0, number, 9, number+1))
+            else:
+                sites = []
+                for site in range(9):
+                    selection = mask(site)
+                    if batch:
+                        row = number*9+site
+                        prefix, count = ops.view(table, (0, row, columns, row+1)), counts[row]
+                    else:
+                        prefix = ops.tally(base, selection)
+                        count = ops.totals([prefix])[0]
+                    if count < 8:
+                        sites.append(ops.zero(candidate, (1, 1)))
+                        continue
+                    samples, _ = ops.gather(base, selection, prefix, count)
+                    filtered, center = ops.robust(samples, (3, 2, 2), 2.5)
+                    sites.append(ops.stage(filtered, 8, auxiliary=center, size=(1, 1), args=(distance,),
+                                           kernel="beauty_stats"))
+                targets = ops.assemble(candidate, sites, [(i, 0) for i in range(9)], (9, 1))
             delta = ops.stage(base, 23, auxiliary=geometry, field=targets, extra=protected_candidate,
                               args=(distance, width, strength/100))
             result = ops.stage(result, 8, auxiliary=delta, args=(1,))

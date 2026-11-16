@@ -23,7 +23,7 @@ mod ort;
 pub use ort::{GpuModel, GpuTensor};
 
 pyo3::create_exception!(ops_accel, GpuError, pyo3::exceptions::PyRuntimeError);
-pub const REVISION: &str = "wgpu27-dx12-beauty-4";
+pub const REVISION: &str = "wgpu27-dx12-beauty-5";
 const PENDING: u64 = u64::MAX;
 const PASS_LIMIT: u32 = 512;
 const TRANSIENT_LIMIT: u64 = 64 << 20;
@@ -803,9 +803,9 @@ impl GpuDevice {
         self.beauty_image(py, image, auxiliary, field, extra, kernel, mode, args, data, width, height, cancelled)
     }
 
-    #[pyo3(signature = (image, cancelled=None))]
-    fn beauty_median(&self, py: Python<'_>, image: &GpuImage, cancelled: Option<Py<PyAny>>) -> PyResult<GpuImage> {
-        self.median_image(py, image, cancelled)
+    #[pyo3(signature = (image, cancelled=None, rows=false))]
+    fn beauty_median(&self, py: Python<'_>, image: &GpuImage, cancelled: Option<Py<PyAny>>, rows: bool) -> PyResult<GpuImage> {
+        self.median_image(py, image, rows, cancelled)
     }
 
     #[pyo3(signature = (image, roots, distance, cancelled=None))]

@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 STABLE_STAGES = ("face.", "color.face.", "color.weight", "color.mask.", "color.brush.", "color.asset.",
                  "color.field.base", "beauty.field.", "shape.mask", "lasso.mask")
-# 帧内结果按槽位保留时单份的字节上限（100 万像素）：原尺寸下的人脸区域不保留，显存留给节点结果
+# 帧内结果按槽位保留时单份字节上限的下限（100 万像素）；显存缓存额度够大时上限更高，见 retain
 RETAINED_BYTES = 16 * 1024 ** 2
 
 
@@ -48,6 +48,8 @@ class _Checkpoint:
     carrier: object
     key: tuple
     output: object
+    # 按槽位保留的帧内结果（retain），区别于整个节点的结果（keep）：显存吃紧时先放掉它们
+    partial: bool = False
 
 
 class _ResidentCache(OrderedDict):
@@ -507,7 +509,28 @@ class GpuBackend:
             if status.tier == "B" and estimate > 500:
                 return CPU_BACKEND_IDENTITY, "submission_limit"
             budget = self._budget(info)
+            if peak > budget:
+                # 进程的显存占用里有一部分不在缓存账上：已释放还没回收的，以及被零散的长寿命缓冲钉住的显存堆。
+                # 先让设备回收，再放掉原尺寸下按槽位保留的帧内结果（它们建在首帧的大量临时缓冲之间，最容易钉住堆；
+                # 下次用到时重建），仍不够才清空整个驻留缓存，那样源图和各节点结果都要重来
+                self._device.trim()
+                budget = self._budget(self._device.info())
+                if peak > budget:
+                    with self._cache.lock:
+                        partial = [key for key, value in self._cache.items()
+                                   if getattr(value, "partial", False) and value.carrier.nbytes > RETAINED_BYTES]
+                        for key in partial:
+                            self._cache.pop(key)
+                    if partial:
+                        self._device.trim()
+                        budget = self._budget(self._device.info())
+                        logger.debug("GPU 预算不足，放掉帧内保留结果 target=%s working_bytes=%s budget_bytes=%s entries=%s",
+                                     target.size, peak, budget, len(partial))
             if peak > budget and self._cache:
+                info = self._device.info()
+                logger.debug("GPU 预算不足，清空驻留缓存 target=%s working_bytes=%s budget_bytes=%s process_usage=%s "
+                             "allocated_bytes=%s cache_bytes=%s", target.size, peak, budget, info["process_usage"],
+                             info["allocated_bytes"], self._cache.nbytes)
                 self._cache.clear()
                 self._device.trim()
                 budget = self._budget(self._device.info())
@@ -882,8 +905,12 @@ class GpuBackend:
     def retain(self, slot, key, artifact, output):
         """登记一份帧内结果：这一帧提交成功后按槽位保留，替换该槽位原有的一份。"""
         frame = getattr(self._local, "frame", None)
-        if frame is not None and artifact.resident.carrier.nbytes <= RETAINED_BYTES:
-            frame.stable.append((slot, _Checkpoint(artifact.resident.carrier, key, output)))
+        if frame is None:
+            return
+        # 单份上限随显存缓存额度放宽：额度 2 GiB 时为 64 MiB，容得下原尺寸下最大的人脸区域（400 万像素）
+        limit = max(RETAINED_BYTES, self.settings.cache_bytes(frame.budget) // 32)
+        if artifact.resident.carrier.nbytes <= limit:
+            frame.stable.append((slot, _Checkpoint(artifact.resident.carrier, key, output, partial=True)))
 
     def operate(self, artifact, name, identity, size, operation, cancelled, *, view=False, input_identity=None):
         frame = getattr(self._local, "frame", None)

@@ -40,8 +40,10 @@ def prepare_regions(snapshot, index, size, cancelled, *, include_support=True, r
     source = RenderSource(DevicePixels((bottom-top,right-left,3)),None,"linear32",empty.source_path,False,
         (right-left,bottom-top),"linear_srgb",gpu_image=empty,backend_identity=empty.backend_identity)
     color = GpuColor(session.backend)
+    # 这些算子的名字不在跨帧保留的阶段之列：二十多张与人脸区域同大的中间蒙版用完即放，
+    # 要跨帧沿用的调用方自己保留最终蒙版（美颜见 GpuBeauty.regions）
     def op(image, name, mode, *, auxiliary=None, args=(), data=(), field=None, extra=None):
-        return color.stage(image,name,mode,cancelled,auxiliary=auxiliary,args=args,data=data,field=field,extra=extra)
+        return color.stage(image,"region."+name,mode,cancelled,auxiliary=auxiliary,args=args,data=data,field=field,extra=extra)
     @cache
     def polygon(indices):
         return op(source,"face.polygon",32,args=(index,len(indices),*size,left,top),

@@ -12,8 +12,8 @@ from .gpu_image_ops import GpuImageOps
 COLOR_KEYS = ("skin_smooth", "skin_brighten", "skin_rosy", "sharpen", "teeth_whiten", "spot_remove", "eye_bag_remove")
 WARP_KEYS = ("face_slim", "eye_enlarge", "eye_distance", "nose_slim")
 BATCH_BYTES = 16 * 1024 ** 2
-# 眼袋采样点按行一起统计时单个点的像素数上限：一次提交内的中位数只处理到这个规模，超过时逐点统计
-ROW_SAMPLES = 4096
+# 眼袋单个采样点的像素数上限，也是原生按行中位数的列数上限。人脸区域到 400 万像素的上限时单点约 7000 个
+ROW_SAMPLES = 32768
 
 
 class GpuBeauty:
@@ -31,6 +31,21 @@ class GpuBeauty:
         if kept is None:
             kept = compute()
             self.backend.retain(slot, key, kept[0], kept)
+        return kept
+
+    def regions(self, snapshot, index, size, required):
+        """一张人脸的各区域蒙版。只取决于关键点：按人脸保留，拖动时不再逐帧重建，也不再读回它的范围。"""
+        names = tuple(sorted(required))
+        slot, key = (*self.slot, "regions", index), (self.landmarks, names)
+        kept = self.backend.retained(slot, key) if names else None
+        if kept is None:
+            kept = snapshot.regions(index, size, self.cancelled, required=required)
+            masks = [getattr(kept, name) for name in names]
+            if masks:
+                self.backend.retain(slot, key, masks[0], kept)
+            # 其余蒙版由上面那份结果带着存活，各登记一个槽位只为把它们计入显存
+            for name, mask in zip(names[1:], masks[1:]):
+                self.backend.retain((*slot, name), key, mask, None)
         return kept
 
     def distribution(self, image, mask):
@@ -88,20 +103,30 @@ class GpuBeauty:
         return ops.stage(image, 20, auxiliary=inputs, field=weights, extra=inside,
                          args=(distance, int(distribution is not None)))
 
-    def skin_delta(self, image, lab, weights, distance, params):
+    def skin_delta(self, image, lab, weights, distance, params, index, bounds):
         ops = self.ops
-        skin = ops.channel(weights)
-        blank = ops.zero(image)
-        y = ops.stage(image, 2)
-        fine = base = mass = chroma = blank
-        if params["skin_smooth"] or params["skin_brighten"]:
-            base = ops.guided(y, y, max(1, round(.08*distance)), .04**2)
-        if params["skin_smooth"]:
-            fine = ops.guided(y, y, max(1, round(.015*distance)), .02**2)
-            mass = ops.gaussian(skin, .04*distance)
-            chroma = ops.gaussian(ops.stage(lab, 17, auxiliary=skin), .04*distance)
-        fields = ops.pack(fine, base, mass)
-        local = ops.pack(chroma, chroma, skin, channels=(1, 2, 0, 0))
+        smooth, base_needed = bool(params["skin_smooth"]), bool(params["skin_smooth"] or params["skin_brighten"])
+
+        # 两组滤波结果只取决于原图与皮肤权重，强度只在最后一步用到：按人脸保留，拖动磨皮、提亮、红润时不重算。
+        # 用到哪几张取决于哪些滑块非零，所以键里带这两个开关
+        def filtered():
+            blank = ops.zero(image)
+            y = ops.stage(image, 2)
+            fine = base = mass = blank
+            if base_needed:
+                base = ops.guided(y, y, max(1, round(.08*distance)), .04**2)
+            if smooth:
+                fine = ops.guided(y, y, max(1, round(.015*distance)), .02**2)
+                mass = ops.gaussian(ops.channel(weights), .04*distance)
+            return (ops.pack(fine, base, mass),)
+
+        def masked():
+            skin = ops.channel(weights)
+            chroma = ops.gaussian(ops.stage(lab, 17, auxiliary=skin), .04*distance) if smooth else ops.zero(image)
+            return (ops.pack(chroma, chroma, skin, channels=(1, 2, 0, 0)),)
+
+        fields, = self.retained("skin.fields", index, (bounds, smooth, base_needed), filtered)
+        local, = self.retained("skin.local", index, (bounds, smooth), masked)
         return ops.stage(image, 13, auxiliary=lab, field=fields, extra=local,
             args=tuple(params[name]/100 for name in ("skin_smooth", "skin_brighten", "skin_rosy")))
 
@@ -217,23 +242,34 @@ class GpuBeauty:
         return result, skipped
 
     def eye_sites(self, candidate, masks):
-        """各采样点蒙版选中的像素：序号表（每点一行）、各点像素数、表是否为序号表。像素数一次读回。
+        """各采样点蒙版选中像素的序号表，每点一行；不足 8 个像素的采样点是空行。
 
-        只取决于蒙版，也就是关键点与皮肤权重，与美颜强度无关。不足 8 个像素的采样点在序号表里是空行。
-        有采样点超过 ROW_SAMPLES 个像素时不建序号表，首项改为各点的前缀和表，由调用方逐点统计。"""
+        只取决于蒙版，也就是关键点与皮肤权重，与美颜强度无关。"""
         ops = self.ops
-        selections = [mask(site) for mask in masks for site in range(9)]
-        prefixes = [ops.tally(candidate, selection) for selection in selections]
-        counts = tuple(ops.totals(prefixes))
-        if max(counts) > ROW_SAMPLES:
-            columns = prefixes[0].resident.carrier.size[0]
-            table = ops.assemble(candidate, prefixes, [(0, row) for row in range(len(prefixes))], (columns, len(prefixes)))
-            return table, counts, False
-        rows = [row for row, count in enumerate(counts) if count >= 8]
-        indices = [ops.stage(candidate, 3, auxiliary=selections[row], field=prefixes[row], size=(counts[row], 1),
-                             args=(0,), kernel="beauty_stats") for row in rows]
-        columns = max([1, *(counts[row] for row in rows)])
-        return ops.assemble(candidate, indices, [(0, row) for row in rows], (columns, len(counts))), counts, True
+        sites = [(mask, site) for mask in masks for site in range(9)]
+        rows = {}
+
+        def collect(number, selection, prefix, count):
+            if count > ROW_SAMPLES:
+                raise GpuExecutionError("beauty_target_limit", "Eye statistics exceed GPU submission limits")
+            if count >= 8:
+                rows[number] = ops.stage(candidate, 3, auxiliary=selection, field=prefix, size=(count, 1), args=(0,),
+                                         kernel="beauty_stats")
+
+        if candidate.resident.carrier.nbytes <= BATCH_BYTES:
+            # 18 个点的像素数合并成一次读回
+            selections = [mask(site) for mask, site in sites]
+            prefixes = [ops.tally(candidate, selection) for selection in selections]
+            for number, count in enumerate(ops.totals(prefixes)):
+                collect(number, selections[number], prefixes[number], count)
+        else:
+            # 人脸区域很大时逐点读回：18 张蒙版同时持有要多占数百 MB 显存，逐点做则蒙版用完即放
+            for number, (mask, site) in enumerate(sites):
+                selection = mask(site)
+                prefix = ops.tally(candidate, selection)
+                collect(number, selection, prefix, ops.totals([prefix])[0])
+        columns = max([1, *(row.resident.carrier.size[0] for row in rows.values())])
+        return ops.assemble(candidate, list(rows.values()), [(0, number) for number in rows], (columns, len(sites)))
 
     def eyes(self, candidate, weights, snapshot, index, bounds, size, distance, strength):
         ops = self.ops
@@ -256,40 +292,16 @@ class GpuBeauty:
             def mask(site, geometry=geometry, width=width):
                 return ops.stage(geometry, 22, auxiliary=weights, args=(distance, width, site))
             eyes.append((geometry, width, mask))
-        # 两只眼 18 个采样点选中哪些像素只取决于蒙版：序号表与计数按人脸保留，拖动美颜滑块时不再算蒙版、
-        # 不再读回，18 个点的稳健统计按行一起算。人脸区域很大时逐点读回，蒙版用完即放，不多占显存
-        batch = candidate.resident.carrier.nbytes <= BATCH_BYTES
-        indexed = False
-        if batch:
-            table, counts, indexed = self.retained("eye.sites", index, bounds,
-                                                   lambda: self.eye_sites(candidate, [mask for *_, mask in eyes]))
-            columns = table.resident.carrier.size[0]
-        if indexed:
-            samples = ops.stage(base, 16, auxiliary=table, size=table.resident.carrier.size, kernel="beauty_stats")
-            filtered, center = ops.robust(samples, (3, 2, 2), 2.5, rows=True)
-            statistics = ops.stage(filtered, 10, auxiliary=center, size=(9, len(eyes)), args=(distance,),
-                                   kernel="beauty_stats")
-        for number, (geometry, width, mask) in enumerate(eyes):
-            if indexed:
-                targets = ops.view(statistics, (0, number, 9, number+1))
-            else:
-                sites = []
-                for site in range(9):
-                    selection = mask(site)
-                    if batch:
-                        row = number*9+site
-                        prefix, count = ops.view(table, (0, row, columns, row+1)), counts[row]
-                    else:
-                        prefix = ops.tally(base, selection)
-                        count = ops.totals([prefix])[0]
-                    if count < 8:
-                        sites.append(ops.zero(candidate, (1, 1)))
-                        continue
-                    samples, _ = ops.gather(base, selection, prefix, count)
-                    filtered, center = ops.robust(samples, (3, 2, 2), 2.5)
-                    sites.append(ops.stage(filtered, 8, auxiliary=center, size=(1, 1), args=(distance,),
-                                           kernel="beauty_stats"))
-                targets = ops.assemble(candidate, sites, [(i, 0) for i in range(9)], (9, 1))
+        # 两只眼 18 个采样点选中哪些像素只取决于蒙版：序号表按人脸保留，拖动美颜滑块时不再算蒙版、不再读回，
+        # 每帧按表取样，18 个点的稳健统计按行一起算
+        table, = self.retained("eye.sites", index, bounds,
+                               lambda: (self.eye_sites(candidate, [mask for *_, mask in eyes]),))
+        samples = ops.stage(base, 16, auxiliary=table, size=table.resident.carrier.size, kernel="beauty_stats")
+        filtered, center = ops.robust(samples, (3, 2, 2), 2.5, rows=True)
+        statistics = ops.stage(filtered, 10, auxiliary=center, size=(9, len(eyes)), args=(distance,),
+                               kernel="beauty_stats")
+        for number, (geometry, width, _) in enumerate(eyes):
+            targets = ops.view(statistics, (0, number, 9, number+1))
             delta = ops.stage(base, 23, auxiliary=geometry, field=targets, extra=protected_candidate,
                               args=(distance, width, strength/100))
             result = ops.stage(result, 8, auxiliary=delta, args=(1,))
@@ -309,7 +321,7 @@ class GpuBeauty:
             weights, = self.retained("skin.weights", index, bounds,
                                      lambda: (self.skin_weights(lab, snapshot, index, regions, bounds, size),))
             if any(params[key] for key in ("skin_smooth", "skin_brighten", "skin_rosy")):
-                delta = self.skin_delta(image, lab, weights, regions.distance, params)
+                delta = self.skin_delta(image, lab, weights, regions.distance, params, index, bounds)
                 result = ops.stage(result, 8, auxiliary=delta, args=(1,))
             if params["eye_bag_remove"]:
                 candidate = ops.stage(image, 12, auxiliary=result)
@@ -371,7 +383,7 @@ class GpuBeauty:
             required.add("support")
         entries = []
         for index in ready:
-            regions = snapshot.regions(index, size, self.cancelled, required=required)
+            regions = self.regions(snapshot, index, size, required)
             bounds = regions.bounds
             if has_color and expanded:
                 def expand(index=index):

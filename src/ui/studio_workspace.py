@@ -258,6 +258,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self.destroyed.connect(self._sampling_resources.close)
         self._displayed_request = None
         self._displayed_frame = None
+        self._requesting_full_frame = False
         self._displayed_histogram = None
         self._comparing = False
         self._original_qimage: Optional[QImage] = None
@@ -672,6 +673,42 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                 scale = min(1, width / size[0], height / size[1])
                 return max(1, round(max(size) * scale))
         return max(1, round(max(width, height)))
+
+    def _screen_display_limit(self):
+        """画面此刻在屏幕上占多少像素（长边）。已经放大到要看原图像素时为 None。
+
+        完整预览下拖动滑块时按它取显示帧：仍按原尺寸计算，只是不把整幅画面读回来。"""
+        if self.session is None or not self.viewer.has_image:
+            return None
+        frame = self._displayed_frame
+        full = frame.full_size if frame is not None and frame.full_size else self.session.source_size
+        rect = self.viewer.get_image_display_rect()
+        # 正好取屏幕上的像素数：多取或少取，看图器都要再缩放一次，画面会发虚
+        limit = max(1, round(max(rect.width(), rect.height()) * self.viewer.devicePixelRatioF()))
+        return limit if limit < max(full) else None
+
+    def _seed_full_frame(self, request, frame, previous):
+        """整幅画面替换同一画面的屏幕大小帧时，把后者交给看图器先用着，松手那一下画面不闪。"""
+        _, shown, shown_frame, _, image = previous
+        if (shown is None or image is None or shown_frame is None or request.context.preview_mode != "full"
+                or request.context.max_dimension is not None or shown.context.max_dimension is None
+                or replace(shown.context, max_dimension=None) != request.context
+                or frame.size != tuple(frame.full_size or ()) or shown_frame.full_size != frame.full_size
+                or shown.session.workflow.workflow_hash() != request.session.workflow.workflow_hash()):
+            return
+        self.viewer.seed_scaled_display(image)
+
+    def _needs_full_frame(self):
+        """完整预览下最新一次请求只取了屏幕大小的显示帧，而现在该补整幅画面了：滑块已松手，或画面放大了。"""
+        latest = self._preview_queue.latest
+        if (self._canvas_preview_mode != "full" or self.session is None or self._image_loading or latest is None
+                or latest.context.preview_mode != "full" or latest.context.max_dimension is None
+                or latest.context.session_id != self.session.core_id):
+            return False
+        if not self._detail_editing():
+            return True
+        limit = self._screen_display_limit()
+        return limit is None or limit > latest.context.max_dimension
 
     def preview_key(self, path: str, workflow=None, *, preview_target=None):
         if self._canvas_preview_mode == "full":
@@ -1975,6 +2012,11 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         # 画布工具调整时，渲染到它之前为止；看结果时渲染全部各步
         snapshot = self.session.render_snapshot(None if self._result_view else editing_tool,
             preview_target=target, color_candidate=self._mask_candidate)
+        cacheable = self.core.tools.cacheable_workflow(snapshot.workflow)
+        # 完整预览下拖动滑块：每帧只取屏幕大小的显示帧，松手后由 _refresh_detail 补整幅画面
+        screen_limit = (self._screen_display_limit() if self._canvas_preview_mode == "full" and edit_group is not None
+                        and sampling_request is None and self._mask_gesture is None and cacheable
+                        and not self.session.read_only else None)
         context = StudioPreviewContext(snapshot.core_id, self.core.source_identity(snapshot.core_id),
                                        self.core.tools.generation, editing_tool,
                                        self.core.source_preview(snapshot.core_id),
@@ -1983,14 +2025,14 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                                        gesture_id=self._mask_gesture.identity if self._mask_gesture is not None else None,
                                        geometry_generation=self._mask_gesture.generation if self._mask_gesture is not None else 0,
                                        preview_mode=self._canvas_preview_mode,
-                                       max_dimension=self.preview_max_dimension(snapshot.workflow))
+                                       max_dimension=screen_limit or self.preview_max_dimension(snapshot.workflow))
         dropped = (self._preview_queue.pending if self._preview_queue.latest is not None
                    and context != self._preview_queue.latest.context else None)
         self._render_generation += 1
         request = StudioPreviewRequest(self._render_generation, context, snapshot,
             self.preview_key(self._current_path, snapshot.workflow, preview_target=target), self.session.source_size,
             sampling_request=sampling_request,
-            keep_full_display=self._canvas_preview_mode == "full" or not self.core.tools.cacheable_workflow(snapshot.workflow))
+            keep_full_display=self._canvas_preview_mode == "full" and screen_limit is None or not cacheable)
         request = self._preview_queue.submit(request)
         if dropped is not None:
             self._report_manual_preview(dropped, "stopped")
@@ -2154,6 +2196,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                 if not self._comparing:
                     try:
                         self._show_canvas_image(qimg, sampling=sampling)
+                        self._seed_full_frame(request, frame, previous_display)
                     except MemoryError as failure:
                         (self._displayed_generation, self._displayed_request, self._displayed_frame,
                          self._displayed_histogram, self._last_rendered_qimage) = previous_display
@@ -2438,6 +2481,14 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
 
     def _refresh_detail(self):
         if self._syncing_canvas:
+            return
+        if self._needs_full_frame() and not self._requesting_full_frame:
+            # 安排渲染的途中视图可能再回调到这里，不重复安排
+            self._requesting_full_frame = True
+            try:
+                self._schedule_pipeline_render()
+            finally:
+                self._requesting_full_frame = False
             return
         request = self._detail_candidate()
         if request is None:

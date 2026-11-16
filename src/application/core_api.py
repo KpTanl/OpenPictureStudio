@@ -1239,9 +1239,11 @@ class CoreAPI:
         self, session_id, workflow, *, generation=0, compute_histogram=False,
         is_cancelled=None, update_draft=True, max_dimension=None, allow_intermediate=False,
         display=False, sampling_request=None, priority=0, keep_full_display=False, expected_state=None,
-        source_is_cancelled=None,
+        source_is_cancelled=None, full_input=False,
     ):
-        """display=True 时结果的 image 为 None，display 为显示用 RGBA8 帧；其余契约相同。"""
+        """display=True 时结果的 image 为 None，display 为显示用 RGBA8 帧；其余契约相同。
+
+        full_input 为真时 max_dimension 只限制显示帧的大小，计算仍取完整输入。"""
         started = monotonic()
         if ((allow_intermediate and update_draft) or (display and compute_histogram)
                 or sampling_request is not None and (update_draft or allow_intermediate)
@@ -1262,7 +1264,7 @@ class CoreAPI:
                 return capability
         prepared_at = monotonic()
         resolved = self._resolve(session_id, is_cancelled=is_cancelled,
-                                 max_side=max_dimension if self.tools.supports_proxy(
+                                 max_side=max_dimension if not full_input and self.tools.supports_proxy(
                                      workflow, canonical_inputs=sampling_request is None) else None,
                                  allow_intermediate=allow_intermediate, priority=priority, expected_state=expected_state,
                                  deferred=sampling_request is None, preview_workflow=workflow, tool_snapshot=tool_snapshot,

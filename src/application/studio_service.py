@@ -128,7 +128,8 @@ class StudioRenderService:
     def _render(self, session, *, display, use_proxy=True, editing_tool=None, is_cancelled=lambda: False,
                 allow_intermediate=False, source_identity=None, source_preview=None, sampling_request=None,
                 priority=0, keep_full_display=False, max_dimension=STUDIO_PREVIEW_MAX_DIMENSION,
-                source_is_cancelled=None):
+                source_is_cancelled=None, display_limit=None):
+        """use_proxy 为假时按完整输入计算；此时给了 display_limit，就只取这么大的显示帧，不取整幅。"""
         caller_cancelled = is_cancelled
         is_cancelled = lambda: caller_cancelled() or (
             source_identity is not None and self.core.source_identity(session.core_id) != source_identity) or (
@@ -156,7 +157,8 @@ class StudioRenderService:
         result = self.core.preview(
             session.core_id, session.workflow,
             update_draft=False, is_cancelled=is_cancelled,
-            max_dimension=max_dimension if use_proxy else None,
+            max_dimension=max_dimension if use_proxy else display_limit,
+            full_input=not use_proxy and display_limit is not None,
             allow_intermediate=allow_intermediate, display=display,
             priority=priority, keep_full_display=keep_full_display,
             expected_state=session.state_version if not allow_intermediate else None,

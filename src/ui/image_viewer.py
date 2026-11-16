@@ -78,6 +78,7 @@ class ImageViewer(QLabel):
         retained = self._scale_retained
         self.destroyed.connect(lambda: [packet.close() for packet in retained])
         self._scaled_pixmaps = {}
+        self._scale_seed = None
         self._scaled_key = self._scale_requested_key = self._scale_failed_key = None
         self._scale_timer = QTimer(self)
         self._scale_timer.setSingleShot(True)
@@ -393,6 +394,28 @@ class ImageViewer(QLabel):
             self._queue_scale()
             self.update()
 
+    def seed_scaled_display(self, image: QImage) -> None:
+        """当前画面已有一份屏幕大小的版本（同一画面此前按屏幕大小算出的一帧）时交给看图器：
+        高质量缩小图备好之前先画它，免得整幅画面刚装入时按即时缩放显示一下。"""
+        self._scale_seed = None
+        if image is not None and not image.isNull() and self._pixmap:
+            pixmap = QPixmap.fromImage(image)
+            if not pixmap.isNull():
+                self._scale_seed = self._bitmap_key, pixmap
+                self.update()
+
+    def _seeded_scale(self):
+        """seed_scaled_display 给的那一份；画面已换或屏幕上的大小已变时不用。"""
+        if self._scale_seed is None or self._scale_seed[0] != self._bitmap_key:
+            return None
+        dpr = self.devicePixelRatioF()
+        pixmap = self._scale_seed[1]
+        if (pixmap.width(), pixmap.height()) != (max(1, round(self._display_size.width() * self._zoom * dpr)),
+                                                 max(1, round(self._display_size.height() * self._zoom * dpr))):
+            return None
+        pixmap.setDevicePixelRatio(dpr)
+        return pixmap
+
     def set_comparison_image(self, image, reference_size=None):
         self._companion = ((image, tuple(reference_size or (image.width(), image.height())))
                            if image is not None and not image.isNull() else None)
@@ -582,8 +605,9 @@ class ImageViewer(QLabel):
         return color.red(), color.green(), color.blue()
 
     def _scaled_size(self):
-        return QSize(max(1, int(self._display_size.width() * self._zoom)),
-                     max(1, int(self._display_size.height() * self._zoom)))
+        # 与预览帧的尺寸同样四舍五入：向下取整会比帧少一行或一列，帧被再缩放一次而发虚
+        return QSize(max(1, round(self._display_size.width() * self._zoom)),
+                     max(1, round(self._display_size.height() * self._zoom)))
 
     def sizeHint(self):
         return self._widget_size() if self._pixmap else super().sizeHint()
@@ -879,7 +903,7 @@ class ImageViewer(QLabel):
                 # 棋盘格跟着照片的左上角走，平移时不会相对照片滑动
                 painter.setBrushOrigin(rect.topLeft())
                 painter.fillRect(visible, _checker_brush())
-            scaled = self._scaled_pixmaps.get(self._bitmap_key)
+            scaled = self._scaled_pixmaps.get(self._bitmap_key) or self._seeded_scale()
             if scaled is not None:
                 painter.drawPixmap(QPointF(rect.topLeft()), scaled)
             else:

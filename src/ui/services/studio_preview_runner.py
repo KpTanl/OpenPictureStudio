@@ -107,10 +107,14 @@ class StudioPreviewWorker(QRunnable):
         result = None
         try:
             request = self.request
-            options = dict(use_proxy=request.context.preview_mode != "full", editing_tool=request.context.editing_tool,
+            full = request.context.preview_mode == "full"
+            options = dict(use_proxy=not full, editing_tool=request.context.editing_tool,
                 is_cancelled=request.is_cancelled, source_identity=request.context.source_identity,
                 source_preview=request.context.source_preview, max_dimension=request.context.max_dimension,
                 source_is_cancelled=request.source_cancellation.is_set)
+            if full and request.context.max_dimension is not None:
+                # 完整预览下拖动滑块：按原尺寸计算，只取屏幕上显示的大小
+                options["display_limit"] = request.context.max_dimension
             if (self.cache is not None and request.preview_key is not None and not request.keep_full_display
                     and request.sampling_request is None
                     and request.context.gesture_id is None and not request.context.source_preview.half_size

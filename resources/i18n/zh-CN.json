@@ -340,6 +340,7 @@
   "settings.images.canvas.beige": "米色",
   "settings.images.save_failed": "无法保存图片显示设置。",
   "viewer.memory_camera_preview": "内存不足，当前显示相机预览",
+  "viewer.memory_screen_preview": "内存不足，当前显示缩小的画面",
   "viewer.empty.title": "把图片或文件夹拖到这里",
   "viewer.empty.formats": "支持 JPEG、PNG、WebP、TIFF 和常见的 RAW 格式",
   "viewer.empty.open_file": "打开图片",

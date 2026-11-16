@@ -79,6 +79,7 @@ class ImageViewer(QLabel):
         self.destroyed.connect(lambda: [packet.close() for packet in retained])
         self._scaled_pixmaps = {}
         self._scale_seed = None
+        self._screen_preview = None
         self._scaled_key = self._scale_requested_key = self._scale_failed_key = None
         self._scale_timer = QTimer(self)
         self._scale_timer.setSingleShot(True)
@@ -178,6 +179,7 @@ class ImageViewer(QLabel):
         self._terminal_memory_error = False
         self._quick_finished = False
         self._quick_displayed = False
+        self._screen_preview = None
         self.load_status_changed.emit("", False)
         if self._load_runner is not None:
             self._load_runner.replace([])
@@ -191,6 +193,13 @@ class ImageViewer(QLabel):
         keys = [self._load_key]
         if self._image_sources.supports_quick_preview(path):
             self._quick_key = self._load_key._replace(stage="quick")
+        elif self._non_raw_display_mode == NonRawDisplayMode.ORIGINAL and self._fit_mode:
+            # 大图先要一张铺满显示区域的缩小图，免得整幅画面备好之前画布一直空着
+            area = self._fit_area()
+            if area is not None:
+                ratio = self.devicePixelRatioF()
+                self._quick_key = self._load_key._replace(stage="quick", size=(area[0] * ratio, area[1] * ratio))
+        if self._quick_key is not None:
             keys.append(self._quick_key)
         self._set_loading(True)
         self._load_runner.replace(keys)
@@ -247,6 +256,10 @@ class ImageViewer(QLabel):
         self._quick_key = None
         self._load_runner.replace([])
         self._replace_loaded_image(qimage, reference_size)
+        # 先到的那张缩小图就是这幅画面的屏幕大小版本：高质量缩小图备好之前接着画它，画面不跳
+        screen_preview, self._screen_preview = self._screen_preview, None
+        if screen_preview is not None:
+            self.seed_scaled_display(screen_preview)
         self._set_loading(False)
         self.load_status_changed.emit("", False)
 
@@ -264,6 +277,8 @@ class ImageViewer(QLabel):
         if qimage is not None and not qimage.isNull() and reference_size is not None:
             self._replace_loaded_image(qimage, reference_size)
             self._quick_displayed = True
+            if request.key.size is not None:
+                self._screen_preview = qimage
         if self._terminal_memory_error:
             self._finish_memory_error()
 
@@ -273,7 +288,8 @@ class ImageViewer(QLabel):
             self._quick_key = None
             self._load_runner.replace([])
             self._set_loading(False)
-            self.load_status_changed.emit("viewer.memory_camera_preview", True)
+            self.load_status_changed.emit("viewer.memory_screen_preview" if self._screen_preview is not None
+                                          else "viewer.memory_camera_preview", True)
         else:
             self._show_load_error("error.image.memory_budget", retry=True)
 
@@ -652,21 +668,21 @@ class ImageViewer(QLabel):
         else:
             self._update_display()
 
+    def _fit_area(self):
+        """适应窗口时图片可以占用的宽高；显示区域太小时为 None。"""
+        margin = 8
+        host = self.parentWidget() or self
+        avail_w = host.width() - margin * 2
+        avail_h = host.height() - margin * 2 - self._bottom_inset
+        return (avail_w, avail_h) if avail_w > 30 and avail_h > 30 else None
+
     def _fit_to_window(self):
         if not self._pixmap:
             return
-        margin = 8
-        viewport = self.parentWidget()
-        if viewport:
-            avail_w = viewport.width() - margin * 2
-            avail_h = viewport.height() - margin * 2 - self._bottom_inset
-        else:
-            avail_w = self.width() - margin * 2
-            avail_h = self.height() - margin * 2 - self._bottom_inset
-
-        if avail_w <= 30 or avail_h <= 30:
+        area = self._fit_area()
+        if area is None:
             return
-
+        avail_w, avail_h = area
         scale_w = avail_w / self._display_size.width()
         scale_h = avail_h / self._display_size.height()
         self._zoom = min(scale_w, scale_h)

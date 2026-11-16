@@ -3,6 +3,7 @@ from threading import Lock
 from time import perf_counter
 import logging
 
+import numpy as np
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 from PySide6.QtGui import QImage
 
@@ -42,6 +43,34 @@ class ImageLoadRunner(QObject):
         logger.debug("图像队列 thumbnail=%s generation=%s active=%s pending=%s",
                      self._thumbnail, self._queue.generation, len(self._queue.active), len(self._queue.pending))
 
+    @staticmethod
+    def _display_qimage(image, cancelled, rows=256):
+        """把解码好的图按条带直接写进 QImage，格式就是 Qt 绘制用的那种。取消时返回 None。
+
+        整幅转成字节串再复制，一亿像素的图每一步都占着解释器锁约 0.1 秒，界面线程拿到后还要再转一次格式，
+        卡住界面 0.2 秒。按条带写，每次占锁十几毫秒，界面线程拿到后不用再转。"""
+        if image.mode not in ("RGB", "RGBA"):
+            with image.convert("RGBA") as converted:
+                return ImageLoadRunner._display_qimage(converted, cancelled, rows)
+        opaque = image.mode == "RGB"
+        qimage = QImage(image.width, image.height,
+                        QImage.Format.Format_RGB32 if opaque else QImage.Format.Format_ARGB32)
+        if qimage.isNull():
+            raise MemoryError()
+        view, line = memoryview(qimage.bits()), qimage.bytesPerLine()
+        for top in range(0, image.height, rows):
+            if cancelled():
+                return None
+            bottom = min(image.height, top + rows)
+            with image.crop((0, top, image.width, bottom)) as strip:
+                view[top * line:bottom * line] = strip.tobytes("raw", "BGRX" if opaque else "BGRA")
+            if opaque:
+                # Pillow 把填充字节写成 0，Qt 要求这种格式的第四个字节是 255，否则直接绘制时整幅是黑的
+                np.frombuffer(view, np.uint8, (bottom - top) * line, top * line)[3::4] = 255
+        del view
+        # 带透明通道的图由 Qt 做预乘，结果与原来逐位相同
+        return qimage if opaque else qimage.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+
     def _run(self, request):
         started = perf_counter()
         qimage, error, reference_size = None, None, None
@@ -51,18 +80,24 @@ class ImageLoadRunner(QObject):
                 image = self._service.thumbnail(path, size, expected_stamp=stamp,
                     is_cancelled=request.cancellation.is_set, priority=2)
             elif request.key.stage == "quick":
-                preview = self._service.quick_preview(path, expected_stamp=stamp,
-                    is_cancelled=request.cancellation.is_set)
+                # RAW 取内嵌的相机预览；其余格式带着显示区域大小来，取一张屏幕大小的缩小图
+                preview = (self._service.quick_preview(path, expected_stamp=stamp,
+                               is_cancelled=request.cancellation.is_set) if size is None else
+                           self._service.screen_preview(path, size, expected_stamp=stamp,
+                               is_cancelled=request.cancellation.is_set))
                 image, reference_size = preview if preview is not None else (None, None)
             else:
                 image, reference_size = self._service.viewer_image(path,
                     raw_display_mode=request.key.raw_display_mode,
                     non_raw_display_mode=request.key.non_raw_display_mode, expected_stamp=stamp,
-                    is_cancelled=request.cancellation.is_set)
+                    is_cancelled=request.cancellation.is_set, keep_opaque=True)
             try:
                 if image is not None and not request.cancellation.is_set():
-                    qimage = QImage(image.tobytes(), image.width, image.height, image.width * 4,
-                                    QImage.Format.Format_RGBA8888).copy()
+                    if self._thumbnail:
+                        qimage = QImage(image.tobytes(), image.width, image.height, image.width * 4,
+                                        QImage.Format.Format_RGBA8888).copy()
+                    else:
+                        qimage = self._display_qimage(image, request.cancellation.is_set)
             finally:
                 if image is not None:
                     image.close()

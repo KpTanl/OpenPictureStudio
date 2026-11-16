@@ -340,6 +340,7 @@
   "settings.images.canvas.beige": "Beige",
   "settings.images.save_failed": "Impossible d’enregistrer les paramètres d’affichage des images.",
   "viewer.memory_camera_preview": "Mémoire insuffisante. Affichage de l’aperçu de l’appareil.",
+  "viewer.memory_screen_preview": "Mémoire insuffisante. Affichage d’une image réduite.",
   "viewer.empty.title": "Déposez des images ou un dossier ici",
   "viewer.empty.formats": "JPEG, PNG, WebP, TIFF et les formats RAW courants",
   "viewer.empty.open_file": "Ouvrir des images",

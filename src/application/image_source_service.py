@@ -605,7 +605,13 @@ class ImageSourceService:
         stat = Path(path).stat()
         return stat.st_mtime_ns, stat.st_size, stat.st_ino
 
-    def display_image(self, path, *, size=None, expected_stamp=None, is_cancelled=lambda: False, priority=0):
+    @staticmethod
+    def _display_mode(image, keep_opaque):
+        """显示用的像素格式。keep_opaque 为真且图片没有任何透明信息时用 RGB，省掉补一个全不透明通道的那一遍。"""
+        return "RGB" if keep_opaque and image.mode in ("RGB", "L") and "transparency" not in image.info else "RGBA"
+
+    def display_image(self, path, *, size=None, expected_stamp=None, is_cancelled=lambda: False, priority=0,
+                      keep_opaque=False):
         from PIL import ImageOps
         if expected_stamp is not None and self.file_stamp(path) != expected_stamp:
             raise SourceChangedError()
@@ -614,7 +620,7 @@ class ImageSourceService:
             self._check(is_cancelled)
             with self.compute.borrow(is_cancelled, priority,
                     role="thumbnail" if size is not None and priority >= 2 else "operator", threads=1):
-                rgba = lease.value.convert("RGBA")
+                rgba = lease.value.convert(self._display_mode(lease.value, keep_opaque))
                 try:
                     self._check(is_cancelled)
                     result = rgba if size is None else ImageOps.fit(
@@ -632,12 +638,14 @@ class ImageSourceService:
 
     def viewer_image(self, path, *, raw_display_mode=DEFAULT_RAW_DISPLAY_MODE,
                      non_raw_display_mode=DEFAULT_NON_RAW_DISPLAY_MODE, expected_stamp=None,
-                     is_cancelled=lambda: False):
+                     is_cancelled=lambda: False, keep_opaque=False):
+        """看图用的整幅画面与原图尺寸。画面是 RGBA；keep_opaque 为真时没有透明信息的图给 RGB。"""
         from ..core.raw_loader import is_raw_file
         is_raw = is_raw_file(path)
         mode = RawDisplayMode(raw_display_mode) if is_raw else NonRawDisplayMode(non_raw_display_mode)
         if not is_raw and mode == NonRawDisplayMode.ORIGINAL:
-            image = self.display_image(path, expected_stamp=expected_stamp, is_cancelled=is_cancelled)
+            image = self.display_image(path, expected_stamp=expected_stamp, is_cancelled=is_cancelled,
+                                       keep_opaque=keep_opaque)
             return image, image.size
         if expected_stamp is not None and self.file_stamp(path) != expected_stamp:
             raise SourceChangedError()
@@ -678,7 +686,7 @@ class ImageSourceService:
             with self.resources.working_memory(value.image.width * value.image.height * 4, is_cancelled), \
                     self.compute.borrow(is_cancelled, threads=1):
                 self._check(is_cancelled)
-                image = value.image.convert("RGBA")
+                image = value.image.convert(self._display_mode(value.image, keep_opaque))
             reference_size = value.reference_size
         try:
             self._check(is_cancelled)
@@ -788,6 +796,42 @@ class ImageSourceService:
     def supports_quick_preview(path):
         from ..core.raw_loader import is_raw_file
         return is_raw_file(path)
+
+    # 像素数不到这个数的图，看图时不必先出缩小图：2700 万像素的图整幅画面只晚到约 0.1 秒，先出一张反而多花时间
+    SCREEN_PREVIEW_PIXELS = 48_000_000
+
+    def screen_preview(self, path, box, *, expected_stamp=None, is_cancelled=lambda: False):
+        """看图模式下的大图先出一张正好铺满显示区域的缩小图，整幅画面随后再到。
+
+        与整幅画面共用同一次解码，缩小只多花一两百毫秒。box 是显示区域的宽高（设备像素）。
+        返回 (缩小图, 原图尺寸)，缩小图没有透明信息时是 RGB，否则是 RGBA；图不大、或用不着缩到一半以下时返回 None。"""
+        self._check(is_cancelled)
+        if expected_stamp is not None and self.file_stamp(path) != expected_stamp:
+            raise SourceChangedError()
+        if self.supports_quick_preview(path) or box is None or min(box) <= 0:
+            return None
+        width, height = self.dimensions(path)
+        scale = min(box[0] / width, box[1] / height)
+        if width * height < self.SCREEN_PREVIEW_PIXELS or scale >= 0.5:
+            return None
+        # 与看图器适应窗口时的显示尺寸同样取整，整幅画面到达后可以接着用这一张
+        target = max(1, round(width * scale)), max(1, round(height * scale))
+        with self.borrow_display(path, is_cancelled=is_cancelled) as lease:
+            image = lease.value
+            if image.size != (width, height) or image.mode not in ("RGB", "RGBA", "L", "LA"):
+                return None
+            with self.compute.borrow(is_cancelled, role="quick_preview"):
+                self._check(is_cancelled)
+                with image.resize(target, Image.Resampling.BOX, reducing_gap=2.0) as small:
+                    result = small.convert(self._display_mode(image, True))
+        try:
+            self._check(is_cancelled)
+            if expected_stamp is not None and self.file_stamp(path) != expected_stamp:
+                raise SourceChangedError()
+            return result, (width, height)
+        except BaseException:
+            result.close()
+            raise
 
     def quick_preview(self, path, *, expected_stamp=None, is_cancelled=lambda: False):
         from io import BytesIO

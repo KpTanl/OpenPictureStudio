@@ -340,6 +340,7 @@
   "settings.images.canvas.beige": "Beige",
   "settings.images.save_failed": "Unable to save image display settings.",
   "viewer.memory_camera_preview": "Insufficient memory. Showing the camera preview.",
+  "viewer.memory_screen_preview": "Insufficient memory. Showing a reduced image.",
   "viewer.empty.title": "Drop images or a folder here",
   "viewer.empty.formats": "JPEG, PNG, WebP, TIFF and common RAW formats",
   "viewer.empty.open_file": "Open Images",

@@ -248,6 +248,8 @@ def test_studio_confirms_manual_preview_states_and_keeps_own_gaps_out_of_the_top
     studio.switch_tool("ai_enhance")
     assert _wait_until(lambda: studio.active_tool_id == "ai_enhance"
                        and studio.tool_sidebar.get_current_panel() is studio._tool_panels.get("ai_enhance")
+                       # 画布布局定下来之前预览请求会被推迟，等它定下来再往下走
+                       and not studio._preview_layout_pending
                        and studio._preview_queue.active is None and studio._preview_queue.pending is None, 30000)
     panel = studio._tool_panels["ai_enhance"]
     queue = studio._preview_queue

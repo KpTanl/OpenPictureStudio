@@ -56,9 +56,9 @@ def test_eviction_preserves_history_and_reloads_identical_pixels(tmp_path):
         def __init__(self):
             self.loaded = []
 
-        def load_engine_source(self, path, **kwargs):
+        def load_engine_input(self, path, spec, **kwargs):
             self.loaded.append(path)
-            return super().load_engine_source(path, **kwargs)
+            return super().load_engine_input(path, spec, **kwargs)
 
     engine = Engine()
     sources = ImageSourceService(engine=engine, policy=ImageResourcePolicy(
@@ -114,14 +114,14 @@ def test_reload_rejects_changed_source_without_changing_session(
     elif change == "delete":
         path.unlink()
     else:
-        original = core._engine.load_engine_source
+        original = core._engine.load_engine_input
 
-        def mutate(source_path, **kwargs):
-            result = original(source_path, **kwargs)
+        def mutate(source_path, spec, **kwargs):
+            result = original(source_path, spec, **kwargs)
             Image.new("RGB", (12, 10), "red").save(source_path)
             return result
 
-        monkeypatch.setattr(core._engine, "load_engine_source", mutate)
+        monkeypatch.setattr(core._engine, "load_engine_input", mutate)
     result = core.preview(first.session_id, graph(0.7))
     assert result.error.code == (
         "SOURCE_NOT_FOUND" if change == "delete" else "SOURCE_CHANGED"
@@ -138,10 +138,11 @@ def test_inflight_preview_survives_eviction_and_session_close(
 
     class Preview:
         def render(self, source, workflow, **kwargs):
-            snapshot = source.pixels.copy()
+            pixels = source.materialize(lambda: False).pixels
+            snapshot = pixels.copy()
             entered.set()
             assert release.wait(10)
-            np.testing.assert_array_equal(source.pixels, snapshot)
+            np.testing.assert_array_equal(pixels, snapshot)
             return CoreResult.ok(
                 PreviewResult(
                     Image.new("RGB", (12, 10)),

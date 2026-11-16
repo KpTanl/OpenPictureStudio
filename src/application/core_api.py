@@ -2070,6 +2070,8 @@ class CoreAPI:
                 logger.debug("预览规格 source=%s display_limit=%s input_limit=%s reference=%sx%s",
                     source.path, display_limit, max_side, source.width, source.height)
             if deferred:
+                if not os.path.isfile(source.path):
+                    return CoreResult.fail(ErrorCode.SOURCE_NOT_FOUND, "error.source.not_found")
                 identity = identity or self.image_sources.identity(source.path,
                     is_cancelled=is_cancelled or (lambda: False))
                 if identity.file_hash != source.file_hash:

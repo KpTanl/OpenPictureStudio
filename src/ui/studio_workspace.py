@@ -312,6 +312,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._face_runtime_timer.setSingleShot(True)
         self._face_runtime_timer.setInterval(1000)
         self._face_runtime_timer.timeout.connect(self._prepare_when_idle)
+        self._gpu_ready_timer = QTimer(self)
+        self._gpu_ready_timer.setInterval(500)
+        self._gpu_ready_timer.timeout.connect(self._render_when_gpu_ready)
         self._histogram_runner = StudioHistogramRunner(self._render_service, self)
         self._histogram_runner.ready.connect(self._on_histogram_ready)
         self.destroyed.connect(self._histogram_runner.shutdown)
@@ -1869,6 +1872,16 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         frame = self._displayed_frame
         return frame.backend_identity[0] if frame is not None and self.session is not None else None
 
+    def _render_when_gpu_ready(self):
+        """画面是显卡检测期间由 CPU 算出的：显卡就绪、画布空闲后按 GPU 重算一次；显卡用不了就不再等。"""
+        state = self.core.tools.execution.gpu.snapshot().state
+        if state == "probing" or state == "ready" and (self._comparing or self._preview_queue.active is not None
+                                                       or self._preview_queue.pending is not None):
+            return
+        self._gpu_ready_timer.stop()
+        if state == "ready" and self.isVisible() and self.displayed_engine() == "cpu":
+            self._schedule_pipeline_render()
+
     def refresh_compute_backend(self):
         self.stop_preview()
         if self.session is not None and not self._image_loading:
@@ -2242,6 +2255,8 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                     frame.backend_identity[0], *frame.size, gpu_after.submissions - gpu_before.submissions,
                     gpu_after.readback_bytes - gpu_before.readback_bytes,
                     gpu_after.uploaded_bytes - gpu_before.uploaded_bytes)
+                if frame.backend_identity[0] == "cpu" and gpu_before.state == "probing":
+                    self._gpu_ready_timer.start()
                 if request.context.editing_tool == "color_adjust":
                     self._histogram_runner.submit(request, frame)
                 else:
@@ -3130,6 +3145,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self.cancel_project_operation(force=True, resume=False)
         self._project_runner.shutdown()
         self._face_runtime_timer.stop()
+        self._gpu_ready_timer.stop()
         self.stop_preview()
         self._histogram_runner.shutdown()
         self._original_runner.shutdown()

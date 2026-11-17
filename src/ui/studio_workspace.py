@@ -1864,6 +1864,11 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         for panel in self._tool_panels.values():
             panel.on_memory_budget_changed()
 
+    def displayed_engine(self):
+        """画布上这一帧由哪种设备算出："gpu" 或 "cpu"；还没有画面时为空。"""
+        frame = self._displayed_frame
+        return frame.backend_identity[0] if frame is not None and self.session is not None else None
+
     def refresh_compute_backend(self):
         self.stop_preview()
         if self.session is not None and not self._image_loading:

@@ -45,11 +45,16 @@ _USAGE_WIDTH = 200
 # 连续点加减或逐位键入时，停下这么久才生效一次
 _APPLY_DELAY_MS = 350
 _CACHE_POLL_MS = 1500
+_COMPUTE_POLL_MS = 1000
 _MIB = 1024 ** 2
 
 
 def _gigabytes(size: int) -> str:
     return f"{size / GIB:.1f}".removesuffix(".0")
+
+
+def _size(size: int) -> str:
+    return f"{size / GIB:.1f} GiB" if size >= GIB else f"{size / _MIB:.0f} MiB"
 
 
 @dataclass(frozen=True)
@@ -65,6 +70,18 @@ class SettingsValues:
     startup_window: str = STARTUP_LAST
     check_updates: bool = True
     image_compute: ImageComputeSettings = ImageComputeSettings()
+
+
+@dataclass(frozen=True)
+class ComputeStatus:
+    """图像处理此刻用的设备：GPU 状态与能力（编辑功能还没准备好时为空）、本机配置、图像计算的线程占用，
+    以及编辑画布上这一帧由哪种设备算出（"gpu" 或 "cpu"，不在编辑时为空）。"""
+
+    gpu: object = None
+    capabilities: Optional[dict] = None
+    profile: object = None
+    threads: object = None
+    engine: Optional[str] = None
 
 
 class ShortcutEdit(QPushButton):
@@ -359,7 +376,9 @@ class SettingsDialog(BaseDialog):
         ("full", "canvas.preview.mode.full", "Always full resolution"),
         ("preview1600", "canvas.preview.mode.preview1600", "Always 1600 preview"),
     )
-    IMAGE_ENGINES = (("auto", "settings.compute.auto", "Automatic"), ("cpu", "settings.compute.cpu", "CPU only"))
+    IMAGE_ENGINES = (("auto", "settings.compute.prefer_gpu", "Prefer GPU"), ("cpu", "settings.compute.cpu", "CPU only"))
+    # GPU 不可用时有专门说明的原因
+    GPU_REASONS = ("no_adapter", "budget_unavailable", "self_check")
     SOURCE_CACHE_MODES = ((True, "settings.source_cache.on", "On"), (False, "settings.compute.off", "Off"))
     GPU_CACHE_MODES = (("auto", "settings.compute.auto", "Automatic"), ("off", "settings.compute.off", "Off"),
                        ("custom", "settings.compute.custom", "Custom MiB"))
@@ -378,8 +397,9 @@ class SettingsDialog(BaseDialog):
 
     def __init__(self, parent=None, *, values: Optional[SettingsValues] = None, thumbnail_cache_runner=None,
                  edit_cache_runner=None, page: str = "", tool_id: Optional[str] = None, model: str = "",
-                 capability: str = "", storage_runner=None):
-        """page 是打开时所在的页；tool_id、model、capability 是进入工具页或模型页后要定位的条目。"""
+                 capability: str = "", storage_runner=None, compute_status=None):
+        """page 是打开时所在的页；tool_id、model、capability 是进入工具页或模型页后要定位的条目；
+        compute_status 返回此刻的 ComputeStatus，“性能与缓存”页可见时每秒读一次。"""
         size = DIALOG_SIZES["settings"]
         super().__init__(title_key="settings.window_title", title_default="Preferences",
                          min_width=size["min_w"], min_height=size["min_h"],
@@ -389,6 +409,7 @@ class SettingsDialog(BaseDialog):
         self._thumbnail_cache_runner = thumbnail_cache_runner
         self._edit_cache_runner = edit_cache_runner
         self._storage_runner = storage_runner
+        self._compute_status = compute_status
         self._storage_close_pending = False
         self._storage_close_result = 0
         self._finished = False
@@ -448,6 +469,10 @@ class SettingsDialog(BaseDialog):
         self._cache_timer.timeout.connect(self._refresh_cache_status)
         self._cache_timer.start()
         self._refresh_cache_status()
+        self._compute_timer = QTimer(self)
+        self._compute_timer.setInterval(_COMPUTE_POLL_MS)
+        self._compute_timer.timeout.connect(self._refresh_compute_status)
+        self._compute_timer.start()
 
     # ------------------------------------------------------------------
     # 界面
@@ -568,6 +593,11 @@ class SettingsDialog(BaseDialog):
         self.compute_engine = self._choice(self.IMAGE_ENGINES)
         self.compute_engine.activated.connect(self._emit_image_compute)
         self.compute_engine_row.add_control(self.compute_engine)
+        self.gpu_status_row = self.compute_section.add_row(SettingRow(self.compute_section))
+        self.cpu_status_row = self.compute_section.add_row(SettingRow(self.compute_section))
+        self.frame_engine_row = self.compute_section.add_row(SettingRow(self.compute_section))
+        self.gpu_memory = self._usage_bar()
+        self.gpu_memory_row = self.compute_section.add_row(SettingRow(self.compute_section, leading=self.gpu_memory))
         self.gpu_cache_row = self.compute_section.add_row(SettingRow(self.compute_section))
         self.gpu_cache_mode = self._choice(self.GPU_CACHE_MODES)
         self.gpu_cache_mode.activated.connect(self._emit_image_compute)
@@ -677,12 +707,19 @@ class SettingsDialog(BaseDialog):
         self.non_raw_display_row.set_text(self._tr("settings.images.non_raw_mode", "Display mode for other formats"))
         self.canvas_background_row.set_text(self._tr("settings.images.canvas_background", "Canvas background"))
         self.compute_section.set_title(self._tr("settings.compute.title", "Image processing"))
-        self.compute_engine_row.set_text(self._tr("settings.compute.engine", "Image computation"))
-        self.gpu_cache_row.set_text(self._tr("settings.compute.cache", "GPU memory cache"))
+        self.compute_engine_row.set_text(self._tr("settings.compute.engine", "Image computation"), self._tr(
+            "settings.compute.engine_hint", "Prefer GPU: the graphics card computes once it passes its self-check. "
+            "A step runs on the CPU when graphics memory is short or the card cannot do that step. "
+            "CPU only: everything runs on the CPU."))
+        self.gpu_cache_row.set_text(self._tr("settings.compute.cache", "GPU memory cache"), self._tr(
+            "settings.compute.cache_hint", "Keeps intermediate results in graphics memory so the same photo is "
+            "recomputed less. Automatic keeps up to 2 GiB and Custom uses the limit below; neither exceeds half "
+            "of the graphics memory budget."))
         self.gpu_cache_limit_row.set_text(self._tr("settings.compute.limit", "Cache limit (MiB)"))
         for control, options in ((self.compute_engine, self.IMAGE_ENGINES), (self.gpu_cache_mode, self.GPU_CACHE_MODES)):
             for index, (_, key, fallback) in enumerate(options):
                 control.setItemText(index, self._tr(key, fallback))
+        self._project_compute_status()
         for control, options in ((self.language_combo, self.LANGUAGE_OPTIONS), (self.theme_combo, self.THEME_OPTIONS),
                                  (self.canvas_background, self.CANVAS_BACKGROUNDS)):
             for index, (_, text_key, fallback) in enumerate(options):
@@ -763,6 +800,8 @@ class SettingsDialog(BaseDialog):
             self.file_association_page = page.add(FileAssociationPage(page))
             self._clear_default_buttons()
         self._stack.setCurrentWidget(self._pages[key])
+        if key == "performance":
+            self._project_compute_status()
         self._request_resources()
         self._request_assistant()
 
@@ -824,7 +863,7 @@ class SettingsDialog(BaseDialog):
                                 "models": ModelManagerPage(core.models, backend_status=core.inference.status)}
         if runtime_service is not None:
             from .runtime_manager_page import RuntimeManagerPage
-            runtime = RuntimeManagerPage(runtime_service, image_compute=core.tools.execution.gpu)
+            runtime = RuntimeManagerPage(runtime_service)
             runtime.restart_requested.connect(self._restart)
             self._resource_pages["runtime"] = runtime
         for key, page in self._resource_pages.items():
@@ -942,6 +981,86 @@ class SettingsDialog(BaseDialog):
                                      self.gpu_cache_limit.value())
         self.gpu_cache_limit.setEnabled(value.cache == "custom")
         self.image_compute_edited.emit(value)
+
+    def _refresh_compute_status(self) -> None:
+        if self.isVisible() and self.current_page() == "performance":
+            self._project_compute_status()
+
+    def _project_compute_status(self) -> None:
+        """GPU、CPU、当前编辑画面与显存此刻的状态。"""
+        status = self._compute_status() if self._compute_status is not None else None
+        gpu = status.gpu if status is not None else None
+        ready = gpu is not None and gpu.state == "ready"
+        self.gpu_status_row.setVisible(status is not None)
+        self.cpu_status_row.setVisible(status is not None)
+        self.frame_engine_row.setVisible(status is not None and status.engine is not None)
+        self.gpu_memory_row.setVisible(ready)
+        if status is None:
+            return
+        self.gpu_status_row.set_text(self._tr("settings.compute.status.gpu", "GPU"), "\n".join(self._gpu_lines(status)))
+        self.cpu_status_row.set_text(self._tr("settings.compute.status.cpu", "CPU"), "\n".join(self._cpu_lines(status)))
+        if status.engine is not None:
+            self.frame_engine_row.set_text(self._tr("settings.compute.status.frame", "Current editing view"),
+                                           self._tr("settings.compute.status.frame_" + status.engine))
+        if ready:
+            budget = max(1, gpu.budget_bytes // _MIB)
+            self.gpu_memory.set_progress(min(budget, round(gpu.allocated_bytes / _MIB)), budget)
+            self.gpu_memory.set_text(self._tr(
+                "settings.compute.status.memory", "GPU memory: {used} used, limit {budget}, including {cache} of cache",
+                used=_size(gpu.allocated_bytes), budget=_size(gpu.budget_bytes), cache=_size(gpu.cache_bytes))
+                + "\n" + self._tr(
+                "settings.compute.status.traffic", "Since the GPU became ready: {upload} uploaded, {readback} read "
+                "back, {submissions} batches of work", upload=_size(gpu.uploaded_bytes), readback=_size(gpu.readback_bytes),
+                submissions=gpu.submissions))
+
+    def _gpu_lines(self, status) -> list[str]:
+        gpu, profile = status.gpu, status.profile
+        adapters = profile.adapters if profile is not None and not profile.error else ()
+        if gpu is None:
+            return [self._tr("settings.compute.status.preparing", "Preparing…")]
+        if gpu.state != "ready":
+            key = ("settings.compute.status." + gpu.reason if gpu.state == "unavailable" and gpu.reason in self.GPU_REASONS
+                   else "settings.compute.status." + gpu.state)
+            # 同一块显卡可能被列出不止一次
+            listed = dict.fromkeys((adapter.name, adapter.dedicated_bytes) for adapter in adapters)
+            return [self._tr(key)] + [self._tr("settings.compute.status.adapter", name=name,
+                                               size=f"{size / GIB:.1f}") for name, size in listed]
+        lines = [self._tr("settings.compute.status.ready", "{name} · Available", name=gpu.name)]
+        details = [self._tr("settings.compute.status.discrete" if gpu.tier == "A" else "settings.compute.status.integrated")]
+        adapter = next((item for item in adapters if item.luid == gpu.device), None)
+        if adapter is not None and adapter.dedicated_bytes:
+            details.append(self._tr("settings.compute.status.dedicated", size=f"{adapter.dedicated_bytes / GIB:.1f}"))
+        capabilities = status.capabilities or {}
+        if capabilities.get("driver"):
+            details.append(self._tr("settings.compute.status.driver", version=capabilities["driver"]))
+        lines.append(" · ".join(details))
+        features = [name for name, passed in (
+            ("source", bool(capabilities.get("source_inputs"))), ("geometry", capabilities.get("geometry")),
+            ("color", capabilities.get("color")), ("face", bool(capabilities.get("face_analysis")))) if passed]
+        tools = {route["reference"].tool_id for route in capabilities.get("tools", ()) if route["ready"]}
+        features += [tool for tool in ("beauty", "denoise", "bg_remove", "ai_enhance", "id_photo") if tool in tools]
+        if features:
+            lines.append(self._tr("settings.compute.status.features", features=self._tr(
+                "settings.compute.status.separator").join(self._tr("settings.compute.feature." + name)
+                                                          for name in features)))
+        return lines
+
+    def _cpu_lines(self, status) -> list[str]:
+        profile, usage = status.profile, status.threads
+        if profile is None:
+            lines = [self._tr("runtime.profile.detecting")]
+        elif profile.error:
+            lines = [self._tr(profile.error)]
+        elif profile.physical_cores:
+            lines = [self._tr("settings.compute.status.cpu_cores", name=profile.cpu, cores=profile.physical_cores,
+                              threads=profile.logical_processors)]
+        else:
+            lines = [self._tr("settings.compute.status.cpu_threads", name=profile.cpu,
+                              threads=profile.logical_processors)]
+        if usage is not None:
+            lines.append(self._tr("settings.compute.status.threads", used=usage.used_threads,
+                                  capacity=usage.thread_capacity, active=usage.active, waiting=usage.waiting))
+        return lines
 
     def set_shortcuts(self, rows: Sequence[ShortcutRow]) -> None:
         """投影快捷键各行；行的集合变了才重建，否则原位更新。行下的冲突说明随之收起。"""
@@ -1242,6 +1361,7 @@ class SettingsDialog(BaseDialog):
     def _on_finished(self, _result: int) -> None:
         """关闭时把还在等的数值改动发出去，并断开缓存运行器与三个资源页的订阅。"""
         self._finished = True
+        self._compute_timer.stop()
         if self._preload_timer.isActive():
             self._emit_preload()
         if self._memory_timer.isActive():

@@ -233,7 +233,7 @@ class GpuBackend:
                 "source_inputs": tuple(sorted(self._source_ready)), "source_reasons": self._source_reasons,
                 "source_blocks": self._blocks_ready,
                 "color":self._color_ready,"face_analysis":tuple(identity for identity in self._face_qualifications
-                    if self.face_capable(identity)), "tools": self.routes.pending(),
+                    if self.face_capable(identity)), "tools": self.routes.pending(), "driver": info.get("driver", ""),
                 "kernels": {key: info.get(key) for key in ("shader_compiler", "compiler_reason", "kernel_compilation_ms",
                     "kernel_first_submission_ms", "fxc_compilation_ms")}}
 

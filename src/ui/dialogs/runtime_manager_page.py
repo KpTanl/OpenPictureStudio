@@ -18,10 +18,9 @@ from ...core.contracts.inference import CPU
 class RuntimeManagerPage(QWidget, ThemedI18nMixin):
     restart_requested = Signal()
 
-    def __init__(self, service, parent=None, *, image_compute=None):
+    def __init__(self, service, parent=None):
         super().__init__(parent)
         self.service = service
-        self.image_compute = image_compute
         self._rows = ()
         self._libraries = ()
         self._detail_key = ""
@@ -31,12 +30,6 @@ class RuntimeManagerPage(QWidget, ThemedI18nMixin):
         layout.setContentsMargins(0, 0, 0, 0)
         self._page = ManagementPage(self)
         layout.addWidget(self._page)
-        self.compute_status = management_label(self, "managementCaption", selectable=True)
-        self._page.body_layout.addWidget(self.compute_status)
-        self._compute_timer = QTimer(self)
-        self._compute_timer.setInterval(1000)
-        self._compute_timer.timeout.connect(self._show_compute)
-        self._compute_timer.start()
         self._advice = []
         for _ in range(2):
             notice = NoticeBar("info", parent=self)
@@ -98,16 +91,6 @@ class RuntimeManagerPage(QWidget, ThemedI18nMixin):
                 button.setText(self._tr("runtime.action." + name))
         self.refresh()
 
-    def _show_compute(self):
-        if self.image_compute is None:
-            self.compute_status.hide()
-            return
-        status = self.image_compute.snapshot()
-        self.compute_status.setText(self._tr("runtime.compute.device", name=status.name or "CPU", tier=status.tier,
-            backend=status.backend) + "\n" + self._tr("runtime.compute.state." + status.state) + "\n"
-            + self._tr("runtime.compute.memory", used=f"{status.allocated_bytes / 1024 ** 2:.0f}",
-                budget=f"{status.budget_bytes / 1024 ** 2:.0f}", cache=f"{status.cache_bytes / 1024 ** 2:.0f}"))
-
     @staticmethod
     def _megabytes(size):
         return f"{size / 1e6:.1f} MB"
@@ -124,7 +107,6 @@ class RuntimeManagerPage(QWidget, ThemedI18nMixin):
         return "runtime.state." + item.state
 
     def refresh(self):
-        self._show_compute()
         selected = self._page.navigation.selected_key()
         self._rows = self.service.list()
         self._libraries = self.service.libraries(("onnxruntime", "mediapipe"))

@@ -32,7 +32,7 @@ from .widgets.message_dialog import (DialogButton, ask_choice, confirm_destructi
 from .widgets.progress_dialog import ProgressDialog
 from .dialogs.compress_dialog import ImageProcessingDialog
 from .dialogs.pdf_dialog import PDFDialog
-from .dialogs.settings_dialog import SettingsDialog, SettingsValues
+from .dialogs.settings_dialog import ComputeStatus, SettingsDialog, SettingsValues
 from .dialogs.enhancement_dialog import EnhancementDialog
 from .dialogs.wallpaper_dialog import WallpaperDialog
 from .services import ApplyService
@@ -2766,7 +2766,7 @@ class MainWindow(BaseWindow):
         dialog = SettingsDialog(
             parent or self, page=page, tool_id=tool_id, model=model, capability=capability,
             thumbnail_cache_runner=self._thumbnail_cache_runner, edit_cache_runner=self._edit_cache_runner,
-            storage_runner=storage_runner,
+            storage_runner=storage_runner, compute_status=self._compute_status,
             values=SettingsValues(
                 language=self.translation_service.get_language() if self.translation_service else "en",
                 theme=QSettings(APP_NAME, "Theme").value("current", ThemeManager.THEME_DARK),
@@ -2803,6 +2803,17 @@ class MainWindow(BaseWindow):
         storage_runner.deleteLater()
         if restart:
             QTimer.singleShot(0, self, self.request_restart)
+
+    def _compute_status(self):
+        profile = self._runtime_service.profile()
+        if profile is None:
+            self._runtime_service.refresh_profile()
+        studio, gpu, capabilities = self.studio_workspace, None, None
+        if studio is not None:
+            backend = studio.core.tools.execution.gpu
+            gpu, capabilities = backend.snapshot(), backend.capabilities()
+        return ComputeStatus(gpu, capabilities, profile, self._image_sources.compute.snapshot(),
+                             studio.displayed_engine() if self._is_studio_active() else None)
 
     def _manage_storage(self, dialog, key):
         if key in ("models", "runtimes"):

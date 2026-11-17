@@ -57,7 +57,7 @@ def materialize_input(value, *, threads=1, cancelled=lambda: False):
 
 def render_input(value, path, *, half_size=False, threads=1, cancelled=lambda: False):
     import ops_accel
-    from .photo_engine import RenderSource, srgb_to_linear
+    from .photo_engine import RenderSource, srgb_integer_to_linear
     value = materialize_input(value, threads=threads, cancelled=cancelled)
     spec, data = value.spec, value.data
     width, height = spec.size
@@ -73,7 +73,7 @@ def render_input(value, path, *, half_size=False, threads=1, cancelled=lambda: F
         maximum = np.float32((1 << spec.depth) - 1)
         alpha = values[..., -1].astype(np.float32) / maximum if spec.channels in (2, 4) else None
         rgb = values[..., :3] if spec.channels >= 3 else np.repeat(values[..., :1], 3, axis=2)
-        pixels = srgb_to_linear(rgb.astype(np.float32) / maximum)
+        pixels = srgb_integer_to_linear(rgb)
         fmt, pipeline = "srgb16" if spec.depth == 16 else "srgb8", "srgb-direct"
     if cancelled():
         raise CancelledError()
@@ -109,6 +109,27 @@ def read_orientation(path, image):
             stream.seek(length + 4, 1)
 
 
+# sRGB 三原色在配置文件里的取值（XYZ，适配到 D50）
+SRGB_COLORANTS = ((0.4361, 0.2225, 0.0139), (0.3851, 0.7169, 0.0971), (0.1431, 0.0606, 0.7141))
+
+
+def srgb_profile(data):
+    """内嵌的色彩配置文件是不是 sRGB：名称里写着 sRGB，三原色也对得上。"""
+    from io import BytesIO
+    from PIL import ImageCms
+    try:
+        profile = ImageCms.ImageCmsProfile(BytesIO(data))
+        names = (ImageCms.getProfileDescription(profile) + ImageCms.getProfileName(profile)).lower()
+        core = profile.profile
+        if "srgb" not in names or core.xcolor_space.strip() != "RGB":
+            return False
+        colorants = (core.red_colorant, core.green_colorant, core.blue_colorant)
+        return all(abs(actual - expected) <= 0.003 for colorant, reference in zip(colorants, SRGB_COLORANTS)
+                   for actual, expected in zip(colorant[0], reference))
+    except (ImageCms.PyCMSError, OSError, TypeError, ValueError, AttributeError):
+        return False
+
+
 def describe_input(path, *, half_size=False):
     from .photo_engine import _is_raw, _dcp_opt_in
     if _is_raw(path):
@@ -119,7 +140,8 @@ def describe_input(path, *, half_size=False):
         size = ((width + 1) // 2, (height + 1) // 2) if half_size else (width, height)
         return SourceInputSpec(size, 3, 16, transfer="xyz-d65", container="raw")
     with Image.open(path) as image:
-        if image.format not in ("JPEG", "PNG") or image.info.get("icc_profile"):
+        profile = image.info.get("icc_profile")
+        if image.format not in ("JPEG", "PNG") or profile and not srgb_profile(profile):
             return None
         size = image.size
         orientation = read_orientation(path, image)

@@ -558,7 +558,7 @@ class GpuBackend:
             width, height = spec.size
             out_width, out_height = source.pixels.shape[1::-1]
             info = self._device.info()
-            return (not info["lost"] and width * height <= 100_000_000 and max(width, height) <= 32768
+            return (not info["lost"] and max(width, height) <= 32768
                 and max(spec.nbytes, out_width * height * 16) <= min(info["max_binding_size"], info["max_buffer_size"])
                 and 6 * max(width / out_width, height / out_height) <= 4096
                 and source_peak(spec, (out_width, out_height)) <= self._budget(info))

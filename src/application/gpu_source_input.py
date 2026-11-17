@@ -1,22 +1,13 @@
 from dataclasses import replace
-from functools import lru_cache
 from concurrent.futures import CancelledError
 from contextlib import ExitStack
 import numpy as np
 import logging
 
 from ..core.contracts.gpu import DevicePixels, GpuArtifact, GpuResident, GpuExecutionError, display_target
-from ..core.photo_engine import RenderSource, srgb_to_linear, display_rgba8
+from ..core.photo_engine import RenderSource, srgb_to_linear, display_rgba8, transfer_lut
 
 logger = logging.getLogger(__name__)
-
-
-@lru_cache(maxsize=2)
-def transfer_lut(depth):
-    values = np.arange(1 << depth, dtype=np.float32) / np.float32((1 << depth) - 1)
-    table = srgb_to_linear(values)
-    table.setflags(write=False)
-    return table
 
 
 def source_peak(spec, size):

@@ -1424,6 +1424,7 @@ class MainWindow(BaseWindow):
             disabled_tools = [item for item in disabled_tools.split(",") if item]
         core.restore_disabled_tools(disabled_tools or [])
         core.tools.configure_image_compute(self._image_compute_settings)
+        core.tools.execution.gpu.start()
         self._panel_services = {
             "image_source_service": self._image_sources,
             "preview_runner": PreviewTaskRunner(),

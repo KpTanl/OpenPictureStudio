@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from threading import Lock
 
 from PySide6.QtCore import QObject, Qt, Signal, Slot
@@ -102,6 +102,8 @@ class StudioDetailRunner(QObject):
                     raise MemoryError()
         except MemoryError as exc:
             error = CoreResult.fail(ErrorCode.DECODE_FAILED, memory_error_key(exc)).error
+        except CancelledError:
+            error = CoreResult.fail(ErrorCode.CANCELLED, "error.cancelled").error
         except CoreOperationError as exc:
             error = exc.error
             logger.warning("OPS 清晰画面失败 request=%s code=%s key=%s",

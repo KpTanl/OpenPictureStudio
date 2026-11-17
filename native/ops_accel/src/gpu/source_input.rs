@@ -100,7 +100,7 @@ impl GpuDevice {
                     lut: PyReadonlyArray1<'_, f32>, output_width: usize, output_height: usize,
                     matrix: Option<Vec<f32>>, cancelled: Option<Py<PyAny>>, blocks: Option<PyReadonlyArray2<'_, u32>>) -> PyResult<GpuImage> {
         let matrix = matrix.unwrap_or_default();
-        if width == 0 || height == 0 || width.max(height) > 32768 || width * height > 100_000_000
+        if width == 0 || height == 0 || width.max(height) > 32768
             || output_width == 0 || output_height == 0 || output_width > width || output_height > height
             || !(1..=4).contains(&channels) || !matches!(depth, 8 | 16)
             || blocks.is_none() && data.len() != (width * channels * (depth / 8) + filtered as usize) * height

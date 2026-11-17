@@ -29,6 +29,7 @@ from concurrent.futures import CancelledError, ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
+from functools import lru_cache
 from time import monotonic
 
 import numpy as np
@@ -134,6 +135,21 @@ def srgb_to_linear(x: np.ndarray, *, out=None, work=None) -> np.ndarray:
     np.power(work, np.float32(2.4), out=work)
     np.copyto(out, work, where=~(x <= _SRGB_EOTF_THRESHOLD))
     return out
+
+
+@lru_cache(maxsize=2)
+def transfer_lut(depth):
+    values = np.arange(1 << depth, dtype=np.float32) / np.float32((1 << depth) - 1)
+    table = srgb_to_linear(values)
+    table.setflags(write=False)
+    return table
+
+
+def srgb_integer_to_linear(rgb: np.ndarray) -> np.ndarray:
+    """8/16 位 sRGB 编码值查表得到线性值，与 srgb_to_linear(值 / 最大值) 逐位相同。"""
+    if rgb.dtype.itemsize == 1 and _HAS_CV2:
+        return cv2.LUT(np.ascontiguousarray(rgb), transfer_lut(8)).reshape(rgb.shape)
+    return transfer_lut(8 * rgb.dtype.itemsize)[rgb]
 
 
 # 亮度权重用线性 Rec.709（0.299/0.587/0.114 是 gamma 编码域的 luma 系数，线性下不正确）
@@ -715,7 +731,7 @@ def load_render_source(path: str, *, for_preview: bool = False, threads: int = 1
             maximum = np.float32(65535 if values.dtype == np.uint16 else 255)
             alpha = values[..., -1].astype(np.float32) / maximum if channels in (2, 4) else None
             rgb = values[..., :3] if channels >= 3 else np.repeat(values[..., :1], 3, axis=2)
-            pixels = srgb_to_linear(rgb.astype(np.float32) / maximum)
+            pixels = srgb_integer_to_linear(rgb)
             height, width = pixels.shape[:2]
             return RenderSource(pixels, alpha, "srgb16" if values.dtype == np.uint16 else "srgb8",
                 norm, False, (width, height), "srgb-direct")

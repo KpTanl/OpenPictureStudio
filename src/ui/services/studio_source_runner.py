@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
 from time import perf_counter
 
+import cv2
+import numpy as np
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 from PySide6.QtGui import QImage
 
@@ -20,6 +22,12 @@ def source_qimage(image):
     if hasattr(image, "rgba"):
         width, height = image.size
         return QImage(image.rgba, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
+    if image.mode == "RGB":
+        result = QImage(image.width, image.height, QImage.Format.Format_RGBA8888)
+        if not result.isNull():
+            target = np.frombuffer(result.bits(), np.uint8).reshape(image.height, image.width, 4)
+            cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2RGBA, dst=target)
+        return result
     rgba = image if image.mode == "RGBA" else image.convert("RGBA")
     try:
         return QImage(rgba.tobytes(), rgba.width, rgba.height, rgba.width * 4,

@@ -445,7 +445,7 @@ class ImageSourceService:
                                                      alpha=full.alpha.copy() if full.alpha is not None else None)
                         else:
                             size = (max(1, round(width * ratio)), max(1, round(height * ratio)))
-                            parallelism = min(3, self.policy.interactive_threads) if priority == 0 else 1
+                            parallelism = min(3, self.policy.interactive_threads) if priority <= 1 else 1
                             channel_bytes = full.pixels[..., 0].nbytes
                             has_alpha = full.alpha is not None
                             output_bytes = size[0] * size[1] * (48 if has_alpha else 24)
@@ -901,13 +901,45 @@ class ImageSourceService:
             lambda value: value.image.width * value.image.height * len(value.image.getbands()), is_cancelled)
 
     def load_preview(self, path, *, max_side=1600, is_cancelled=lambda: False):
-        with self.borrow_linear(path, max_side=max_side, is_cancelled=is_cancelled, priority=2) as lease:
+        with self.borrow_linear(path, max_side=max_side, is_cancelled=is_cancelled, priority=1) as lease:
             return self._display_from(lease.value, is_cancelled, priority=2), lease.value.orig_size
 
+    def _integer_display(self, identity, is_cancelled):
+        """8 位 sRGB 整数源的取值就是显示值，直接拿来当改前画面，与浮点转回显示逐值相同。
+        浮点源已在内存里时不用它：整数源这时多半已被让出，重新解码比从浮点转回显示更慢。"""
+        if (self._engine is not None and not hasattr(self._engine, "load_engine_input")
+                or self.resources.contains(self._linear_key(identity, None, False))):
+            return None
+        spec = self._input_spec(identity, False)
+        if spec is None or spec.transfer != "srgb" or spec.depth != 8:
+            return None
+        import ops_accel
+        from ..core.source_input import materialize_input
+        width, height = spec.size
+        with self.borrow_input(identity, spec, is_cancelled=is_cancelled, priority=2) as lease:
+            data = lease.value.data
+            if lease.value.blocks is not None or spec.layout == "png-filtered":
+                with self.compute.borrow(is_cancelled, 2, threads=1):
+                    try:
+                        data = materialize_input(lease.value, cancelled=is_cancelled).data
+                    except ValueError:
+                        lease.reject()
+                        return None
+                    if spec.layout == "png-filtered":
+                        data = ops_accel.source_unfilter_png(data, width, height, spec.channels, is_cancelled)
+            image = Image.fromarray(data.reshape((height, width) if spec.channels == 1 else
+                                                 (height, width, spec.channels)))
+        if image.mode in ("L", "LA"):
+            with image:
+                return image.convert("RGB" if image.mode == "L" else "RGBA")
+        return image
+
     def load_original_display(self, identity, *, is_cancelled=lambda: False):
-        with self.borrow_linear(identity.path, identity=identity,
-                                is_cancelled=is_cancelled, priority=2) as lease:
-            image = self._display_from(lease.value, is_cancelled, priority=2)
+        image = self._integer_display(identity, is_cancelled)
+        if image is None:
+            with self.borrow_linear(identity.path, identity=identity,
+                                    is_cancelled=is_cancelled, priority=2) as lease:
+                image = self._display_from(lease.value, is_cancelled, priority=2)
         if is_cancelled() or not self.matches_file(identity):
             image.close()
             self._check(is_cancelled)

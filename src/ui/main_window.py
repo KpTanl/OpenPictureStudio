@@ -306,6 +306,11 @@ class MainWindow(BaseWindow):
         self._prewarm_timer = QTimer(self)
         self._prewarm_timer.setSingleShot(True)
         self._prewarm_timer.timeout.connect(self._try_prewarm_studio)
+        self._viewer_prefetch_timer = QTimer(self)
+        self._viewer_prefetch_timer.setSingleShot(True)
+        self._viewer_prefetch_timer.setInterval(1000)
+        self._viewer_prefetch_timer.timeout.connect(self._prefetch_viewer_image)
+        self.viewer.loading_changed.connect(self._schedule_viewer_prefetch)
 
         self.shortcut_manager = ShortcutManager()
 
@@ -1623,16 +1628,37 @@ class MainWindow(BaseWindow):
             if self.manager.get_rating_filter() != "all" and panel.has_pending_items:
                 return
             paths = self._preload_settings.targets(self.manager.get_filtered_images(), self.manager.current_path)
-            targets = []
-            for path in paths:
-                try:
-                    workflow = self.studio_workspace.preview_workflow(path)
-                    targets.append(StudioPreviewTarget(os.path.normpath(path), workflow,
-                        self.studio_workspace.preview_key(path, workflow),
-                        self.studio_workspace.preview_max_dimension(workflow, path=path)))
-                except (CoreOperationError, ValueError) as error:
-                    logger.warning("OPS prefetch color failed: image=%r error=%s", os.path.basename(path), error)
-            self._studio_source_runner.prefetch(targets)
+            self._studio_source_runner.prefetch(
+                [target for target in map(self._studio_preview_target, paths) if target is not None])
+
+    def _studio_preview_target(self, path):
+        studio = self.studio_workspace
+        try:
+            workflow = studio.preview_workflow(path)
+            return StudioPreviewTarget(os.path.normpath(path), workflow, studio.preview_key(path, workflow),
+                                       studio.preview_max_dimension(workflow, path=path))
+        except (CoreOperationError, ValueError) as error:
+            logger.warning("OPS prefetch color failed: image=%r error=%s", os.path.basename(path), error)
+            return None
+
+    @Slot(bool)
+    def _schedule_viewer_prefetch(self, loading):
+        if loading:
+            self._viewer_prefetch_timer.stop()
+        elif self._current_workspace_index == 0 and self.viewer.has_image:
+            self._viewer_prefetch_timer.start()
+
+    @Slot()
+    def _prefetch_viewer_image(self):
+        """看图模式下在一张图上停留后，在后台把这张图进编辑时的首帧算好。"""
+        path, studio = self.manager.current_path, self.studio_workspace
+        if (self._closing or self._current_workspace_index != 0 or studio is None or not path
+                or self._preload_settings.mode == "off" or self.viewer.is_loading or studio._commit_busy
+                or not self._draft_runner.loaded or self._library_path_blocked(path)):
+            return
+        target = self._studio_preview_target(path)
+        if target is not None:
+            self._studio_source_runner.prefetch([target])
 
     @Slot()
     def _on_studio_prefetch_failed(self):
@@ -2979,6 +3005,8 @@ class MainWindow(BaseWindow):
                     elif panel.source_bundle is not None:
                         panel.set_image_path(self.manager.current_path)
             if self._current_workspace_index == 0:
+                if self._studio_source_runner is not None:
+                    self._studio_source_runner.pause_prefetch()
                 session = self._edit_sessions.get(self.manager.current_path) if self._batch_runner is not None else None
                 if session is not None and self._batch_runner.service.has_photo(self.manager.current_path):
                     self.viewer.clear()
@@ -2986,6 +3014,7 @@ class MainWindow(BaseWindow):
                     self._batch_runner.refresh_display(self.manager.current_path, session.core_id)
                 else:
                     self.viewer.set_image(self.manager.current_path)
+                self._schedule_viewer_prefetch(self.viewer.is_loading)
             self._sync_canvas_toolbar()
             self._select_image_in_panels(self.manager.current_path)
             self._show_viewer_photo_info(self.manager.current_path)

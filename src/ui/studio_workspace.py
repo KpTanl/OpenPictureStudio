@@ -311,7 +311,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._face_runtime_timer = QTimer(self)
         self._face_runtime_timer.setSingleShot(True)
         self._face_runtime_timer.setInterval(1000)
-        self._face_runtime_timer.timeout.connect(self._preload_face_runtime)
+        self._face_runtime_timer.timeout.connect(self._prepare_when_idle)
         self._histogram_runner = StudioHistogramRunner(self._render_service, self)
         self._histogram_runner.ready.connect(self._on_histogram_ready)
         self.destroyed.connect(self._histogram_runner.shutdown)
@@ -1182,7 +1182,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
 
             if tool_id == "beauty":
                 # 预热会登记美颜的实现，工具代次随之变化：放在本次渲染入队之前
-                self._warm_beauty(panel)
+                self._warm_beauty(panel.parameters)
             self._schedule_pipeline_render()
             self._bind_overlay(panel)
             self._update_actions_state()
@@ -1548,8 +1548,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         return BeautyAnalysisTask(self.core, self.session.core_id, workflow, self.session.state_version,
                                   self.core.source_identity(self.session.core_id), self.core.tools.generation, preset)
 
-    def _warm_beauty(self, panel) -> None:
-        """打开美颜面板而美颜还没有生效时，在后台按预览的同一条路径算一帧最小美颜并丢弃。
+    def _warm_beauty(self, parameters) -> None:
+        """美颜还没有生效时，在后台按预览的同一条路径算一帧最小美颜并丢弃。打开美颜面板时做；
+        这次打开软件后用过美颜的，换图后停手也做。
 
         人脸库的导入、检测器和这张图的人脸分析由此提前就位，第一次调美颜时不再等它们。"""
         from types import SimpleNamespace
@@ -1559,7 +1560,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         if (session is None or session.read_only or self._image_loading
                 or not _STAGE_SPECS["beauty"][1](session.beauty_params)):
             return
-        settings = {**panel.parameters, "skin_smooth": 1}
+        settings = {**parameters, "skin_smooth": 1}
         source_identity = self.core.source_identity(session.core_id)
         key = (session.core_id, source_identity, settings.get("face_detection_model"),
                settings.get("face_locator_model"))
@@ -1600,14 +1601,20 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         job = self._panel_services["preview_runner"].submit_work(0, None, warm, finished, cancellable=True)
         self._beauty_warmup = (key, job)
 
-    def _preload_face_runtime(self) -> None:
-        """进入编辑并停手之后，在后台导入人脸库。美颜用不了（工具停用、没有人脸模型）时不导入。"""
-        if self._face_runtime_requested or self.session is None:
+    def _prepare_when_idle(self) -> None:
+        """进入编辑并停手之后，在后台导入人脸库；这次打开软件后用过美颜的，改为把这张图的美颜预热好。
+        美颜用不了（工具停用、没有人脸模型）时都不做。"""
+        if self.session is None:
             return
         if self._preview_queue.active is not None or self._preview_queue.pending is not None:
             self._face_runtime_timer.start()
             return
         if self._assistant_beauty_state():
+            return
+        if "beauty" in self._tool_panels:
+            self._warm_beauty(self._params_for_tool("beauty"))
+            return
+        if self._face_runtime_requested:
             return
         self._face_runtime_requested = True
 
@@ -2056,7 +2063,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             snapshot.workflow.workflow_hash()[:12], [node.node_id for node in snapshot.workflow.nodes],
             (monotonic() - prepare_started) * 1000)
         self._arm_preview_render()
-        if not self._face_runtime_requested:
+        if not self._face_runtime_requested or "beauty" in self._tool_panels:
             self._face_runtime_timer.start()
 
     def _manual_preview_panel(self, tool_id):

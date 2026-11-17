@@ -158,7 +158,7 @@ class GpuBeauty:
         count = ops.count(root_mask)
         if not count:
             return blank, 0
-        if count > 256 or count*prod(image.resident.carrier.size) > 128_000_000:
+        if count > 256:
             raise GpuExecutionError("beauty_target_limit", "Spot component statistics exceed GPU submission limits")
         components, _ = ops.selected(roots, root_mask)
         components = ops.components(labels, components, distance)

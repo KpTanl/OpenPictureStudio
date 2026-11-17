@@ -89,15 +89,19 @@ impl GpuDevice {
         py.allow_threads(|| {
             let mut io = self.state.io.lock().unwrap();
             let target = self.state.allocate((count*64) as u64)?;
-            let params = [image.width as u32, image.height as u32, image.stride as u32, image.offset as u32,
-                roots.width as u32, roots.height as u32, roots.stride as u32, roots.offset as u32,
-                distance.to_bits(), 0, 0, 0];
-            let uniform = self.state.uniform("ops-components-parameters", bytemuck::cast_slice(&params))?;
-            self.state.dispatch(self.state.encoder(&mut io)?, "beauty_components", &[
-                image.storage.buffer.as_ref().unwrap(), roots.storage.buffer.as_ref().unwrap(),
-                target.buffer.as_ref().unwrap(), &uniform], (count as u32, 1));
+            let stats = self.state.allocate((count*32) as u64)?;
+            let pixels = (image.width*image.height) as u32;
+            for (mode, items) in [(0u32, count as u32), (1, pixels), (2, count as u32)] {
+                let params = [image.width as u32, image.height as u32, image.stride as u32, image.offset as u32,
+                    roots.width as u32, roots.height as u32, roots.stride as u32, roots.offset as u32,
+                    distance.to_bits(), 0, 0, 0, mode, 0, 0, 0];
+                let uniform = self.state.uniform("ops-components-parameters", bytemuck::cast_slice(&params))?;
+                self.state.dispatch(self.state.encoder(&mut io)?, "beauty_components", &[
+                    image.storage.buffer.as_ref().unwrap(), roots.storage.buffer.as_ref().unwrap(),
+                    target.buffer.as_ref().unwrap(), &uniform, stats.buffer.as_ref().unwrap()], (items.div_ceil(256), 1));
+            }
             let ticket = self.state.ticket(&mut io);
-            self.state.recorded(&mut io, 1, cancelled)?;
+            self.state.recorded(&mut io, 3, cancelled)?;
             Ok(GpuImage { storage: target, width: 4, height: count, stride: 4, offset: 0,
                 generation: self.state.generation, ticket })
         })

@@ -23,7 +23,7 @@ mod ort;
 pub use ort::{GpuModel, GpuTensor};
 
 pyo3::create_exception!(ops_accel, GpuError, pyo3::exceptions::PyRuntimeError);
-pub const REVISION: &str = "wgpu27-dx12-beauty-6";
+pub const REVISION: &str = "wgpu27-dx12-beauty-7";
 const PENDING: u64 = u64::MAX;
 const PASS_LIMIT: u32 = 512;
 const TRANSIENT_LIMIT: u64 = 64 << 20;

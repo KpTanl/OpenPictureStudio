@@ -185,6 +185,9 @@ class ExecutionCoordinator:
                 full = replace(source, pixels=PixelSpecification((height, width, 3)),
                     alpha=None if source.alpha is None else PixelSpecification((height, width)),
                     is_proxy=False, patches=(), gpu_image=None, backend_identity=CPU_BACKEND_IDENTITY)
+                if backend[0] == "gpu" and self.gpu.source_capable(full):
+                    preparation = backend
+                    full = replace(full, backend_identity=backend)
                 prefix_graph = geometry_prefix(nodes[:index], registry)
                 ids = {part.node_id for part in prefix_graph.nodes}
                 prefix_requirements = tuple(item for item in requirements if item.node_id in ids)

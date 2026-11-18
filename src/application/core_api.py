@@ -1239,11 +1239,12 @@ class CoreAPI:
         self, session_id, workflow, *, generation=0, compute_histogram=False,
         is_cancelled=None, update_draft=True, max_dimension=None, allow_intermediate=False,
         display=False, sampling_request=None, priority=0, keep_full_display=False, expected_state=None,
-        source_is_cancelled=None, full_input=False,
+        source_is_cancelled=None, full_input=False, display_region=None,
     ):
         """display=True 时结果的 image 为 None，display 为显示用 RGBA8 帧；其余契约相同。
 
-        full_input 为真时 max_dimension 只限制显示帧的大小，计算仍取完整输入。"""
+        full_input 为真时 max_dimension 只限制显示帧的大小，计算仍取完整输入。
+        display_region 为 ((left, top, right, bottom), (宽, 高))：按原尺寸计算，输出是这个尺寸时显示帧只取这一块。"""
         started = monotonic()
         if ((allow_intermediate and update_draft) or (display and compute_histogram)
                 or sampling_request is not None and (update_draft or allow_intermediate)
@@ -1329,6 +1330,7 @@ class CoreAPI:
                     **({"resources": self.image_sources.resources}
                        if sampling_request is not None or keep_full_display else {}),
                     **({"keep_full_display": not engine_source.is_proxy} if keep_full_display else {}),
+                    **({"display_region": display_region} if display_region is not None else {}),
                 )
             logger.debug("OPS 预览准备 session=%s state=%s input=%sx%s proxy=%s prepare_ms=%.1f source_ms=%.1f availability_ms=%.1f budget_wait_ms=%.1f render_ms=%.1f",
                          session_id, version, engine_source.pixels.shape[1], engine_source.pixels.shape[0],

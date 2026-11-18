@@ -258,6 +258,8 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self.destroyed.connect(self._sampling_resources.close)
         self._displayed_request = None
         self._displayed_frame = None
+        # 完整预览放大时拖动滑块的一帧：(请求, 屏幕上露出的那一块)，叠在整幅画面上显示
+        self._region_display = None
         self._requesting_full_frame = False
         self._displayed_histogram = None
         self._comparing = False
@@ -315,6 +317,12 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         self._gpu_ready_timer = QTimer(self)
         self._gpu_ready_timer.setInterval(500)
         self._gpu_ready_timer.timeout.connect(self._render_when_gpu_ready)
+        # 画布上已有画面时，下一帧过一会儿还没到才显示“更新中”
+        self._pending_canvas_state = None
+        self._canvas_state_timer = QTimer(self)
+        self._canvas_state_timer.setSingleShot(True)
+        self._canvas_state_timer.setInterval(300)
+        self._canvas_state_timer.timeout.connect(self._show_canvas_updating)
         self._histogram_runner = StudioHistogramRunner(self._render_service, self)
         self._histogram_runner.ready.connect(self._on_histogram_ready)
         self.destroyed.connect(self._histogram_runner.shutdown)
@@ -690,6 +698,15 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         limit = max(1, round(max(rect.width(), rect.height()) * self.viewer.devicePixelRatioF()))
         return limit if limit < max(full) else None
 
+    def _visible_region(self):
+        """画布上是整幅画面、又放大到只露出一部分时，露出的那一块：((left, top, right, bottom), 原尺寸)。"""
+        frame = self._displayed_frame
+        if self.session is None or frame is None or not frame.full_size or frame.size != tuple(frame.full_size):
+            return None
+        full = tuple(frame.full_size)
+        bounds = self.viewer.visible_image_bounds(full)
+        return (bounds, full) if bounds is not None and bounds != (0, 0, *full) else None
+
     def _seed_full_frame(self, request, frame, previous):
         """整幅画面替换同一画面的屏幕大小帧时，把后者交给看图器先用着，松手那一下画面不闪。"""
         _, shown, shown_frame, _, image = previous
@@ -705,11 +722,14 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         """完整预览下最新一次请求只取了屏幕大小的显示帧，而现在该补整幅画面了：滑块已松手，或画面放大了。"""
         latest = self._preview_queue.latest
         if (self._canvas_preview_mode != "full" or self.session is None or self._image_loading or latest is None
-                or latest.context.preview_mode != "full" or latest.context.max_dimension is None
+                or latest.context.preview_mode != "full"
+                or latest.context.max_dimension is None and latest.context.display_region is None
                 or latest.context.session_id != self.session.core_id):
             return False
         if not self._detail_editing():
             return True
+        if latest.context.display_region is not None:
+            return self._visible_region() != latest.context.display_region
         limit = self._screen_display_limit()
         return limit is None or limit > latest.context.max_dimension
 
@@ -2042,6 +2062,10 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         screen_limit = (self._screen_display_limit() if self._canvas_preview_mode == "full" and edit_group is not None
                         and sampling_request is None and self._mask_gesture is None and cacheable
                         and not self.session.read_only else None)
+        # 放大到原图像素时，每帧只取屏幕上露出的那一块
+        display_region = (self._visible_region() if self._canvas_preview_mode == "full" and edit_group is not None
+                          and screen_limit is None and sampling_request is None and self._mask_gesture is None
+                          and cacheable and not self.session.read_only else None)
         context = StudioPreviewContext(snapshot.core_id, self.core.source_identity(snapshot.core_id),
                                        self.core.tools.generation, editing_tool,
                                        self.core.source_preview(snapshot.core_id),
@@ -2050,14 +2074,16 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                                        gesture_id=self._mask_gesture.identity if self._mask_gesture is not None else None,
                                        geometry_generation=self._mask_gesture.generation if self._mask_gesture is not None else 0,
                                        preview_mode=self._canvas_preview_mode,
-                                       max_dimension=screen_limit or self.preview_max_dimension(snapshot.workflow))
+                                       max_dimension=screen_limit or self.preview_max_dimension(snapshot.workflow),
+                                       display_region=display_region)
         dropped = (self._preview_queue.pending if self._preview_queue.latest is not None
                    and context != self._preview_queue.latest.context else None)
         self._render_generation += 1
         request = StudioPreviewRequest(self._render_generation, context, snapshot,
             self.preview_key(self._current_path, snapshot.workflow, preview_target=target), self.session.source_size,
             sampling_request=sampling_request,
-            keep_full_display=self._canvas_preview_mode == "full" and screen_limit is None or not cacheable)
+            keep_full_display=self._canvas_preview_mode == "full" and screen_limit is None
+                and display_region is None or not cacheable)
         request = self._preview_queue.submit(request)
         if dropped is not None:
             self._report_manual_preview(dropped, "stopped")
@@ -2200,16 +2226,24 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                 beauty_panel.set_beauty_status("failed" if error is not None and error.details.get("tool_id") == "beauty" else status)
             if error is not None:
                 self._canvas_failed_generation = request.generation
-                self._canvas_preview_state = replace(self._canvas_preview_state, kind="failed")
-                self.canvas_preview_changed.emit(self._canvas_preview_state)
+                self._publish_canvas_state(replace(self._canvas_preview_state, kind="failed"))
                 self._toast(self._tr(error.message_key, self._tr(
                     "studio.render_failed", "Unable to render changes. Check tool settings and try again.")), 5000)
                 if request.sampling_request is not None:
                     self._end_sampling()
             if (qimg is not None and error is None and request.generation > self._displayed_generation
+                    and request.context.display_region is not None and frame.size != tuple(frame.full_size or ())):
+                # 只有露出的那一块：叠在上一张整幅画面上；整幅画面、直方图、画布工具的输入和蒙版都不动，松手后补整幅
+                self._displayed_generation = request.generation
+                self._displayed_request = request
+                self._region_display = request, qimg
+                self._sync_canvas_display()
+                self._log_delivery(request, frame)
+            elif (qimg is not None and error is None and request.generation > self._displayed_generation
                     and (request.sampling_request is None or sampling is not None)):
                 previous_display = (self._displayed_generation, self._displayed_request, self._displayed_frame,
                                     self._displayed_histogram, self._last_rendered_qimage)
+                self._region_display = None
                 self._invalidate_detail()
                 self._displayed_generation = request.generation
                 self._displayed_request = request
@@ -2247,16 +2281,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                         and not self.session.read_only and canvas.image_path == self._current_path
                         and self._panel_sessions.get(self._active_tool_id) is self.session):
                     canvas.on_step_input(qimg)
-                gpu_before, gpu_after = self._render_gpu_before, self.core.tools.execution.gpu.snapshot()
-                logger.debug("OPS 预览交付 request=%s session=%s delivery_ms=%.1f final=%s engine=%s size=%sx%s "
-                    "submissions=%s readback_bytes=%s upload_bytes=%s",
-                    request.generation, request.context.session_id,
-                    (monotonic() - request.requested_at) * 1000, request is self._preview_queue.latest,
-                    frame.backend_identity[0], *frame.size, gpu_after.submissions - gpu_before.submissions,
-                    gpu_after.readback_bytes - gpu_before.readback_bytes,
-                    gpu_after.uploaded_bytes - gpu_before.uploaded_bytes)
-                if frame.backend_identity[0] == "cpu" and gpu_before.state == "probing":
-                    self._gpu_ready_timer.start()
+                self._log_delivery(request, frame)
                 if request.context.editing_tool == "color_adjust":
                     self._histogram_runner.submit(request, frame)
                 else:
@@ -2298,6 +2323,18 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                 self._request_original()
             self.preview_finished.emit()
         self._refresh_detail()
+
+    def _log_delivery(self, request, frame):
+        gpu_before, gpu_after = self._render_gpu_before, self.core.tools.execution.gpu.snapshot()
+        logger.debug("OPS 预览交付 request=%s session=%s delivery_ms=%.1f final=%s engine=%s size=%sx%s "
+            "submissions=%s readback_bytes=%s upload_bytes=%s",
+            request.generation, request.context.session_id,
+            (monotonic() - request.requested_at) * 1000, request is self._preview_queue.latest,
+            frame.backend_identity[0], *frame.size, gpu_after.submissions - gpu_before.submissions,
+            gpu_after.readback_bytes - gpu_before.readback_bytes,
+            gpu_after.uploaded_bytes - gpu_before.uploaded_bytes)
+        if frame.backend_identity[0] == "cpu" and gpu_before.state == "probing":
+            self._gpu_ready_timer.start()
 
     def canvas_preview_state(self):
         return self._canvas_preview_state
@@ -2400,6 +2437,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             self._detail_showing = bool(detail_ready)
             detail = self._detail_resources.detail
             regional = detail_ready and detail is not None and detail.bounds is not None
+            shown = self._region_display if self._region_display is not None and self._region_display[0] is current else None
+            overlay = ((self._detail_resources.image, detail.bounds, detail.full_size) if regional
+                       else (shown[1], *current.context.display_region) if shown is not None else None)
             edited = self._detail_resources.image if detail_ready and not regional else base
             before = self._comparison_image()
             image = before if self._comparing else edited
@@ -2409,14 +2449,14 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             if image is None or reference is None or self._image_loading:
                 state = CanvasPreviewState(mode=self._canvas_preview_mode)
             else:
-                size = ((self._detail_resources.image.width(), self._detail_resources.image.height())
-                        if regional and not self._comparing else (image.width(), image.height()))
+                size = ((overlay[0].width(), overlay[0].height())
+                        if overlay is not None and not self._comparing else (image.width(), image.height()))
                 is_full = detail_ready or size == tuple(full_size or size)
                 if self._comparing:
                     is_full = self._original_display is not None and image is self._original_display.full
                     kind = "original" if is_full else "original_preview"
                 else:
-                    kind = "region" if regional else "full" if is_full else "preview"
+                    kind = "region" if overlay is not None else "full" if is_full else "preview"
                     if self._preview_queue.latest is not current:
                         kind = ("failed" if self._preview_queue.latest is not None
                                 and self._canvas_failed_generation == self._preview_queue.latest.generation else "updating")
@@ -2437,20 +2477,34 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                         if detail_ready:
                             self._detail_resources.clear_frame()
                         self._set_detail_state("failed")
-                        state = replace(state, kind="failed")
-                        self._canvas_preview_state = state
-                        self.canvas_preview_changed.emit(state)
+                        self._publish_canvas_state(replace(state, kind="failed"))
                         return
                     self._canvas_image_key = key
                 self.viewer.set_comparison_image(companion, companion_reference)
-                self.viewer.set_region_image(self._detail_resources.image if regional and not self._comparing else None,
-                    detail.bounds if regional and not self._comparing else None,
-                    detail.full_size if regional and not self._comparing else None)
-            if state != self._canvas_preview_state:
-                self._canvas_preview_state = state
-                self.canvas_preview_changed.emit(state)
+                self.viewer.set_region_image(*(overlay if overlay is not None and not self._comparing else (None,)))
+            self._publish_canvas_state(state)
         finally:
             self._syncing_canvas = False
+
+    def _publish_canvas_state(self, state):
+        """把画布状态交给工具条。画布上已有画面、只是在等下一帧时，过一会儿还没到才显示“更新中”：
+        拖动滑块时工具条不再每帧在“更新中”和画面状态之间来回切换。"""
+        if state.kind == "updating" and self._canvas_preview_state.kind in ("preview", "full", "region"):
+            self._pending_canvas_state = state
+            if not self._canvas_state_timer.isActive():
+                self._canvas_state_timer.start()
+            return
+        self._canvas_state_timer.stop()
+        self._pending_canvas_state = None
+        if state != self._canvas_preview_state:
+            self._canvas_preview_state = state
+            self.canvas_preview_changed.emit(state)
+
+    def _show_canvas_updating(self):
+        state, self._pending_canvas_state = self._pending_canvas_state, None
+        if state is not None and state != self._canvas_preview_state:
+            self._canvas_preview_state = state
+            self.canvas_preview_changed.emit(state)
 
     def _view_needs_detail(self):
         if self._canvas_preview_mode == "preview1600":
@@ -2491,7 +2545,8 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
                    for tool, panel in self._tool_panels.items())
 
     def _invalidate_detail(self, *, release_source=False):
-        self.viewer.set_region_image(None)
+        if self._region_display is None or self._region_display[0] is not self._displayed_request:
+            self.viewer.set_region_image(None)
         self._detail_bounds = None
         self._detail_timer.stop()
         self._detail_runner.cancel()
@@ -3110,6 +3165,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             beauty_panel.cancel_beauty_analysis()
             if hasattr(beauty_panel, "set_beauty_status"):
                 beauty_panel.set_beauty_status(None)
+        self._region_display = None
         self._invalidate_detail()
         self._end_sampling()
         dropped = self._preview_queue.pending
@@ -3127,9 +3183,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
 
         state = (CanvasPreviewState(mode=self._canvas_preview_mode) if self._image_loading or self.session is None
                  else replace(self._canvas_preview_state, kind="pending"))
-        if state != self._canvas_preview_state:
-            self._canvas_preview_state = state
-            self.canvas_preview_changed.emit(state)
+        self._publish_canvas_state(state)
 
     def _release_canvas_full_frames(self):
         for frame in self._canvas_full_frames:

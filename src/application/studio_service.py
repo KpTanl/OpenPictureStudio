@@ -128,8 +128,10 @@ class StudioRenderService:
     def _render(self, session, *, display, use_proxy=True, editing_tool=None, is_cancelled=lambda: False,
                 allow_intermediate=False, source_identity=None, source_preview=None, sampling_request=None,
                 priority=0, keep_full_display=False, max_dimension=STUDIO_PREVIEW_MAX_DIMENSION,
-                source_is_cancelled=None, display_limit=None):
-        """use_proxy 为假时按完整输入计算；此时给了 display_limit，就只取这么大的显示帧，不取整幅。"""
+                source_is_cancelled=None, display_limit=None, display_region=None):
+        """use_proxy 为假时按完整输入计算；此时给了 display_limit，就只取这么大的显示帧，不取整幅。
+
+        display_region 为 ((left, top, right, bottom), (宽, 高))：输出是这个尺寸时显示帧只取这一块。"""
         caller_cancelled = is_cancelled
         is_cancelled = lambda: caller_cancelled() or (
             source_identity is not None and self.core.source_identity(session.core_id) != source_identity) or (
@@ -164,6 +166,7 @@ class StudioRenderService:
             expected_state=session.state_version if not allow_intermediate else None,
             source_is_cancelled=source_is_cancelled,
             **({"sampling_request": sampling_request} if sampling_request is not None else {}),
+            **({"display_region": display_region} if display_region is not None else {}),
         )
         if not result.success:
             if result.error.code == "CANCELLED" or is_cancelled():

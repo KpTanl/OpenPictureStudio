@@ -139,8 +139,8 @@ class GpuArtifact:
     def backend_identity(self):
         return self.resident.backend_identity
 
-    def display(self, size, cancelled):
-        return self.service.display(self, size, cancelled)
+    def display(self, size, cancelled, region=None):
+        return self.service.display(self, size, cancelled, region)
 
     def read_region(self, bounds, cancelled):
         return self.service.read_region(self, bounds, cancelled)

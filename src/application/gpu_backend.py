@@ -1191,27 +1191,31 @@ class GpuBackend:
         self._session_lost = True
         self._submit(self._retire)
 
-    def display(self, artifact, size, cancelled):
+    def display(self, artifact, size, cancelled, region=None):
+        """显示用 RGBA8。region 为 (left, top, right, bottom) 时只按原尺寸读回这一块，size 即它的大小。"""
         if artifact.patches:
             with self.frame(artifact.backend_identity, cancelled, artifact.family):
                 artifact = self.resolve(artifact, cancelled)
         context = current_execution.get()
         priority = context.priority if context is not None else self.compute.scheduling()[0]
-        key = self._stages.key("gpu.readback", (artifact.backend_identity, artifact.resident.identity, size))
-        lease = self._stages.acquire(key, lambda abandoned: self._display(artifact, size, abandoned),
+        key = self._stages.key("gpu.readback", (artifact.backend_identity, artifact.resident.identity, size, region))
+        lease = self._stages.acquire(key, lambda abandoned: self._display(artifact, size, abandoned, region),
                                      cancelled, priority, retain=False, optional=True)
         try:
             return lease.value
         finally:
             lease.close()
 
-    def _display(self, artifact, size, cancelled):
+    def _display(self, artifact, size, cancelled, region=None):
         started = monotonic()
         with self.frame(artifact.backend_identity, cancelled, artifact.family) as frame, self._hold(frame):
             try:
                 count = size[0] * size[1] * 4
+                carrier = artifact.resident.carrier
+                if region is not None:
+                    carrier = frame.device.view(carrier, region[0], region[1], *size)
                 with self.host_memory(count if self._status.tier == "B" else 0, cancelled):
-                    rgba = self._native_call(lambda: frame.device.display(artifact.resident.carrier, *size, cancelled),
+                    rgba = self._native_call(lambda: frame.device.display(carrier, *size, cancelled),
                         lambda: self._prepare(count))
                 rgba.setflags(write=False)
                 logger.debug("GPU 显示完成 device=%s event=%s readback_bytes=%s duration_ms=%.1f",

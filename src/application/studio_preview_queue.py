@@ -20,6 +20,7 @@ class StudioPreviewContext:
     geometry_generation: int = 0
     preview_mode: str = "auto"
     max_dimension: int | None = 1600
+    display_region: tuple | None = None
 
 
 @dataclass(frozen=True)

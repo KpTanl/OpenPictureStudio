@@ -293,9 +293,9 @@ class ImageEngineAdapter:
         return _pil_from(source, parallelism=parallelism)
 
     def source_to_display(self, source: EngineRenderSource, *, parallelism=1, max_dimension=None,
-                          cancelled=lambda: False) -> DisplayFrame:
+                          cancelled=lambda: False, region=None) -> DisplayFrame:
         return DisplayFrame.from_array(display_rgba8(source, parallelism=parallelism,
-            max_dimension=max_dimension, cancelled=cancelled), backend_identity=source.backend_identity)
+            max_dimension=max_dimension, cancelled=cancelled, region=region), backend_identity=source.backend_identity)
 
     def save_source(
         self,
@@ -444,8 +444,11 @@ class PreviewService:
         resources=None,
         keep_full_display: bool = False,
         full_source=None,
+        display_region=None,
     ) -> CoreResult[PreviewResult]:
-        """显示预览可同时保留完整帧；缩小帧继续供交互、统计和采样使用。"""
+        """显示预览可同时保留完整帧；缩小帧继续供交互、统计和采样使用。
+
+        display_region 为 ((left, top, right, bottom), (宽, 高))：输出正好是这个尺寸时，显示帧只按原尺寸取这一块。"""
         prepare_started = time.perf_counter()
         resources = resources if resources is not None else self.runtime.execution.resources
         from ..core.workflow.validator import validate
@@ -492,7 +495,8 @@ class PreviewService:
             else:
                 full_size = (width, height)
             image, frame = None, None
-            if display and keep_full_display and (max_dimension is None or max(width, height) > max_dimension):
+            region = display_region[0] if display and display_region is not None and display_region[1] == (width, height) else None
+            if display and region is None and keep_full_display and (max_dimension is None or max(width, height) > max_dimension):
                 try:
                     detail = DetailDisplay(resources, (width, height),
                         lambda: self._engine.source_to_display(rendered, parallelism=parallelism, cancelled=cancelled), cancelled)
@@ -500,8 +504,10 @@ class PreviewService:
                     if max_dimension is None:
                         raise
                     detail_error = CoreResult.fail(ErrorCode.DECODE_FAILED, memory_error_key(error)).error
-            if detail is not None and (not rendered.patches and rendered.gpu_image is None
-                                      or detail.frame.size == display_spec.size_for(width, height)):
+            if region is not None:
+                frame = self._engine.source_to_display(rendered, parallelism=parallelism, cancelled=cancelled, region=region)
+            elif detail is not None and (not rendered.patches and rendered.gpu_image is None
+                                        or detail.frame.size == display_spec.size_for(width, height)):
                 frame = detail.frame.resized(display_spec, parallelism=parallelism, cancelled=cancelled)
             else:
                 frame = self._engine.source_to_display(rendered, parallelism=parallelism,

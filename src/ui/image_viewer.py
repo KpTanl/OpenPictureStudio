@@ -97,6 +97,7 @@ class ImageViewer(QLabel):
         self._min_zoom = ZOOM_LIMITS["canvas_default"]["min"]
         self._max_zoom = ZOOM_LIMITS["canvas_default"]["max"]
         self._zoom_changed_callback = None
+        self._reported_zoom = None
         self._screen_window = None
         self._fit_mode = True
         self._bottom_inset = 0
@@ -134,6 +135,7 @@ class ImageViewer(QLabel):
     def set_zoom_changed_callback(self, callback):
         """设置缩放比例改变时的回调函数"""
         self._zoom_changed_callback = callback
+        self._reported_zoom = None
 
     @property
     def is_loading(self):
@@ -738,7 +740,9 @@ class ImageViewer(QLabel):
         self.resize(size)
         self.updateGeometry()
         self.update()
-        if self._zoom_changed_callback:
+        zoom = self.get_zoom_percent(), self._fit_mode
+        if self._zoom_changed_callback and zoom != self._reported_zoom:
+            self._reported_zoom = zoom
             self._zoom_changed_callback()
         if notify:
             self.view_changed.emit()

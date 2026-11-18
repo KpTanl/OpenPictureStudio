@@ -524,11 +524,13 @@ class GpuBackend:
                 return CPU_BACKEND_IDENTITY, "submission_limit"
             budget = self._budget(info)
             if peak > budget:
-                # 进程的显存占用里有一部分不在缓存账上：已释放还没回收的，以及被零散的长寿命缓冲钉住的显存堆。
-                # 先让设备回收，再放掉原尺寸下按槽位保留的帧内结果（它们建在首帧的大量临时缓冲之间，最容易钉住堆；
-                # 下次用到时重建），仍不够才清空整个驻留缓存，那样源图和各节点结果都要重来
+                # 进程的显存占用里有一部分不在缓存账上：分配器申请的块里还空着的部分，新缓冲照样能用，按自己的算。
+                # 仍不够时先让设备回收，再放掉原尺寸下按槽位保留的帧内结果（它们建在首帧的大量临时缓冲之间，
+                # 最容易钉住块；下次用到时重建），仍不够才清空整个驻留缓存，那样源图和各节点结果都要重来
+                budget = self._reserved_budget()
+            if peak > budget:
                 self._device.trim()
-                budget = self._budget(self._device.info())
+                budget = self._reserved_budget()
                 if peak > budget:
                     with self._cache.lock:
                         partial = [key for key, value in self._cache.items()
@@ -537,7 +539,7 @@ class GpuBackend:
                             self._cache.pop(key)
                     if partial:
                         self._device.trim()
-                        budget = self._budget(self._device.info())
+                        budget = self._reserved_budget()
                         logger.debug("GPU 预算不足，放掉帧内保留结果 target=%s working_bytes=%s budget_bytes=%s entries=%s",
                                      target.size, peak, budget, len(partial))
             if peak > budget and self._cache:
@@ -547,7 +549,7 @@ class GpuBackend:
                              info["allocated_bytes"], self._cache.nbytes)
                 self._cache.clear()
                 self._device.trim()
-                budget = self._budget(self._device.info())
+                budget = self._reserved_budget()
             if peak > budget:
                 logger.debug("GPU 预算不足 target=%s working_bytes=%s budget_bytes=%s", target.size, peak, budget)
                 return CPU_BACKEND_IDENTITY, "target_budget"
@@ -572,10 +574,11 @@ class GpuBackend:
             width, height = spec.size
             out_width, out_height = source.pixels.shape[1::-1]
             info = self._device.info()
+            peak = source_peak(spec, (out_width, out_height))
             return (not info["lost"] and max(width, height) <= 32768
                 and max(spec.nbytes, out_width * height * 16) <= min(info["max_binding_size"], info["max_buffer_size"])
                 and 6 * max(width / out_width, height / out_height) <= 4096
-                and source_peak(spec, (out_width, out_height)) <= self._budget(info))
+                and (peak <= self._budget(info) or peak <= self._reserved_budget()))
 
     def prepare_source(self, source_input, metadata, context, cancelled):
         from .gpu_source_input import prepare
@@ -625,10 +628,13 @@ class GpuBackend:
                     self._device.trim()
                     self._release_scratch()
 
-    def _budget(self, info):
-        accounted = info["allocated_bytes"] + self._model_bytes
+    def _budget(self, info, reserved=0):
+        accounted = max(info["allocated_bytes"], reserved) + self._model_bytes
         dynamic = max(0, info["process_budget"] * 9 // 10 - max(0, info["process_usage"] - accounted))
         return max(0, min(self._status.budget_bytes, dynamic) - self._model_bytes)
+
+    def _reserved_budget(self):
+        return self._budget(self._device.info(), self._device.reserved_bytes())
 
     def model_device(self):
         from .system_profile import detect_profile

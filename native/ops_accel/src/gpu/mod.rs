@@ -626,6 +626,11 @@ impl GpuDevice {
         Ok(record)
     }
 
+    /// 分配器向系统申请的显存总量，含各块里还空着的部分。
+    fn reserved_bytes(&self) -> u64 {
+        self.state.device.generate_allocator_report().map_or(0, |report| report.total_reserved_bytes)
+    }
+
     #[pyo3(signature = (budget, idle_limit, submission_ms=0))]
     fn configure(&self, budget: u64, idle_limit: u64, submission_ms: u64) {
         self.state.submission_ms.store(submission_ms, Ordering::Relaxed);

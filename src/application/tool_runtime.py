@@ -1411,6 +1411,9 @@ class ToolRuntime:
                                 *((required.get(item.node_id), item.identity) for item in stage.preparation_stages
                                   if item.node_id is not None))
                             key = definition.prepare_input(borrowed, execution_context, reference)
+                            if execution_context["upstream_identity"][0]:
+                                self._input_preparation.link(definition.prepare_input(borrowed,
+                                    {**execution_context, "upstream_dependencies": ()}, reference), key)
                             prepared = None
                             if definition.reusable_executor and definition.create_prepared_executor is None:
                                 executor_key = (execution_reference, tuple(sorted(resources.items())), self._execution_threads, "cpu")

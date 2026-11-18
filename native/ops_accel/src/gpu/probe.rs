@@ -64,7 +64,7 @@ impl Case {
         let encoder = state.encoder(io)?;
         for (name, group, counts) in &self.groups {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some(name), timestamp_writes: None });
-            pass.set_pipeline(&state.pipelines[name]);
+            pass.set_pipeline(state.pipeline(name));
             pass.set_bind_group(0, group, &[]);
             pass.dispatch_workgroups(counts.0, counts.1, 1);
         }

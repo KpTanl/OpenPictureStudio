@@ -1,4 +1,7 @@
 from dataclasses import replace
+import json
+import logging
+import os
 import numpy as np
 
 from ..core.contracts.gpu import DevicePixels, GpuArtifact, GpuResident
@@ -6,6 +9,8 @@ from ..core.contracts.tools import ToolReference
 from ..core.photo_engine import RenderSource, display_rgba8
 from ..core.tools.geometry import execute_crop, execute_shape, execute_lasso, CROP_PARAMETERS, SHAPE_PARAMETERS, LASSO_PARAMETERS
 from .gpu_geometry import GpuGeometry
+
+logger = logging.getLogger(__name__)
 
 
 class _Qualification:
@@ -113,3 +118,43 @@ def qualify_geometry(device, compute, cancelled):
         if difference>1:
             return False, "geometry_numeric:"+kind
     return True, ""
+
+
+def qualification_key(adapter, compiler):
+    """自检结果对应的显卡、驱动、内核修订与应用版本；其中任何一项变了就重新自检。"""
+    import ops_accel
+    from ..utils.app_info import APP_VERSION
+    return dict({name: adapter[name] for name in ("name", "vendor", "device", "driver")},
+                revision=ops_accel.GPU_REVISION, compiler=compiler, application=APP_VERSION)
+
+
+def _qualification_path():
+    from .storage_paths import data_root
+    return data_root() / "gpu" / "qualification.json"
+
+
+def stored_qualification(key):
+    """同一显卡、驱动与版本上次全部通过的自检：(设备自检结果, 可用的源输入格式)；没有时为 None。"""
+    try:
+        value = json.loads(_qualification_path().read_text(encoding="utf-8"))
+        if value["key"] != key:
+            return None
+        qualification, inputs = value["qualification"], value["source_inputs"]
+        if not isinstance(qualification, dict) or not qualification["max_lsb"] <= 1:
+            return None
+        return qualification, frozenset(tuple(item) for item in inputs)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def store_qualification(key, qualification, source_inputs):
+    try:
+        path = _qualification_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_text(json.dumps({"key": key, "qualification": qualification,
+                                         "source_inputs": [list(item) for item in source_inputs]}, ensure_ascii=False),
+                             encoding="utf-8")
+        os.replace(temporary, path)
+    except (OSError, ValueError) as error:
+        logger.info("GPU 自检结果未存盘 reason=%s", error)

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU64, Ordering}}, time::{Duration, Instant}};
+use std::{collections::HashMap, sync::{Arc, Mutex, OnceLock, atomic::{AtomicBool, AtomicU64, Ordering}}, time::{Duration, Instant}};
 use numpy::{PyArray1, PyArray3, PyArrayMethods, PyReadonlyArray2, PyReadonlyArray3, PyUntypedArrayMethods};
 use pyo3::{prelude::*, types::PyDict};
 
@@ -31,11 +31,25 @@ const RETIRED_LIMIT: u64 = 512 << 20;
 const STORAGE: wgpu::BufferUsages = wgpu::BufferUsages::from_bits_retain(
     wgpu::BufferUsages::STORAGE.bits() | wgpu::BufferUsages::COPY_SRC.bits() | wgpu::BufferUsages::COPY_DST.bits());
 
+// 前 STARTUP 个（读图、调色、显示，进编辑的首帧要用）在建设备时编译；
+// 其余由后台线程按这个顺序编译，用到时还没编好就当场编译，或等后台编好
 const SHADERS: &[(&str, &str)] = &[
     ("source_blocks", include_str!("shaders/source_blocks.wgsl")),
     ("png_restore", include_str!("shaders/png_restore.wgsl")),
     ("source_input", include_str!("shaders/source_input.wgsl")),
     ("color", include_str!("shaders/color.wgsl")),
+    ("display_rgba", include_str!("shaders/display_rgba.wgsl")),
+    ("display_full", include_str!("shaders/display_full.wgsl")),
+    ("display_area", include_str!("shaders/display_area.wgsl")),
+    ("box_h", include_str!("shaders/box_h.wgsl")),
+    ("box_v", include_str!("shaders/box_v.wgsl")),
+    ("square", include_str!("shaders/square.wgsl")),
+    ("coefficients", include_str!("shaders/coefficients.wgsl")),
+    ("combine", include_str!("shaders/combine.wgsl")),
+    ("remap_cubic", include_str!("shaders/remap_cubic.wgsl")),
+    ("image_ops", include_str!("shaders/image_ops.wgsl")),
+    ("guided", include_str!("shaders/guided.wgsl")),
+    ("box_vec", include_str!("shaders/box_vec.wgsl")),
     ("beauty", include_str!("shaders/beauty.wgsl")),
     ("beauty_stats", include_str!("shaders/beauty_stats.wgsl")),
     ("beauty_median", include_str!("shaders/beauty_median.wgsl")),
@@ -46,25 +60,22 @@ const SHADERS: &[(&str, &str)] = &[
     ("legacy", include_str!("shaders/legacy.wgsl")),
     ("face", include_str!("shaders/face.wgsl")),
     ("face_regions", include_str!("shaders/face_regions.wgsl")),
-    ("image_ops", include_str!("shaders/image_ops.wgsl")),
-    ("guided", include_str!("shaders/guided.wgsl")),
-    ("box_vec", include_str!("shaders/box_vec.wgsl")),
     ("ellipse_spans", include_str!("shaders/ellipse_spans.wgsl")),
     ("polygon_mask", include_str!("shaders/polygon_mask.wgsl")),
     ("feather", include_str!("shaders/feather.wgsl")),
     ("tensor_transfer", include_str!("shaders/tensor_transfer.wgsl")),
     ("tensor_clear", include_str!("shaders/tensor_clear.wgsl")),
     ("interop_prepare", include_str!("shaders/interop_prepare.wgsl")),
-    ("display_rgba", include_str!("shaders/display_rgba.wgsl")),
-    ("display_full", include_str!("shaders/display_full.wgsl")),
-    ("display_area", include_str!("shaders/display_area.wgsl")),
-    ("box_h", include_str!("shaders/box_h.wgsl")),
-    ("box_v", include_str!("shaders/box_v.wgsl")),
-    ("square", include_str!("shaders/square.wgsl")),
-    ("coefficients", include_str!("shaders/coefficients.wgsl")),
-    ("combine", include_str!("shaders/combine.wgsl")),
-    ("remap_cubic", include_str!("shaders/remap_cubic.wgsl")),
 ];
+const STARTUP: usize = 7;
+
+fn build(device: &wgpu::Device, name: &str, text: &str) -> wgpu::ComputePipeline {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(name), source: wgpu::ShaderSource::Wgsl(text.into()),
+    });
+    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some(name), layout: None,
+        module: &module, entry_point: Some("main"), compilation_options: Default::default(), cache: None })
+}
 
 fn done(event: u64) -> Arc<AtomicU64> { Arc::new(AtomicU64::new(event)) }
 
@@ -165,8 +176,8 @@ struct State {
     device: wgpu::Device,
     queue: wgpu::Queue,
     limits: wgpu::Limits,
-    pipelines: HashMap<&'static str, wgpu::ComputePipeline>,
-    compilation_ms: HashMap<&'static str, f64>,
+    pipelines: HashMap<&'static str, OnceLock<wgpu::ComputePipeline>>,
+    compilation_ms: Mutex<HashMap<&'static str, f64>>,
     optional_failures: HashMap<&'static str, String>,
     shader_compiler: &'static str,
     first_submission_ms: Mutex<HashMap<String, f64>>,
@@ -414,12 +425,22 @@ impl State {
         Ok(event)
     }
 
+    fn pipeline(&self, name: &str) -> &wgpu::ComputePipeline {
+        self.pipelines[name].get_or_init(|| {
+            let (name, text) = SHADERS.iter().find(|(item, _)| *item == name).unwrap();
+            let started = Instant::now();
+            let pipeline = build(&self.device, name, text);
+            self.compilation_ms.lock().unwrap().insert(name, started.elapsed().as_secs_f64()*1000.0);
+            pipeline
+        })
+    }
+
     fn group(&self, name: &str, buffers: &[&wgpu::Buffer]) -> wgpu::BindGroup {
         let entries: Vec<_> = buffers.iter().enumerate().map(|(index, buffer)| wgpu::BindGroupEntry {
             binding: index as u32, resource: buffer.as_entire_binding(),
         }).collect();
         self.device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some(name),
-            layout: &self.pipelines[name].get_bind_group_layout(0), entries: &entries })
+            layout: &self.pipeline(name).get_bind_group_layout(0), entries: &entries })
     }
 
     fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, name: &str, buffers: &[&wgpu::Buffer], groups: (u32, u32)) {
@@ -436,7 +457,7 @@ impl State {
         let mut timing = self.timing.lock().unwrap();
         let timestamp_writes = timing.as_mut().and_then(|timing| timing.reserve(label));
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some(name), timestamp_writes });
-        pass.set_pipeline(&self.pipelines[name]);
+        pass.set_pipeline(self.pipeline(name));
         pass.set_bind_group(0, &group, &[]);
         pass.dispatch_workgroups(groups.0, groups.1, 1);
     }
@@ -508,43 +529,49 @@ impl GpuDevice {
             device.set_device_lost_callback(move |_, _| { failed.store(true, Ordering::Release); });
             device.push_error_scope(wgpu::ErrorFilter::Internal);
             device.push_error_scope(wgpu::ErrorFilter::Validation);
-            let mut pipelines = HashMap::new();
+            let mut pipelines: HashMap<_, _> = SHADERS.iter().map(|(name, _)| (*name, OnceLock::new())).collect();
             let mut compilation_ms = HashMap::new();
             let mut optional_failures = HashMap::new();
-            for (name, text) in SHADERS {
+            for (name, text) in &SHADERS[..STARTUP] {
                 let optional = matches!(*name, "source_blocks" | "source_input" | "png_restore");
                 if optional {
                     device.push_error_scope(wgpu::ErrorFilter::Internal);
                     device.push_error_scope(wgpu::ErrorFilter::Validation);
                 }
                 let started = Instant::now();
-                let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some(name), source: wgpu::ShaderSource::Wgsl((*text).into()),
-                });
-                let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some(name), layout: None,
-                    module: &module, entry_point: Some("main"), compilation_options: Default::default(), cache: None });
+                let pipeline = build(&device, name, text);
                 if optional {
                     let validation = pollster::block_on(device.pop_error_scope());
                     let internal = pollster::block_on(device.pop_error_scope());
                     if let Some(reason) = validation.or(internal) {
                         optional_failures.insert(*name, reason.to_string());
+                        pipelines.remove(name);
                         continue;
                     }
                 }
-                pipelines.insert(*name, pipeline);
+                let _ = pipelines[name].set(pipeline);
                 compilation_ms.insert(*name, started.elapsed().as_secs_f64()*1000.0);
             }
             let validation = pollster::block_on(device.pop_error_scope());
             let internal = pollster::block_on(device.pop_error_scope());
             if let Some(reason) = validation.or(internal) { return Err(error("shader_compilation", reason)); }
             let compiler_probe = if shader_compiler == "fxc" { compilation_ms.clone() } else { HashMap::new() };
-            let state = Arc::new(State { adapter, device, queue, limits, pipelines, compilation_ms, optional_failures, shader_compiler,
+            let state = Arc::new(State { adapter, device, queue, limits, pipelines, compilation_ms: Mutex::new(compilation_ms),
+                optional_failures, shader_compiler,
                 first_submission_ms: Mutex::new(HashMap::new()), pending_kernels: Mutex::new(Vec::new()),
                 timing: Mutex::new(None), io: Mutex::new(Io::default()),
                 pool: Mutex::new(Pool { limit: budget, idle_limit: budget / 8, ..Default::default() }), lost, failure,
                 completed: AtomicU64::new(0), submission_ms: AtomicU64::new(0),
                 uploaded: AtomicU64::new(0), downloaded: AtomicU64::new(0), generation });
             state.check()?;
+            // 后台编译其余着色器；设备关掉或已没有别人在用时停下
+            let warm = state.clone();
+            std::thread::Builder::new().name("ops-shaders".into()).spawn(move || {
+                for (name, _) in &SHADERS[STARTUP..] {
+                    if warm.lost.load(Ordering::Acquire) || Arc::strong_count(&warm) == 1 { return; }
+                    warm.pipeline(name);
+                }
+            }).map_err(|reason| error("device_creation", reason))?;
             Ok(Self { state, index, compiler_probe, compiler_reason: String::new() })
         })
     }
@@ -591,7 +618,7 @@ impl GpuDevice {
         record.set_item("max_buffer_size", self.state.limits.max_buffer_size)?;
         record.set_item("max_binding_size", self.state.limits.max_storage_buffer_binding_size)?;
         record.set_item("max_workgroups", self.state.limits.max_compute_workgroups_per_dimension)?;
-        record.set_item("kernel_compilation_ms", self.state.compilation_ms.clone())?;
+        record.set_item("kernel_compilation_ms", self.state.compilation_ms.lock().unwrap().clone())?;
         record.set_item("shader_compiler", self.state.shader_compiler)?;
         record.set_item("fxc_compilation_ms", self.compiler_probe.clone())?;
         record.set_item("compiler_reason", self.compiler_reason.clone())?;

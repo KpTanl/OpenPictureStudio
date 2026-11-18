@@ -350,21 +350,35 @@ class GpuBackend:
                 device = ops_accel.GpuDevice(candidate["index"], candidate["luid"], generation, budget)
                 if cancelled():
                     raise CancelledError()
-                qualification = device.qualify(min(8, self.compute.snapshot().thread_capacity),
-                    lambda: self.compute.borrow(cancelled,
-                        priority=2, threads=min(8, self.compute.snapshot().thread_capacity)))
-                geometry_ready, geometry_reason = False, "device_qualification"
-                color_ready, color_reason = False, "device_qualification"
-                source_ready, source_reasons = frozenset(), ()
-                blocks_ready, blocks_reason = False, "device_qualification"
-                if qualification["max_lsb"] <= 1:
-                    from .gpu_qualification import qualify_geometry, qualify_color
-                    geometry_ready, geometry_reason = self._qualify_tool(device,qualify_geometry,cancelled)
-                    color_ready, color_reason = self._qualify_tool(device,qualify_color,cancelled)
-                    from .gpu_source_input import qualify_source
-                    source_ready, source_reasons = qualify_source(device, self.compute, cancelled)
-                    from .gpu_source_input import qualify_blocks
-                    blocks_ready, blocks_reason = self._qualify_tool(device, qualify_blocks, cancelled)
+                from .gpu_qualification import qualification_key, stored_qualification, store_qualification
+                key = qualification_key(candidate, device.info().get("shader_compiler", "fxc"))
+                stored = stored_qualification(key)
+                if stored is not None:
+                    qualification, source_ready = stored
+                    geometry_ready = color_ready = blocks_ready = True
+                    geometry_reason = color_reason = blocks_reason = ""
+                    source_reasons = ()
+                    logger.info("GPU 自检沿用上次的结果 driver=%s", candidate["driver"])
+                else:
+                    qualification = device.qualify(min(8, self.compute.snapshot().thread_capacity),
+                        lambda: self.compute.borrow(cancelled,
+                            priority=2, threads=min(8, self.compute.snapshot().thread_capacity)))
+                    geometry_ready, geometry_reason = False, "device_qualification"
+                    color_ready, color_reason = False, "device_qualification"
+                    source_ready, source_reasons = frozenset(), ()
+                    blocks_ready, blocks_reason = False, "device_qualification"
+                    if qualification["max_lsb"] <= 1:
+                        from .gpu_qualification import qualify_geometry, qualify_color
+                        geometry_ready, geometry_reason = self._qualify_tool(device,qualify_geometry,cancelled)
+                        color_ready, color_reason = self._qualify_tool(device,qualify_color,cancelled)
+                        from .gpu_source_input import qualify_source
+                        source_ready, source_reasons = qualify_source(device, self.compute, cancelled)
+                        from .gpu_source_input import qualify_blocks
+                        blocks_ready, blocks_reason = self._qualify_tool(device, qualify_blocks, cancelled)
+                    # 只存全部通过的结果：有一项没过时下次照常自检
+                    if (qualification["max_lsb"] <= 1 and geometry_ready and color_ready and blocks_ready
+                            and not source_reasons):
+                        store_qualification(key, qualification, source_ready)
             if not qualification["max_lsb"] <= 1:
                 raise GpuExecutionError("self_check", "GPU qualification did not pass")
             device.trim()

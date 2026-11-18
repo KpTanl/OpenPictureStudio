@@ -30,16 +30,6 @@ class StudioRenderService:
         result = self._render(session, display=False, **options)
         return None if result is None else result.image
 
-    def render_display(self, session, **options):
-        """同 render，返回显示用 RGBA8 帧。"""
-        result = self._render(session, display=True, **options)
-        if result is None:
-            return None
-        if result.display is not None:
-            return result.display
-        with result.image as image:
-            return DisplayFrame.from_image(image)
-
     def render_sampled(self, session, sampling_request, **options):
         return self._render(session, display=True, sampling_request=sampling_request, **options)
 

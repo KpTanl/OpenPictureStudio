@@ -22,7 +22,6 @@ from pathlib import Path
 from time import monotonic
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from PIL import Image
 from resources.styles.theme_variables import (CANVAS_TOOLBAR_HEIGHT, CANVAS_TOOLBAR_MARGIN,
                                               SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, SPACING_MD, SPACING_SM, px)
 from PySide6.QtCore import QEvent, QSize, Qt, QThreadPool, QTimer, Signal, Slot
@@ -3217,15 +3216,6 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             return core.export_grid(session_id, params, directory, prefix, extension,
                                     expected_state=version, cancellation=cancellation).unwrap()
         return export
-
-    def render_full_image(self) -> Optional[Image.Image]:
-        if not self.session:
-            return None
-        if not self._parameters_ready():
-            self._toast(self._tr("tool.preparing"))
-            return None
-        self.stop_preview()
-        return self._render_service.render(self.session.render_snapshot(), use_proxy=False)
 
     def apply_changes(self) -> None:
         """全尺寸高质量运行流水线，叠加一次性工具，按用户选择保存。"""

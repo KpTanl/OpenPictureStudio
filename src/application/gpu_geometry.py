@@ -51,14 +51,6 @@ def _tool(node):
     return ref.tool_id, checked.data
 
 
-def workflow_capable(workflow):
-    try:
-        return all(node.version == 1 and (_tool(node) is not None or node.node_type in ("source", "export"))
-                   for node in workflow.nodes)
-    except (KeyError, TypeError, ValueError):
-        return False
-
-
 def target_plan(source, graph, order, steps=None):
     width, height = source.pixels.shape[1], source.pixels.shape[0]
     largest = width * height

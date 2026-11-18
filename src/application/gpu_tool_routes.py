@@ -1,16 +1,11 @@
 from collections import OrderedDict
 from contextlib import contextmanager
-from dataclasses import replace
 from pathlib import Path
 from threading import RLock, Condition
 from concurrent.futures import CancelledError
-import hashlib
-import uuid
 
 from ..core.contracts.gpu import DeviceModelSpec, GpuExecutionError
-from ..core.contracts.execution import current_execution, ExecutionContext, ExecutionTarget
-from ..core.contracts.image_display import PreviewDisplaySpec
-from ..core.contracts.gpu import display_request
+from ..core.contracts.execution import current_execution
 from ..core.beauty_detection import DETECTION_SPECS
 from ..core.contracts.beauty import detail_beauty_algorithm, DETAIL_BEAUTY_PROFILES
 from .shared_stages import SharedStageStore
@@ -309,38 +304,6 @@ class GpuToolRoutes:
     def face_session(self, identity, cancelled=lambda: False):
         with self.borrow(identity, cancelled) as route:
             yield route.face_session(cancelled)
-
-    def qualification_input(self, source, cancelled=lambda: False):
-        from .gpu_geometry import GpuGeometry
-        if current_execution.get() is not None or source.is_proxy or not source.content_identity:
-            raise ValueError("GPU 对照输入需要独立的完整请求")
-        if source.gpu_image is not None:
-            if source.backend_identity != self.backend.snapshot().identity:
-                raise ValueError("GPU 对照输入设备无效")
-            return source
-        source = source.materialize(cancelled)
-        identity = self.backend.snapshot().identity
-        if identity[0] != "gpu" or self.backend.settings.engine == "cpu" or source.colorspace != "linear_srgb":
-            raise GpuExecutionError("device_changed", "GPU qualification requires a ready device and linear input")
-        digest = hashlib.sha256()
-        for top in range(0, source.pixels.shape[0], 64):
-            if cancelled():
-                raise CancelledError()
-            digest.update(source.pixels[top:top+64].tobytes())
-            if source.alpha is not None:
-                digest.update(source.alpha[top:top+64].tobytes())
-        target = ExecutionTarget(source.pixels.shape[1::-1], source.orig_size, False, source.colorspace,
-            str(source.pixels.dtype), source.alpha is not None, source.white_point, source.gamut, source.color_pipeline)
-        content = source.content_identity, "qualification", digest.hexdigest()
-        context = ExecutionContext(uuid.uuid4().hex, content, "qualification", target, (), 0, *identity,
-            0, 0, "qualification", cancelled, "manual", source_path=source.source_path)
-        with display_request(PreviewDisplaySpec()):
-            token = current_execution.set(context)
-            try:
-                artifact = self.backend.upload(source, context)
-                return replace(GpuGeometry.updated(source, artifact), content_identity=source.content_identity)
-            finally:
-                current_execution.reset(token)
 
     def execute(self, reference, source, params, context, cancelled):
         execution = current_execution.get()

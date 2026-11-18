@@ -528,51 +528,6 @@ class ImageSourceService:
             lease.close()
             logger.exception("编辑缓存提交失败：%s", Path(identity.path).name)
 
-    def borrow_cached_proxy(self, identity, *, max_side=1600, is_cancelled=lambda: False):
-        generation = self._linear_proxy_cache.generation if self._linear_proxy_cache is not None else None
-        if type(max_side) is not int or max_side < 1:
-            raise ValueError("max_side must be a positive integer")
-        self._check(is_cancelled)
-        if not self.matches_file(identity):
-            raise SourceChangedError()
-        key = self._linear_key(identity, max_side, False)
-        disk_key = self._proxy_cache_key(identity, max_side)
-        lease = self.resources.borrow_cached(key)
-        if lease is None:
-            if disk_key is None or not self._linear_proxy_cache.exists(disk_key):
-                return None
-
-            def load(cancelled):
-                self._check(cancelled)
-                source = self._linear_proxy_cache.read(disk_key, source_path=identity.path,
-                    is_current=lambda: self.matches_file(identity), is_cancelled=cancelled)
-                self._check(cancelled)
-                if not self.matches_file(identity):
-                    raise SourceChangedError()
-                if source is None:
-                    raise _ProxyCacheMiss()
-                source.pixels.setflags(write=False)
-                source.content_identity = (identity.file_hash, self._linear_key(identity, None, False),
-                                           source.source_format, source.color_pipeline)
-                if source.alpha is not None:
-                    source.alpha.setflags(write=False)
-                return source
-
-            try:
-                lease = self.resources.acquire(key, "proxy", max_side ** 2 * 16 + 65536,
-                                               load, self._source_bytes, is_cancelled)
-            except _ProxyCacheMiss:
-                return None
-        try:
-            self._check(is_cancelled)
-            if not self.matches_file(identity):
-                raise SourceChangedError()
-            self._submit_proxy(key, disk_key, identity, is_cancelled, False, generation)
-            return lease
-        except BaseException:
-            lease.close()
-            raise
-
     def borrow_display(self, path, *, for_preview=False, is_cancelled=lambda: False, priority=0):
         from ..core.raw_loader import load_image, is_raw_file
         identity = self.identity(path, is_cancelled=is_cancelled)

@@ -431,5 +431,5 @@ class GpuBeauty:
             warped = self.backend.operate(image, "beauty.remap", (field.resident.identity, bounds, sample_bounds), (right-left, bottom-top),
                 lambda device, abort: device.image_op(image.resident.carrier, field.resident.carrier, 15,
                     [left, top, *sample_bounds[:2], *size], right-left, bottom-top, abort), self.cancelled)
-            result = geometry.with_patch(result, warped, bounds, (warped.resident.identity,), has_alpha=source.alpha is not None)
+            result = geometry.with_patch(source, warped, bounds, (warped.resident.identity,), has_alpha=source.alpha is not None)
         return replace(result, effect_status=(*source.effect_status, replace(effect, spots_skipped=spots_skipped)))

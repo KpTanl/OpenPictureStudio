@@ -51,6 +51,11 @@ class _Checkpoint:
     # 按槽位保留的帧内结果（retain），区别于整个节点的结果（keep）：显存吃紧时先放掉它们
     partial: bool = False
 
+    @property
+    def carriers(self):
+        image = getattr(self.output, "gpu_image", None)
+        return (self.carrier, *(patch.artifact.resident.carrier for patch in (image.patches if image is not None else ())))
+
 
 class _ResidentCache(OrderedDict):
     """显存里保留的结果。渲染线程持占用标记读写它；界面换图、预算判定、改设置的线程不持
@@ -66,24 +71,26 @@ class _ResidentCache(OrderedDict):
     def __setitem__(self, key, value):
         with self.lock:
             self.pop(key, None)
-            allocation = value.carrier.allocation_id
-            size, users = self.allocations.get(allocation, (value.carrier.nbytes, 0))
-            self.allocations[allocation] = size, users + 1
-            if not users:
-                self.nbytes += size
+            for carrier in getattr(value, "carriers", (value.carrier,)):
+                allocation = carrier.allocation_id
+                size, users = self.allocations.get(allocation, (carrier.nbytes, 0))
+                self.allocations[allocation] = size, users + 1
+                if not users:
+                    self.nbytes += size
             super().__setitem__(key, value)
 
     def pop(self, key, default=None):
         with self.lock:
             value = super().pop(key, default)
             if value is not default:
-                allocation = value.carrier.allocation_id
-                size, users = self.allocations[allocation]
-                if users == 1:
-                    del self.allocations[allocation]
-                    self.nbytes -= size
-                else:
-                    self.allocations[allocation] = size, users - 1
+                for carrier in getattr(value, "carriers", (value.carrier,)):
+                    allocation = carrier.allocation_id
+                    size, users = self.allocations[allocation]
+                    if users == 1:
+                        del self.allocations[allocation]
+                        self.nbytes -= size
+                    else:
+                        self.allocations[allocation] = size, users - 1
             return value
 
     def clear(self):

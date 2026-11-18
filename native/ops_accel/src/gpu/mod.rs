@@ -23,7 +23,7 @@ mod ort;
 pub use ort::{GpuModel, GpuTensor};
 
 pyo3::create_exception!(ops_accel, GpuError, pyo3::exceptions::PyRuntimeError);
-pub const REVISION: &str = "wgpu27-dx12-beauty-7";
+pub const REVISION: &str = "wgpu27-dx12-beauty-8";
 const PENDING: u64 = u64::MAX;
 const PASS_LIMIT: u32 = 512;
 const TRANSIENT_LIMIT: u64 = 64 << 20;
@@ -740,29 +740,32 @@ impl GpuDevice {
         py.allow_threads(|| self.state.upload_data(data, width, height, cancelled))
     }
 
-    #[pyo3(signature = (image, width, height, cancelled=None))]
+    /// region 为显示帧里的一块 (left, top, right, bottom) 时只算、只读回这一块；width、height 是整个显示帧的大小。
+    #[pyo3(signature = (image, width, height, cancelled=None, region=None))]
     fn display<'py>(&self, py: Python<'py>, image: &GpuImage, width: usize, height: usize,
-                   cancelled: Option<Py<PyAny>>) -> PyResult<Bound<'py, PyArray3<u8>>> {
+                   cancelled: Option<Py<PyAny>>, region: Option<(usize, usize, usize, usize)>) -> PyResult<Bound<'py, PyArray3<u8>>> {
+        let (left, top, right, bottom) = region.unwrap_or((0, 0, width, height));
         if width == 0 || height == 0 || width > image.width || height > image.height || image.generation != self.state.generation
-            || !Arc::ptr_eq(&image.storage.state, &self.state) {
+            || !Arc::ptr_eq(&image.storage.state, &self.state) || left >= right || top >= bottom || right > width || bottom > height {
             return Err(error("target_limit", "GPU image or display target is incompatible"));
         }
         if (image.width.div_ceil(width) + 1) * (image.height.div_ceil(height) + 1) > 4096 {
             return Err(error("target_limit", "GPU display footprint exceeds submission limit"));
         }
+        let (region_width, region_height) = (right - left, bottom - top);
         let output = py.allow_threads(|| {
             let mut io = self.state.io.lock().unwrap();
             self.state.check()?;
-            let size = (width * height * 4) as u64;
+            let size = (region_width * region_height * 4) as u64;
             let target = self.state.allocate(size)?;
             let uniform = self.state.uniform("ops-display-spec", bytemuck::cast_slice(&[image.width as u32, image.height as u32, width as u32, height as u32,
-                    image.stride as u32, image.offset as u32, 0, 0]))?;
+                    image.stride as u32, image.offset as u32, left as u32, top as u32, region_width as u32, region_height as u32, 0, 0]))?;
             self.state.dispatch(self.state.encoder(&mut io)?, "display_rgba", &[image.storage.buffer.as_ref().unwrap(), target.buffer.as_ref().unwrap(), &uniform],
-                ((width as u32).div_ceil(8), (height as u32).div_ceil(8)));
+                ((region_width as u32).div_ceil(8), (region_height as u32).div_ceil(8)));
             let staging = self.state.read(&mut io, target.buffer.as_ref().unwrap(), size)?;
             self.state.mapped(&mut io, &staging, size, cancelled)
         })?;
-        PyArray1::from_vec_bound(py, output).reshape([height, width, 4])
+        PyArray1::from_vec_bound(py, output).reshape([region_height, region_width, 4])
     }
 
     #[pyo3(signature = (threads=8, cpu_admission=None))]

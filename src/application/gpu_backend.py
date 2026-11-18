@@ -1192,7 +1192,7 @@ class GpuBackend:
         self._submit(self._retire)
 
     def display(self, artifact, size, cancelled, region=None):
-        """显示用 RGBA8。region 为 (left, top, right, bottom) 时只按原尺寸读回这一块，size 即它的大小。"""
+        """显示用 RGBA8。size 是整个显示帧的大小；region 为 (left, top, right, bottom) 时只读回显示帧里这一块。"""
         if artifact.patches:
             with self.frame(artifact.backend_identity, cancelled, artifact.family):
                 artifact = self.resolve(artifact, cancelled)
@@ -1210,12 +1210,11 @@ class GpuBackend:
         started = monotonic()
         with self.frame(artifact.backend_identity, cancelled, artifact.family) as frame, self._hold(frame):
             try:
-                count = size[0] * size[1] * 4
+                left, top, right, bottom = region or (0, 0, *size)
+                count = (right - left) * (bottom - top) * 4
                 carrier = artifact.resident.carrier
-                if region is not None:
-                    carrier = frame.device.view(carrier, region[0], region[1], *size)
                 with self.host_memory(count if self._status.tier == "B" else 0, cancelled):
-                    rgba = self._native_call(lambda: frame.device.display(carrier, *size, cancelled),
+                    rgba = self._native_call(lambda: frame.device.display(carrier, *size, cancelled, region),
                         lambda: self._prepare(count))
                 rgba.setflags(write=False)
                 logger.debug("GPU 显示完成 device=%s event=%s readback_bytes=%s duration_ms=%.1f",

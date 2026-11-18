@@ -171,7 +171,7 @@ impl State {
             queue.ExecuteCommandLists(&[Some(command)]);
             self.wait(self.queue.submit([]), None)?;
             let target = self.allocate(16 * 16 * 4)?;
-            let uniform = self.uniform("ops-interop-viewport", bytemuck::cast_slice(&[64u32, 64, 16, 16, 64, 0, 0, 0]))?;
+            let uniform = self.uniform("ops-interop-viewport", bytemuck::cast_slice(&[64u32, 64, 16, 16, 64, 0, 0, 0, 16, 16, 0, 0]))?;
             self.dispatch(self.encoder(io)?, "display_rgba", &[&output_buffer, target.buffer.as_ref().unwrap(), &uniform], (2, 2));
             let staging = self.read(io, target.buffer.as_ref().unwrap(), 16 * 16 * 4)?;
             let pixels = self.mapped(io, &staging, 16 * 16 * 4, None)?;

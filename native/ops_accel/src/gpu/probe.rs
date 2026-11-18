@@ -150,7 +150,7 @@ impl State {
         let target = self.allocate(127 * 93 * 4)?;
         self.flush(io, None)?;
         self.queue.write_buffer(source.buffer.as_ref().unwrap(), 0, bytemuck::cast_slice(&packed));
-        let params = [case.width as u32, case.height as u32, 127, 93, case.width as u32, 0, 0, 0];
+        let params = [case.width as u32, case.height as u32, 127, 93, case.width as u32, 0, 0, 0, 127, 93, 0, 0];
         let uniform = self.uniform("ops-alpha-check", bytemuck::cast_slice(&params))?;
         self.dispatch(self.encoder(io)?, "display_rgba", &[source.buffer.as_ref().unwrap(), target.buffer.as_ref().unwrap(), &uniform], (16, 12));
         let staging = self.read(io, target.buffer.as_ref().unwrap(), 127 * 93 * 4)?;

@@ -448,7 +448,7 @@ class PreviewService:
     ) -> CoreResult[PreviewResult]:
         """显示预览可同时保留完整帧；缩小帧继续供交互、统计和采样使用。
 
-        display_region 为 ((left, top, right, bottom), (宽, 高))：输出正好是这个尺寸时，显示帧只按原尺寸取这一块。"""
+        display_region 为 ((left, top, right, bottom), (宽, 高))：输出正好是这个尺寸时，显示帧只取其中这一块。"""
         prepare_started = time.perf_counter()
         resources = resources if resources is not None else self.runtime.execution.resources
         from ..core.workflow.validator import validate
@@ -505,7 +505,8 @@ class PreviewService:
                         raise
                     detail_error = CoreResult.fail(ErrorCode.DECODE_FAILED, memory_error_key(error)).error
             if region is not None:
-                frame = self._engine.source_to_display(rendered, parallelism=parallelism, cancelled=cancelled, region=region)
+                frame = self._engine.source_to_display(rendered, parallelism=parallelism, max_dimension=max_dimension,
+                                                       cancelled=cancelled, region=region)
             elif detail is not None and (not rendered.patches and rendered.gpu_image is None
                                         or detail.frame.size == display_spec.size_for(width, height)):
                 frame = detail.frame.resized(display_spec, parallelism=parallelism, cancelled=cancelled)

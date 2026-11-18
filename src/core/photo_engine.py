@@ -958,21 +958,23 @@ def display_rgba8(src: RenderSource, *, parallelism: int = 1, max_dimension=None
 
     OETF → clip → round(x*255)，按目标规格在显示空间面积缩小。
     输入和输出为直通 Alpha，缩小时按预乘 Alpha 累加，再还原直通颜色。
-    region 为 (left, top, right, bottom) 时只按原尺寸取这一块，max_dimension 不起作用。
+    region 为显示帧里的一块 (left, top, right, bottom) 时只取这一块；显示帧的大小仍按 max_dimension 定。
     """
     global _display_fallback_logged
+    spec = PreviewDisplaySpec(max_dimension)
+    size = spec.size_for(src.pixels.shape[1], src.pixels.shape[0])
     if region is not None:
         left, top, right, bottom = region
         if src.gpu_image is not None:
-            return src.gpu_image.display((right - left, bottom - top), cancelled, region)
-        if src.patches:
-            rgba = np.ascontiguousarray(display_rgba8(src, parallelism=parallelism, cancelled=cancelled)[top:bottom, left:right])
+            return src.gpu_image.display(size, cancelled, region)
+        if src.patches or size != (src.pixels.shape[1], src.pixels.shape[0]):
+            rgba = np.ascontiguousarray(display_rgba8(src, parallelism=parallelism, max_dimension=max_dimension,
+                                                      cancelled=cancelled)[top:bottom, left:right])
             rgba.setflags(write=False)
             return rgba
         src = replace(src, pixels=src.pixels[top:bottom, left:right],
                       alpha=None if src.alpha is None else src.alpha[top:bottom, left:right])
-    spec = PreviewDisplaySpec(max_dimension if region is None else None)
-    size = spec.size_for(src.pixels.shape[1], src.pixels.shape[0])
+        size = right - left, bottom - top
     if cancelled():
         raise CancelledError()
     if src.gpu_image is not None:

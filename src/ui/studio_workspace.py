@@ -698,14 +698,17 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         limit = max(1, round(max(rect.width(), rect.height()) * self.viewer.devicePixelRatioF()))
         return limit if limit < max(full) else None
 
-    def _visible_region(self):
-        """画布上是整幅画面、又放大到只露出一部分时，露出的那一块：((left, top, right, bottom), 原尺寸)。"""
+    def _visible_region(self, limit):
+        """画布上是整幅画面、又放大到只露出一部分时，露出的那一块：((left, top, right, bottom), 原尺寸)。
+
+        这一块按显示帧的像素计；显示帧长边为 limit，None 时就是原尺寸。"""
         frame = self._displayed_frame
         if self.session is None or frame is None or not frame.full_size or frame.size != tuple(frame.full_size):
             return None
         full = tuple(frame.full_size)
-        bounds = self.viewer.visible_image_bounds(full)
-        return (bounds, full) if bounds is not None and bounds != (0, 0, *full) else None
+        size = PreviewDisplaySpec(limit).size_for(*full)
+        bounds = self.viewer.visible_image_bounds(size)
+        return (bounds, full) if bounds is not None and bounds != (0, 0, *size) else None
 
     def _seed_full_frame(self, request, frame, previous):
         """整幅画面替换同一画面的屏幕大小帧时，把后者交给看图器先用着，松手那一下画面不闪。"""
@@ -728,9 +731,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             return False
         if not self._detail_editing():
             return True
-        if latest.context.display_region is not None:
-            return self._visible_region() != latest.context.display_region
         limit = self._screen_display_limit()
+        if latest.context.display_region is not None:
+            return (limit, self._visible_region(limit)) != (latest.context.max_dimension, latest.context.display_region)
         return limit is None or limit > latest.context.max_dimension
 
     def preview_key(self, path: str, workflow=None, *, preview_target=None):
@@ -2058,14 +2061,11 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
         snapshot = self.session.render_snapshot(None if self._result_view else editing_tool,
             preview_target=target, color_candidate=self._mask_candidate)
         cacheable = self.core.tools.cacheable_workflow(snapshot.workflow)
-        # 完整预览下拖动滑块：每帧只取屏幕大小的显示帧，松手后由 _refresh_detail 补整幅画面
-        screen_limit = (self._screen_display_limit() if self._canvas_preview_mode == "full" and edit_group is not None
-                        and sampling_request is None and self._mask_gesture is None and cacheable
-                        and not self.session.read_only else None)
-        # 放大到原图像素时，每帧只取屏幕上露出的那一块
-        display_region = (self._visible_region() if self._canvas_preview_mode == "full" and edit_group is not None
-                          and screen_limit is None and sampling_request is None and self._mask_gesture is None
-                          and cacheable and not self.session.read_only else None)
+        # 完整预览下拖动滑块：每帧只取屏幕大小的显示帧，放大后只取其中露出的那一块；松手后由 _refresh_detail 补整幅画面
+        dragging = (self._canvas_preview_mode == "full" and edit_group is not None and sampling_request is None
+                    and self._mask_gesture is None and cacheable and not self.session.read_only)
+        screen_limit = self._screen_display_limit() if dragging else None
+        display_region = self._visible_region(screen_limit) if dragging else None
         context = StudioPreviewContext(snapshot.core_id, self.core.source_identity(snapshot.core_id),
                                        self.core.tools.generation, editing_tool,
                                        self.core.source_preview(snapshot.core_id),
@@ -2439,7 +2439,9 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             regional = detail_ready and detail is not None and detail.bounds is not None
             shown = self._region_display if self._region_display is not None and self._region_display[0] is current else None
             overlay = ((self._detail_resources.image, detail.bounds, detail.full_size) if regional
-                       else (shown[1], *current.context.display_region) if shown is not None else None)
+                       else (shown[1], current.context.display_region[0], PreviewDisplaySpec(
+                           current.context.max_dimension).size_for(*current.context.display_region[1]))
+                       if shown is not None else None)
             edited = self._detail_resources.image if detail_ready and not regional else base
             before = self._comparison_image()
             image = before if self._comparing else edited

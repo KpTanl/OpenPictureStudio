@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, Qt, Signal, Slot
 from PySide6.QtGui import QImage
 
 from ...application.image_load_queue import ImageLoadQueue
+from ...utils.log_levels import TRACE
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +41,8 @@ class ImageLoadRunner(QObject):
         if self._quick_queue is not None:
             for request in self._quick_queue.replace(key for key in keys if key.stage == "quick"):
                 self._quick_pool.submit(self._run, request)
-        logger.debug("图像队列 thumbnail=%s generation=%s active=%s pending=%s",
-                     self._thumbnail, self._queue.generation, len(self._queue.active), len(self._queue.pending))
+        logger.log(TRACE, "图像队列 thumbnail=%s generation=%s active=%s pending=%s",
+                   self._thumbnail, self._queue.generation, len(self._queue.active), len(self._queue.pending))
 
     @staticmethod
     def _display_qimage(image, cancelled, rows=256):

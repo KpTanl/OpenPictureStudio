@@ -9,6 +9,7 @@ import logging
 
 from ..core.contracts.workflow import _canonical_json
 from ..core.execution_memo import current_memo, memo_cancellation, freeze, key_data
+from ..utils.log_levels import TRACE
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ class SharedStageStore:
                 raise CancelledError()
             cached = None if transient else self.cached(key, cancelled)
             if cached is not None:
-                logger.debug("阶段命中 name=%s key=%s", key[1], key[-1][:12])
+                logger.log(TRACE, "阶段命中 name=%s key=%s", key[1], key[-1][:12])
                 return cached
             token = object()
             with self._condition:
@@ -142,8 +143,8 @@ class SharedStageStore:
                 if result is not None:
                     with self._condition:
                         entry.delivered = True
-                    logger.debug("阶段交付 name=%s key=%s leader=%s wait_ms=%.1f", key[1], key[-1][:12], leader,
-                                 (monotonic() - started) * 1000)
+                    logger.log(TRACE, "阶段交付 name=%s key=%s leader=%s wait_ms=%.1f", key[1], key[-1][:12], leader,
+                               (monotonic() - started) * 1000)
                     return result
             finally:
                 producer = None

@@ -10,6 +10,7 @@ from time import monotonic
 from ..core.contracts.execution import (CPU_BACKEND_IDENTITY, ExecutionContext, ExecutionRequirement,
                                         ExecutionStage, ExecutionTarget, current_execution, current_admission, dependency_cancellation)
 from ..core.execution_memo import ResourceOwner
+from ..utils.log_levels import TRACE
 
 logger = logging.getLogger(__name__)
 
@@ -141,17 +142,17 @@ class ExecutionCoordinator:
         started = monotonic()
         try:
             with self.compute.suspend(cancelled):
-                logger.debug("执行请求 request=%s engine=%s device=%s attempt=%s role=%s target=%s dependencies=%s reason=%s",
-                             context.request_id, context.engine, context.device, context.attempt, context.role,
-                             target, len(requirements), context.selection_reason)
+                logger.log(TRACE, "执行请求 request=%s engine=%s device=%s attempt=%s role=%s target=%s dependencies=%s reason=%s",
+                           context.request_id, context.engine, context.device, context.attempt, context.role,
+                           target, len(requirements), context.selection_reason)
                 logger.debug("执行计划 request=%s stages=%s", context.request_id,
                     tuple((stage.node_id, stage.backend_identity, stage.preparation_backend, stage.reason) for stage in stages))
                 yield context
         finally:
             current_execution.reset(token)
-            logger.debug("执行请求结束 request=%s engine=%s attempt=%s cancelled=%s duration_ms=%.1f",
-                         context.request_id, context.engine, context.attempt, cancelled(),
-                         (monotonic() - started) * 1000)
+            logger.log(TRACE, "执行请求结束 request=%s engine=%s attempt=%s cancelled=%s duration_ms=%.1f",
+                       context.request_id, context.engine, context.attempt, cancelled(),
+                       (monotonic() - started) * 1000)
 
     def _plan(self, source, graph, registry, target, requirements, order, force_cpu, output_boundary=True, strips=True):
         from ..core.contracts.source import PixelSpecification
@@ -302,7 +303,7 @@ class ExecutionCoordinator:
                         if source.gpu_image is None:
                             logger.debug("执行交接 request=%s stage=%s direction=cpu_to_gpu input=%s", context.request_id, stage.node_id, identity)
                         source = self.begin(source, active)
-                logger.debug("执行阶段 request=%s stage=%s engine=%s device=%s reason=%s",
+                logger.log(TRACE, "执行阶段 request=%s stage=%s engine=%s device=%s reason=%s",
                     context.request_id, stage.node_id, active.engine, active.device, stage.reason)
                 yield source, active
         finally:
@@ -427,18 +428,19 @@ class ExecutionCoordinator:
                         creation = None
                         if cancelled() or reservation is not None and reservation.entry.retired:
                             raise CancelledError()
-                        logger.debug("执行阶段准入 request=%s stage=%s tool=%s engine=%s device=%s attempt=%s threads=%s working_bytes=%s wait_ms=%.1f",
-                                     context.request_id if context else "", stage, tool_id, context.engine, context.device, context.attempt if context else 0,
-                                     compute.threads, memory_bytes, (admitted - started) * 1000)
+                        logger.log(TRACE, "执行阶段准入 request=%s stage=%s tool=%s engine=%s device=%s attempt=%s threads=%s working_bytes=%s wait_ms=%.1f",
+                                   context.request_id if context else "", stage, tool_id, context.engine, context.device, context.attempt if context else 0,
+                                   compute.threads, memory_bytes, (admitted - started) * 1000)
                         try:
                             yield executor, compute
                             if cancelled() or reservation is not None and reservation.entry.retired:
                                 raise CancelledError()
                             failed = False
                         finally:
-                            logger.debug("执行阶段完成 request=%s stage=%s tool=%s engine=%s device=%s event=host_return duration_ms=%.1f failed=%s",
-                                         context.request_id if context else "", stage, tool_id, context.engine, context.device,
-                                         (monotonic() - admitted) * 1000, failed)
+                            logger.log(logging.DEBUG if failed else TRACE,
+                                       "执行阶段完成 request=%s stage=%s tool=%s engine=%s device=%s event=host_return duration_ms=%.1f failed=%s",
+                                       context.request_id if context else "", stage, tool_id, context.engine, context.device,
+                                       (monotonic() - admitted) * 1000, failed)
         finally:
             if token is not None:
                 current_execution.reset(token)

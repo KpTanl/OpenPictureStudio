@@ -48,6 +48,8 @@ def configure_logging(app_name: str = APP_NAME) -> logging.Logger:
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
     root_logger._openpicturestudio_logging_configured = True
+    # Pillow 读每张图都在调试级写 EXIF 标签和 PNG 数据块，日志里只留它的提示与错误
+    logging.getLogger("PIL").setLevel(logging.INFO)
 
     logging.captureWarnings(True)
     _install_exception_hooks()

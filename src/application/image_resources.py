@@ -9,6 +9,7 @@ from typing import Callable
 import logging
 import time
 from ..core.contracts.result import MEMORY_AVAILABLE_KEY, MEMORY_BUDGET_KEY
+from ..utils.log_levels import TRACE
 from .memory_settings import (DISPLAY_CACHE_BYTES, FALLBACK_LIMIT_BYTES, PREVIEW_CACHE_BYTES, PREVIEW_CACHE_ITEMS,
                               PROXY_CACHE_BYTES, SOURCE_CACHE_BYTES, SOURCE_CACHE_ITEMS, MemorySettings, resolve)
 from .system_profile import available_logical_count, available_memory, memory_status, physical_core_count
@@ -252,9 +253,9 @@ class ComputeBudget:
                     raise
                 if accepted:
                     self._local.foreground = granted_foreground
-                    logger.debug("计算预算准入 role=%s priority=%s threads=%s used=%s capacity=%s wait_ms=%.1f active=%s slots=%s",
-                                 ticket.role, priorities[ticket], granted, used, self._thread_capacity,
-                                 (time.monotonic() - ticket.created) * 1000, active, self._slots)
+                    logger.log(TRACE, "计算预算准入 role=%s priority=%s threads=%s used=%s capacity=%s wait_ms=%.1f active=%s slots=%s",
+                               ticket.role, priorities[ticket], granted, used, self._thread_capacity,
+                               (time.monotonic() - ticket.created) * 1000, active, self._slots)
                     return lease
                 self._release(ticket, lease, foreground=granted_foreground)
                 with self._condition:
@@ -276,7 +277,7 @@ class ComputeBudget:
             self._active_thumbnails -= ticket.role == "thumbnail"
             active, used = self._active, self._used_threads
             self._condition.notify_all()
-        logger.debug("计算预算释放 role=%s threads=%s active=%s used=%s", ticket.role, lease.threads, active, used)
+        logger.log(TRACE, "计算预算释放 role=%s threads=%s active=%s used=%s", ticket.role, lease.threads, active, used)
 
     def scheduling(self):
         state = getattr(self._local, "state", None)
@@ -572,12 +573,14 @@ class ImageResourcePool:
                     entry.done.set()
                     with self._condition:
                         self._condition.notify_all()
-                logger.debug("图像资源 category=%s source=%s duration_ms=%.1f bytes=%s failed=%s",
-                             category, getattr(key[0], "file_hash", "")[:12],
-                             (time.monotonic() - started) * 1000, entry.size, entry.error is not None)
+                # 失败的照常写进日志，成功的每帧都有，只在 TRACE 下写
+                logger.log(logging.DEBUG if entry.error is not None else TRACE,
+                           "图像资源 category=%s source=%s duration_ms=%.1f bytes=%s failed=%s",
+                           category, getattr(key[0], "file_hash", "")[:12],
+                           (time.monotonic() - started) * 1000, entry.size, entry.error is not None)
             else:
-                logger.debug("图像资源复用 category=%s source=%s ready=%s", category,
-                             getattr(key[0], "file_hash", "")[:12], entry.done.is_set())
+                logger.log(TRACE, "图像资源复用 category=%s source=%s ready=%s", category,
+                           getattr(key[0], "file_hash", "")[:12], entry.done.is_set())
                 while not entry.done.wait(0.05):
                     if is_cancelled():
                         raise CancelledError()
@@ -776,7 +779,8 @@ class ImageResourcePool:
             entry.borrowers -= 1
             self._trim()
             self._condition.notify_all()
-            logger.debug("图像资源释放 %s", self.usage())
+            if logger.isEnabledFor(TRACE):
+                logger.log(TRACE, "图像资源释放 %s", self.usage())
 
     def close(self):
         with self._lock:

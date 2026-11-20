@@ -22,7 +22,7 @@ OpenPictureStudio（OPS）致力于将专业影像处理能力与 AI 技术结�
 
 ## 当前基础
 
-OPS 已提供 Windows Beta 版本。项目当前具备照片浏览与筛选、RAW 解码与调色、局部蒙版、非破坏式编辑、AI 画质增强、智能修图助手、成组照片处理、项目历史和批量导出等能力。各版本提供的具体功能见对应的 [Release 说明](https://github.com/KpTanl/OpenPictureStudio/releases)。
+OPS 已提供 Windows 版本。项目当前具备照片浏览与筛选、RAW 解码与调色、局部蒙版、非破坏式编辑、AI 画质增强、智能修图助手、成组照片处理、项目历史和批量导出等能力。各版本提供的具体功能见对应的 [Release 说明](https://github.com/KpTanl/OpenPictureStudio/releases)。
 
 - **专业处理**：以线性图像处理、RAW 调色和局部调整为基础，通过参数、历史与项目保存创作过程。
 - **AI 协作**：已有修图助手、参考图、方案对比与命名风格等基础，适用调整进入可撤销的编辑历史。

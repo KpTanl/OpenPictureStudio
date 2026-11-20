@@ -66,4 +66,4 @@ Using a 6000×4000 synthetic image, the same processing was measured with 8 thre
 | Local adjustment with three masks | 516.26 ms | 415.92 ms |
 | RAW color conversion | 23.03 ms | 17.07 ms |
 
-Real-world speed varies with your computer, the photo, and the adjustments. AVX2 is implemented in the source, and the matching installer is waiting for release acceptance.
+Real-world speed varies with your computer, the photo, and the adjustments.

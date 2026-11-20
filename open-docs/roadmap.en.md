@@ -22,7 +22,7 @@ Human judgment, professional tools, and AI execution will collaborate on the sam
 
 ## Where We Are Now
 
-OPS already offers a Windows Beta. The project currently covers photo browsing and culling, RAW decoding and color grading, local masks, non-destructive editing, AI image enhancement, an intelligent retouching assistant, photo group processing, project history, and batch export. For the specific features in each version, see the matching [release notes](https://github.com/KpTanl/OpenPictureStudio/releases).
+OPS already offers a Windows release. The project currently covers photo browsing and culling, RAW decoding and color grading, local masks, non-destructive editing, AI image enhancement, an intelligent retouching assistant, photo group processing, project history, and batch export. For the specific features in each version, see the matching [release notes](https://github.com/KpTanl/OpenPictureStudio/releases).
 
 - **Professional processing**: Built on linear image processing, RAW color grading, and local adjustments, and the creative process is saved through parameters, history, and projects.
 - **AI collaboration**: The foundations are in place, including the retouching assistant, reference images, plan comparison, and named styles, and applicable adjustments go into an undoable edit history.

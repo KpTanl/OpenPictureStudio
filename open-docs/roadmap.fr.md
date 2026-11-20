@@ -22,7 +22,7 @@ Le jugement humain, les outils professionnels et la capacité d’exécution de 
 
 ## Bases actuelles
 
-OPS propose déjà une version bêta pour Windows. Le projet offre aujourd’hui la visualisation et le tri des photos, le décodage et l’étalonnage des RAW, les masques locaux, la retouche non destructive, l’amélioration de la qualité par l’IA, un assistant de retouche intelligent, le traitement de photos par lot, l’historique des projets et l’export par lot. Les fonctions précises de chaque version figurent dans les [notes de version](https://github.com/KpTanl/OpenPictureStudio/releases) correspondantes.
+OPS propose déjà une version pour Windows. Le projet offre aujourd’hui la visualisation et le tri des photos, le décodage et l’étalonnage des RAW, les masques locaux, la retouche non destructive, l’amélioration de la qualité par l’IA, un assistant de retouche intelligent, le traitement de photos par lot, l’historique des projets et l’export par lot. Les fonctions précises de chaque version figurent dans les [notes de version](https://github.com/KpTanl/OpenPictureStudio/releases) correspondantes.
 
 - **Traitement professionnel** : fondé sur le traitement d’image linéaire, l’étalonnage RAW et les réglages locaux, le processus de création est conservé par les paramètres, l’historique et le projet.
 - **Collaboration avec l’IA** : l’assistant de retouche, les images de référence, la comparaison de propositions et les styles nommés existent déjà, et les réglages concernés entrent dans l’historique de retouche, où ils restent annulables.

@@ -6,7 +6,7 @@
 
 ### Download the Windows Installer
 
-1. Open the [latest release](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Under **Assets**, download `OpenPictureStudio-<version>-beta-setup.exe` and the `.exe.sha256` file with the same name.
+1. Open the [latest release](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Under **Assets**, download `OpenPictureStudio-<version>-setup.exe` and the `.exe.sha256` file with the same name.
 2. Verify the installer's SHA256, then double-click the EXE and follow the setup wizard.
 3. Start OpenPictureStudio and open a photo or folder. The installed version needs no separate Python or Rust. AI models are downloaded as needed.
 
@@ -16,8 +16,8 @@
 Open PowerShell in the download folder and run the commands below. Replace `<version>` in the file names with the actual version:
 
 ```powershell
-Get-FileHash -LiteralPath '.\OpenPictureStudio-<version>-beta-setup.exe' -Algorithm SHA256
-Get-Content -LiteralPath '.\OpenPictureStudio-<version>-beta-setup.exe.sha256'
+Get-FileHash -LiteralPath '.\OpenPictureStudio-<version>-setup.exe' -Algorithm SHA256
+Get-Content -LiteralPath '.\OpenPictureStudio-<version>-setup.exe.sha256'
 ```
 
 The hash shown by the first command should match the 64-character value at the start of the second command's output. The checksum confirms that the downloaded file is complete and belongs to the same release asset. Get the installer and the checksum file from this repository's Release.
@@ -54,7 +54,7 @@ Before upgrading, quit OPS normally. The downloaded files stay in the temporary 
     $releasePage = 'https://github.com/KpTanl/OpenPictureStudio/releases/latest'
     try {
         $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/KpTanl/OpenPictureStudio/releases/latest' -Headers @{ 'User-Agent' = 'OpenPictureStudio-Install' } -TimeoutSec 30
-        $name = 'OpenPictureStudio-{0}-beta-setup.exe' -f ($release.tag_name -replace '^v', '')
+        $name = 'OpenPictureStudio-{0}-setup.exe' -f ($release.tag_name -replace '^v', '')
         $installer = @($release.assets | Where-Object { $_.name -ceq $name })
         $checksum = @($release.assets | Where-Object { $_.name -ceq "$name.sha256" })
         if ($installer.Count -ne 1 -or $checksum.Count -ne 1) { throw 'The release does not contain exactly one matching installer and checksum file.' }

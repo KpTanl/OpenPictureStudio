@@ -27,7 +27,7 @@ OpenPictureStudio (OPS) est une plateforme libre de création d’images avec l�
 
 **[Télécharger l’installateur Windows](https://github.com/KpTanl/OpenPictureStudio/releases/latest)** · [Prise en main](#prise-en-main-rapide) · [Fonctionnalités](#fonctionnalités-principales) · [Performances](#configuration-requise-et-mesures-de-performances) · [Feuille de route](#feuille-de-route) · [Documentation](open-docs/README.fr.md)
 
-> Bêta · Windows 10/11 (64 bits) · Interface en chinois simplifié, anglais et français. La visualisation et la retouche de base fonctionnent hors ligne.
+> Windows 10/11 (64 bits) · Interface en chinois simplifié, anglais et français. La visualisation et la retouche de base fonctionnent hors ligne.
 > 
 > Les fonctionnalités et les installateurs de chaque version figurent dans les [notes de version](https://github.com/KpTanl/OpenPictureStudio/releases/latest).
 

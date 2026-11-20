@@ -6,7 +6,7 @@
 
 ### Télécharger l’installateur Windows
 
-1. Ouvrez la [dernière version](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Dans **Assets**, téléchargez `OpenPictureStudio-<version>-beta-setup.exe` et le fichier `.exe.sha256` du même nom.
+1. Ouvrez la [dernière version](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Dans **Assets**, téléchargez `OpenPictureStudio-<version>-setup.exe` et le fichier `.exe.sha256` du même nom.
 2. Vérifiez le SHA256 de l’installateur, double-cliquez sur le fichier EXE et suivez l’assistant d’installation.
 3. Lancez OpenPictureStudio, puis ouvrez une photo ou un dossier. La version installée n’exige ni Python ni Rust ; les modèles IA se téléchargent à la demande.
 
@@ -16,8 +16,8 @@
 Dans le dossier de téléchargement, ouvrez PowerShell et exécutez les commandes ci-dessous, en remplaçant `<version>` dans le nom de fichier par la version réelle :
 
 ```powershell
-Get-FileHash -LiteralPath '.\OpenPictureStudio-<version>-beta-setup.exe' -Algorithm SHA256
-Get-Content -LiteralPath '.\OpenPictureStudio-<version>-beta-setup.exe.sha256'
+Get-FileHash -LiteralPath '.\OpenPictureStudio-<version>-setup.exe' -Algorithm SHA256
+Get-Content -LiteralPath '.\OpenPictureStudio-<version>-setup.exe.sha256'
 ```
 
 Le hachage affiché par la première commande doit être identique à la valeur de 64 caractères au début de la sortie de la seconde. La valeur de contrôle sert à vérifier que le fichier téléchargé est complet et qu’il correspond au même fichier de la version publiée. Récupérez l’installateur et le fichier de contrôle dans les Releases de ce dépôt.
@@ -54,7 +54,7 @@ Avant une mise à niveau, quittez OPS normalement. Les fichiers téléchargés r
     $releasePage = 'https://github.com/KpTanl/OpenPictureStudio/releases/latest'
     try {
         $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/KpTanl/OpenPictureStudio/releases/latest' -Headers @{ 'User-Agent' = 'OpenPictureStudio-Install' } -TimeoutSec 30
-        $name = 'OpenPictureStudio-{0}-beta-setup.exe' -f ($release.tag_name -replace '^v', '')
+        $name = 'OpenPictureStudio-{0}-setup.exe' -f ($release.tag_name -replace '^v', '')
         $installer = @($release.assets | Where-Object { $_.name -ceq $name })
         $checksum = @($release.assets | Where-Object { $_.name -ceq "$name.sha256" })
         if ($installer.Count -ne 1 -or $checksum.Count -ne 1) { throw 'La version publiée ne contient pas exactement un installateur et un fichier de contrôle correspondants.' }

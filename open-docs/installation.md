@@ -6,7 +6,7 @@
 
 ### 下载 Windows 安装包
 
-1. 打开 [最新版本](https://github.com/KpTanl/OpenPictureStudio/releases/latest)，在 **Assets** 中下载 `OpenPictureStudio-<版本>-beta-setup.exe` 和同名 `.exe.sha256` 文件。
+1. 打开 [最新版本](https://github.com/KpTanl/OpenPictureStudio/releases/latest)，在 **Assets** 中下载 `OpenPictureStudio-<版本>-setup.exe` 和同名 `.exe.sha256` 文件。
 2. 核对安装包的 SHA256，双击 EXE，按安装向导完成安装。
 3. 启动 OpenPictureStudio，打开照片或文件夹。安装版无需另装 Python 或 Rust；AI 模型按需下载。
 
@@ -16,8 +16,8 @@
 在下载目录打开 PowerShell，运行下面的命令，将文件名中的 `<版本>` 换成实际版本：
 
 ```powershell
-Get-FileHash -LiteralPath '.\OpenPictureStudio-<版本>-beta-setup.exe' -Algorithm SHA256
-Get-Content -LiteralPath '.\OpenPictureStudio-<版本>-beta-setup.exe.sha256'
+Get-FileHash -LiteralPath '.\OpenPictureStudio-<版本>-setup.exe' -Algorithm SHA256
+Get-Content -LiteralPath '.\OpenPictureStudio-<版本>-setup.exe.sha256'
 ```
 
 第一条命令显示的哈希应与第二条输出开头的 64 位值一致。校验值用于核对下载文件是否完整，并对应同一份发行资产。请从本仓库的 Release 获取安装包与校验文件。
@@ -54,7 +54,7 @@ Get-Content -LiteralPath '.\OpenPictureStudio-<版本>-beta-setup.exe.sha256'
     $releasePage = 'https://github.com/KpTanl/OpenPictureStudio/releases/latest'
     try {
         $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/KpTanl/OpenPictureStudio/releases/latest' -Headers @{ 'User-Agent' = 'OpenPictureStudio-Install' } -TimeoutSec 30
-        $name = 'OpenPictureStudio-{0}-beta-setup.exe' -f ($release.tag_name -replace '^v', '')
+        $name = 'OpenPictureStudio-{0}-setup.exe' -f ($release.tag_name -replace '^v', '')
         $installer = @($release.assets | Where-Object { $_.name -ceq $name })
         $checksum = @($release.assets | Where-Object { $_.name -ceq "$name.sha256" })
         if ($installer.Count -ne 1 -or $checksum.Count -ne 1) { throw '发行版本缺少唯一匹配的安装包或校验文件。' }

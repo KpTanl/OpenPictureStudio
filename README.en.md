@@ -27,7 +27,7 @@ OpenPictureStudio (OPS) is an open-source AI image creation platform built on pr
 
 **[Download the Windows installer](https://github.com/KpTanl/OpenPictureStudio/releases/latest)** · [Quick Start](#quick-start) · [Key Features](#key-features) · [Benchmarks](#system-requirements-and-performance-benchmarks) · [Roadmap](#roadmap) · [Documentation](open-docs/README.en.md)
 
-> Beta · Windows 10/11 (64-bit) · The interface supports Simplified Chinese, English, and French. Core viewing and editing work offline.
+> Windows 10/11 (64-bit) · The interface supports Simplified Chinese, English, and French. Core viewing and editing work offline.
 > 
 > For the features and installers of each version, see the [release notes](https://github.com/KpTanl/OpenPictureStudio/releases/latest).
 

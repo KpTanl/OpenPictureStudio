@@ -66,4 +66,4 @@ Image synthétique de 6000×4000, même traitement mesuré sur 8 threads, avec d
 | Réglages locaux avec trois masques | 516,26 ms | 415,92 ms |
 | Conversion des couleurs RAW | 23,03 ms | 17,07 ms |
 
-La vitesse réelle varie selon l’ordinateur, les photos et les réglages. AVX2 est déjà implémenté dans les sources ; l’installateur correspondant attend sa validation avant publication.
+La vitesse réelle varie selon l’ordinateur, les photos et les réglages.

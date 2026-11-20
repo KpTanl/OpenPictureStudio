@@ -27,7 +27,7 @@ OpenPictureStudio（OPS）是一个以专业图像处理为基础的开源 AI �
 
 **[下载 Windows 安装包](https://github.com/KpTanl/OpenPictureStudio/releases/latest)** · [快速上手](#快速上手) · [主要能力](#主要能力) · [性能基准](#系统要求与性能基准) · [Roadmap](#roadmap) · [文档目录](open-docs/README.md)
 
-> Beta · Windows 10/11（64 位）· 界面支持简体中文、English 和 Français。核心看图与编辑可离线使用。
+> Windows 10/11（64 位）· 界面支持简体中文、English 和 Français。核心看图与编辑可离线使用。
 > 
 > 各版本的功能与安装包见 [Release 说明](https://github.com/KpTanl/OpenPictureStudio/releases/latest)。
 

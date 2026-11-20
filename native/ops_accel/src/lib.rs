@@ -359,6 +359,7 @@ fn ops_accel(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(source_cache::source_compress_blocks, m)?)?;
     m.add_function(wrap_pyfunction!(source_cache::source_decompress_blocks, m)?)?;
     m.add_function(wrap_pyfunction!(source_cache::source_unfilter_png, m)?)?;
+    m.add_function(wrap_pyfunction!(source_cache::png_filter_rows, m)?)?;
     m.add_function(wrap_pyfunction!(guided_filter_exact::guided_filter_exact, m)?)?;
     m.add_function(wrap_pyfunction!(beauty::beauty_lab, m)?)?;
     m.add_function(wrap_pyfunction!(beauty::beauty_skin_delta, m)?)?;

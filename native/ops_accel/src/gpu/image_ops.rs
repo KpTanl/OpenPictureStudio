@@ -82,15 +82,39 @@ impl GpuDevice {
 
     pub(super) fn read_image<'py>(&self, py: Python<'py>, image: &GpuImage, left: usize, top: usize,
                         width: usize, height: usize, cancelled: Option<Py<PyAny>>) -> PyResult<Bound<'py, PyArray3<f32>>> {
+        let mut output = vec![0f32; width * height * 4];
+        self.read_image_into(py, image, left, top, width, height, &mut output, None, cancelled)?;
+        PyArray1::from_vec_bound(py, output).reshape([height, width, 4])
+    }
+
+    /// into 为 4 通道时原样写入；为 3 通道时只写 RGB，透明度写到 alpha。
+    pub(super) fn read_image_into(&self, py: Python<'_>, image: &GpuImage, left: usize, top: usize,
+                        width: usize, height: usize, into: &mut [f32], alpha: Option<&mut [f32]>,
+                        cancelled: Option<Py<PyAny>>) -> PyResult<()> {
+        let pixels = width * height;
+        if pixels == 0 || !(into.len() == pixels * 3 || into.len() == pixels * 4 && alpha.is_none())
+            || alpha.as_ref().is_some_and(|values| values.len() != pixels) {
+            return Err(error("read_specification", "Invalid GPU readback target"));
+        }
         let view = self.view_image(image, left, top, width, height)?;
-        let output = py.allow_threads(|| {
+        py.allow_threads(|| {
             let mut io = self.state.io.lock().unwrap();
             let packed = self.state.encode_image_op(&mut io, &view, &view, 0, &[], width, height)?;
             let size = (width * height * 16) as u64;
             let staging = self.state.read(&mut io, packed.storage.buffer.as_ref().unwrap(), size)?;
-            let bytes = self.state.mapped(&mut io, &staging, size, cancelled)?;
-            Ok::<_, PyErr>(bytes.chunks_exact(4).map(|value| f32::from_le_bytes(value.try_into().unwrap())).collect::<Vec<_>>())
-        })?;
-        PyArray1::from_vec_bound(py, output).reshape([height, width, 4])
+            self.state.mapped_with(&mut io, &staging, size, cancelled, |bytes| {
+                let source: &[f32] = bytemuck::cast_slice(bytes);
+                match alpha {
+                    Some(alpha) => for ((pixel, rgb), value) in source.chunks_exact(4).zip(into.chunks_exact_mut(3)).zip(alpha) {
+                        rgb.copy_from_slice(&pixel[..3]);
+                        *value = pixel[3];
+                    },
+                    None if into.len() == pixels * 3 => for (pixel, rgb) in source.chunks_exact(4).zip(into.chunks_exact_mut(3)) {
+                        rgb.copy_from_slice(&pixel[..3]);
+                    },
+                    None => into.copy_from_slice(source),
+                }
+            })
+        })
     }
 }

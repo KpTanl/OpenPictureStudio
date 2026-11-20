@@ -304,8 +304,9 @@ class ImageEngineAdapter:
         *,
         ext: str | None = None,
         quality: int = 95,
+        threads: int = 1,
     ) -> None:
-        save_render_source(source, target_path, ext=ext, quality=quality)
+        save_render_source(source, target_path, ext=ext, quality=quality, threads=threads)
 
     def to_contract_source(
         self,
@@ -372,8 +373,9 @@ class LegacyEngineAdapter:
         *,
         ext: str | None = None,
         quality: int = 95,
+        threads: int = 1,
     ) -> None:
-        save_render_source(source, target_path, ext=ext, quality=quality)
+        save_render_source(source, target_path, ext=ext, quality=quality, threads=threads)
 
 
 # ---------------------------------------------------------------------------
@@ -798,9 +800,9 @@ class ExportService:
                 if preserve_alpha and has_alpha and ext in (".jpg", ".jpeg", ".bmp"):
                     return CoreResult.fail(ErrorCode.UNSUPPORTED_FORMAT, "error.export.alpha_format")
                 def encode(path):
-                    with self.runtime.execution.operation("export.encode", cancelled,
-                            memory_bytes=rendered.pixels.nbytes * 4):
-                        self._engine.save_source(rendered, path, ext=ext, quality=request.quality)
+                    with self.runtime.execution.operation("export.encode", cancelled, threads=None,
+                            memory_bytes=rendered.pixels.nbytes * 4) as (_, compute):
+                        self._engine.save_source(rendered, path, ext=ext, quality=request.quality, threads=compute.threads)
             digest = ""
             def check_output(path):
                 nonlocal digest

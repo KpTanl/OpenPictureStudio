@@ -1,4 +1,4 @@
-use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
+use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray3, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use rayon::prelude::*;
 use crate::{cancellation::Cancellation, thread_pools};
@@ -109,5 +109,51 @@ pub fn source_unfilter_png<'py>(py: Python<'py>, data: PyReadonlyArray1<'_, u8>,
         }
         Ok(())
     })?;
+    Ok(PyArray1::from_vec_bound(py, output))
+}
+
+/// HxWxC 的 uint8 取前 channels 个通道，把 [top, bottom) 行按 PNG 扫描行滤波，每行在无、上、左、Paeth 里
+/// 挑字节偏离零最少的一种，同分取先试的，与 Pillow 的选法相同。
+#[pyfunction]
+pub fn png_filter_rows<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'_, u8>, top: usize, bottom: usize,
+    channels: usize) -> PyResult<Bound<'py, PyArray1<u8>>> {
+    let shape = pixels.shape();
+    if !(1..=shape[2]).contains(&channels) || top >= bottom || bottom > shape[0] {
+        return Err(pyo3::exceptions::PyValueError::new_err("Invalid PNG filter rows"));
+    }
+    let (width, step) = (shape[1], shape[2]);
+    let input = pixels.as_slice()?;
+    let row = width * channels;
+    let mut output = vec![0u8; (row + 1) * (bottom - top)];
+    py.allow_threads(|| {
+        let gather = |y: usize, target: &mut [u8]| {
+            for (pixel, out) in input[y * width * step..(y + 1) * width * step].chunks_exact(step).zip(target.chunks_exact_mut(channels)) {
+                out.copy_from_slice(&pixel[..channels]);
+            }
+        };
+        let (mut above, mut current) = (vec![0u8; row], vec![0u8; row]);
+        if top > 0 { gather(top - 1, &mut above); }
+        for (y, scan) in (top..bottom).zip(output.chunks_exact_mut(row + 1)) {
+            gather(y, &mut current);
+            let predict = |filter: u8, x: usize| {
+                let (left, corner) = if x >= channels { (current[x - channels], above[x - channels]) } else { (0, 0) };
+                match filter {
+                    1 => left, 2 => above[x],
+                    4 => { let a = (above[x] as i32 - corner as i32).abs(); let b = (left as i32 - corner as i32).abs();
+                        let c = (left as i32 + above[x] as i32 - 2 * corner as i32).abs();
+                        if a <= b && a <= c { left } else if b <= c { above[x] } else { corner } },
+                    _ => 0,
+                }
+            };
+            let mut best = (u64::MAX, 0u8);
+            for filter in [0u8, 2, 1, 4] {
+                let cost = (0..row).map(|x| (current[x].wrapping_sub(predict(filter, x)) as i8).unsigned_abs() as u64).sum::<u64>();
+                if cost < best.0 { best = (cost, filter); }
+            }
+            scan[0] = best.1;
+            for x in 0..row { scan[x + 1] = current[x].wrapping_sub(predict(best.1, x)); }
+            std::mem::swap(&mut above, &mut current);
+        }
+    });
     Ok(PyArray1::from_vec_bound(py, output))
 }

@@ -1,5 +1,5 @@
 use std::{collections::HashMap, sync::{Arc, Mutex, OnceLock, atomic::{AtomicBool, AtomicU64, Ordering}}, time::{Duration, Instant}};
-use numpy::{PyArray1, PyArray3, PyArrayMethods, PyReadonlyArray2, PyReadonlyArray3, PyUntypedArrayMethods};
+use numpy::{PyArray1, PyArray3, PyArrayMethods, PyReadonlyArray2, PyReadonlyArray3, PyReadwriteArray2, PyReadwriteArray3, PyUntypedArrayMethods};
 use pyo3::{prelude::*, types::PyDict};
 
 use crate::cancellation::Cancellation;
@@ -8,6 +8,7 @@ mod probe;
 mod image_ops;
 mod source_input;
 mod source_blocks;
+mod strips;
 mod color;
 mod beauty;
 mod timing;
@@ -23,7 +24,7 @@ mod ort;
 pub use ort::{GpuModel, GpuTensor};
 
 pyo3::create_exception!(ops_accel, GpuError, pyo3::exceptions::PyRuntimeError);
-pub const REVISION: &str = "wgpu27-dx12-beauty-8";
+pub const REVISION: &str = "wgpu27-dx12-strips-3";
 const PENDING: u64 = u64::MAX;
 const PASS_LIMIT: u32 = 512;
 const TRANSIENT_LIMIT: u64 = 64 << 20;
@@ -301,7 +302,6 @@ impl State {
     }
 
     fn data(&self, label: &str, data: &[f32]) -> PyResult<wgpu::Buffer> {
-        use wgpu::util::DeviceExt;
         self.check()?;
         let size = (data.len().max(1) * 4) as u64;
         {
@@ -310,8 +310,10 @@ impl State {
             if pool.total() + size > pool.limit { return Err(error("memory_pressure", "GPU metadata exceeds budget")); }
             pool.transient += size;
         }
-        let buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some(label),
-            contents: if data.is_empty() { &[0u8; 4] } else { bytemuck::cast_slice(data) }, usage: STORAGE });
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size, usage: STORAGE,
+            mapped_at_creation: false });
+        self.check()?;
+        self.queue.write_buffer(&buffer, 0, if data.is_empty() { &[0u8; 4] } else { bytemuck::cast_slice(data) });
         self.check()?;
         Ok(buffer)
     }
@@ -485,6 +487,11 @@ impl State {
 
     fn mapped(&self, io: &mut Io, staging: &wgpu::Buffer, size: u64,
               cancelled: Option<Py<PyAny>>) -> PyResult<Vec<u8>> {
+        self.mapped_with(io, staging, size, cancelled, |bytes| bytes.to_vec())
+    }
+
+    fn mapped_with<R>(&self, io: &mut Io, staging: &wgpu::Buffer, size: u64,
+              cancelled: Option<Py<PyAny>>, take: impl FnOnce(&[u8]) -> R) -> PyResult<R> {
         let started = Instant::now();
         let (index, ticket) = self.launch(io, cancelled)?;
         let index = index.ok_or_else(|| error("readback_failed", "GPU readback was not recorded"))?;
@@ -494,7 +501,7 @@ impl State {
         if let Err(reason) = waited { staging.unmap(); return Err(reason); }
         receiver.recv().map_err(|reason| error("readback_failed", reason))?
             .map_err(|reason| error("readback_failed", reason))?;
-        let output = staging.slice(..size).get_mapped_range().to_vec();
+        let output = take(&staging.slice(..size).get_mapped_range());
         staging.unmap();
         self.downloaded.fetch_add(size, Ordering::Relaxed);
         Ok(output)
@@ -695,6 +702,41 @@ impl GpuDevice {
             lut, output_width, output_height, matrix, cancelled, blocks)
     }
 
+    /// 上传整数源并还原 PNG 滤波，整数像素留在显卡上，供 source_rows 按行转浮点。
+    #[pyo3(signature = (data, width, height, channels, depth, filtered, cancelled=None, blocks=None))]
+    fn source_bytes(&self, py: Python<'_>, data: numpy::PyReadonlyArray1<'_, u8>, width: usize, height: usize,
+                    channels: usize, depth: usize, filtered: bool, cancelled: Option<Py<PyAny>>,
+                    blocks: Option<PyReadonlyArray2<'_, u32>>) -> PyResult<GpuImage> {
+        self.bytes_image(py, data, width, height, channels, depth, filtered, cancelled, blocks)
+    }
+
+    /// 把 source_bytes 的 [top, top+rows) 行转成线性浮点。
+    #[pyo3(signature = (source, width, height, channels, depth, filtered, big_endian, lut, top, rows, matrix=None, cancelled=None))]
+    fn source_rows(&self, py: Python<'_>, source: &GpuImage, width: usize, height: usize, channels: usize, depth: usize,
+                   filtered: bool, big_endian: bool, lut: numpy::PyReadonlyArray1<'_, f32>, top: usize, rows: usize,
+                   matrix: Option<Vec<f32>>, cancelled: Option<Py<PyAny>>) -> PyResult<GpuImage> {
+        self.rows_image(py, source, width, height, channels, depth, filtered, big_endian, lut, top, rows, matrix, cancelled)
+    }
+
+    /// 显示帧里 (宽, 高) 一块的 RGBA8 缓冲，由 display_into 逐条写入。
+    fn display_buffer(&self, width: usize, height: usize) -> PyResult<GpuImage> {
+        self.display_buffer_image(width, height)
+    }
+
+    /// image 是整幅 full 里从 origin 行起的一条：把显示帧 (width, height) 的 rows 行算好，写进 target。
+    /// target 是显示帧里 region 那一块。
+    #[pyo3(signature = (target, image, width, height, region, rows, origin, full, cancelled=None))]
+    fn display_into(&self, py: Python<'_>, target: &GpuImage, image: &GpuImage, width: usize, height: usize,
+                    region: (usize, usize, usize, usize), rows: (usize, usize), origin: usize, full: (usize, usize),
+                    cancelled: Option<Py<PyAny>>) -> PyResult<()> {
+        self.display_rows(py, target, image, width, height, region, rows, origin, full, cancelled)
+    }
+
+    #[pyo3(signature = (target, cancelled=None))]
+    fn read_display<'py>(&self, py: Python<'py>, target: &GpuImage, cancelled: Option<Py<PyAny>>) -> PyResult<Bound<'py, PyArray3<u8>>> {
+        self.read_display_image(py, target, cancelled)
+    }
+
     #[pyo3(signature = (data, blocks, expected, cancelled=None))]
     fn source_blocks_probe<'py>(&self, py: Python<'py>, data: numpy::PyReadonlyArray1<'_, u8>,
         blocks: PyReadonlyArray2<'_, u32>, expected: usize, cancelled: Option<Py<PyAny>>) -> PyResult<Bound<'py, numpy::PyArray1<u8>>> {
@@ -795,17 +837,19 @@ impl GpuDevice {
         self.guided_image(py, image, guide, radius, eps, subsample, cancelled)
     }
 
-    #[pyo3(signature = (width, height, primitives, cancelled=None))]
+    /// rows 为 (起始行, 整幅高) 时只画整幅里从起始行开始的 height 行。
+    #[pyo3(signature = (width, height, primitives, cancelled=None, rows=None))]
     fn shape_mask(&self, py: Python<'_>, width: usize, height: usize, primitives: Vec<Vec<i32>>,
-                  cancelled: Option<Py<PyAny>>) -> PyResult<GpuImage> {
-        self.raster_shape(py, width, height, primitives, cancelled)
+                  cancelled: Option<Py<PyAny>>, rows: Option<(usize, usize)>) -> PyResult<GpuImage> {
+        self.raster_shape(py, width, height, primitives, rows.unwrap_or((0, height)), cancelled)
     }
 
-    #[pyo3(signature = (width, height, regions, invert=false, feather=0.0, cancelled=None))]
+    /// rows 为 (起始行, 整幅高) 时只画整幅里从起始行开始的 height 行；羽化在这几行之内按边缘钳位。
+    #[pyo3(signature = (width, height, regions, invert=false, feather=0.0, cancelled=None, rows=None))]
     fn lasso_mask(&self, py: Python<'_>, width: usize, height: usize,
                   regions: Vec<(bool, Vec<(i32,i32)>)>, invert: bool, feather: f32,
-                  cancelled: Option<Py<PyAny>>) -> PyResult<GpuImage> {
-        self.raster_lasso(py, width, height, regions, invert, feather, cancelled)
+                  cancelled: Option<Py<PyAny>>, rows: Option<(usize, usize)>) -> PyResult<GpuImage> {
+        self.raster_lasso(py, width, height, regions, invert, feather, rows.unwrap_or((0, height)), cancelled)
     }
 
     #[pyo3(signature = (image, other, mode, args, width, height, cancelled=None))]
@@ -814,10 +858,23 @@ impl GpuDevice {
         self.run_image(py, image, other, mode, args, width, height, cancelled)
     }
 
-    #[pyo3(signature = (image, auxiliary, field, extra, mode, args, data, cancelled=None))]
+    /// frame 为 (整幅宽, 整幅高, 左, 上)：image 是整幅里从 (左, 上) 起的一块时，按整幅坐标算蒙版与笔刷。
+    /// into 为 (目标图, 起始行) 时，结果写进目标图从起始行开始的几行，返回目标图。
+    #[pyo3(signature = (image, auxiliary, field, extra, mode, args, data, cancelled=None, frame=None, into=None))]
     fn color_op(&self, py: Python<'_>, image: &GpuImage, auxiliary: &GpuImage, field: &GpuImage,
-        extra: &GpuImage, mode: u32, args: Vec<f32>, data: Vec<f32>, cancelled: Option<Py<PyAny>>) -> PyResult<GpuImage> {
-        self.color_image(py, image, auxiliary, field, extra, mode, args, data, cancelled)
+        extra: &GpuImage, mode: u32, args: Vec<f32>, data: Vec<f32>, cancelled: Option<Py<PyAny>>,
+        frame: Option<(usize, usize, usize, usize)>, into: Option<(PyRef<'_, GpuImage>, usize)>) -> PyResult<GpuImage> {
+        let into = into.as_ref().map(|(target, row)| (&**target, *row));
+        self.color_image(py, image, auxiliary, field, extra, mode, args, data, frame, into, cancelled)
+    }
+
+    /// 一张清零的浮点图。
+    #[pyo3(signature = (width, height, cancelled=None))]
+    fn empty(&self, py: Python<'_>, width: usize, height: usize, cancelled: Option<Py<PyAny>>) -> PyResult<GpuImage> {
+        py.allow_threads(|| {
+            let mut io = self.state.io.lock().unwrap();
+            self.state.empty_image(&mut io, width, height, cancelled)
+        })
     }
 
     #[pyo3(signature = (image, cancelled=None))]
@@ -853,6 +910,17 @@ impl GpuDevice {
     fn read_region<'py>(&self, py: Python<'py>, image: &GpuImage, left: usize, top: usize, width: usize,
                         height: usize, cancelled: Option<Py<PyAny>>) -> PyResult<Bound<'py, PyArray3<f32>>> {
         self.read_image(py, image, left, top, width, height, cancelled)
+    }
+
+    #[pyo3(signature = (image, left, top, width, height, into, alpha=None, cancelled=None))]
+    fn read_region_into(&self, py: Python<'_>, image: &GpuImage, left: usize, top: usize, width: usize, height: usize,
+                        mut into: PyReadwriteArray3<'_, f32>, mut alpha: Option<PyReadwriteArray2<'_, f32>>,
+                        cancelled: Option<Py<PyAny>>) -> PyResult<()> {
+        if into.shape()[..2] != [height, width] || alpha.as_ref().is_some_and(|values| values.shape() != [height, width]) {
+            return Err(error("read_specification", "Invalid GPU readback target"));
+        }
+        let alpha = match alpha.as_mut() { Some(values) => Some(values.as_slice_mut()?), None => None };
+        self.read_image_into(py, image, left, top, width, height, into.as_slice_mut()?, alpha, cancelled)
     }
 
     #[cfg(windows)]

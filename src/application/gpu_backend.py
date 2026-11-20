@@ -41,6 +41,24 @@ class _Frame:
     family: tuple = None
     results: WeakValueDictionary = field(default_factory=WeakValueDictionary)
     stable: list = field(default_factory=list)
+    masks: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class _MaskRows:
+    """分条时一个蒙版的整幅权重，每 4 个像素存成一组，以及已经写好的行段。"""
+    carrier: object
+    rows: tuple = ()
+
+
+def _merged(rows, span):
+    result = []
+    for first, last in sorted((*rows, span)):
+        if result and first <= result[-1][1]:
+            result[-1] = result[-1][0], max(result[-1][1], last)
+        else:
+            result.append((first, last))
+    return tuple(result)
 
 
 @dataclass(frozen=True)
@@ -206,6 +224,9 @@ class GpuBackend:
         return self._geometry_ready and capable(implementation, settings)
 
     def execute_tool(self, reference, source, settings, upstream_identity, cancelled, assets=None, context=None):
+        from .gpu_strips import is_strip
+        if is_strip(source):
+            return source.gpu_image.service.extend(source, reference, settings, assets, cancelled)
         if self.routes.supported(reference):
             return self.routes.execute(reference, source, settings, context, cancelled)
         if reference.tool_id == "color_adjust":
@@ -349,9 +370,11 @@ class GpuBackend:
             available = candidate["process_budget"] or candidate["dedicated_bytes"]
             if not available:
                 raise GpuExecutionError("budget_unavailable", "GPU process budget is unavailable")
-            capacity = (min(profile.memory_bytes // 4, self.resources.policy.memory_bytes)
-                        if candidate["kind"] == "IntegratedGpu" else candidate["dedicated_bytes"] or available)
-            limit = min(capacity * 3 // 4, 8 * 1024 ** 3)
+            # 跟着这张卡走：独显按显存的 4/5，核显按内存设置的 3/4；实际还受系统给本进程的显存预算限制
+            if candidate["kind"] == "IntegratedGpu":
+                limit = min(profile.memory_bytes // 4, self.resources.policy.memory_bytes) * 3 // 4
+            else:
+                limit = (candidate["dedicated_bytes"] or available) * 4 // 5
             budget = min(limit, int(available * 0.75))
             with self.borrow(cancelled, priority=2), self.host_memory(384 * MIB, cancelled):
                 device = ops_accel.GpuDevice(candidate["index"], candidate["luid"], generation, budget)
@@ -466,7 +489,13 @@ class GpuBackend:
             family = self.family(path, workflow.workflow_hash(), spec)
             return self._status.identity if self._failed_reason(family) is None else CPU_BACKEND_IDENTITY
 
-    def select(self, source, graph, target, requirements, order=None, *, workflow_identity=None):
+    def _strips(self, source, graph, order, spec, reason, allowed):
+        from .gpu_strips import capable
+        if allowed and capable(source, graph, order, spec):
+            return self._status.identity, "gpu_strips"
+        return CPU_BACKEND_IDENTITY, reason
+
+    def select(self, source, graph, target, requirements, order=None, *, workflow_identity=None, strips=True):
         self.start()
         spec = display_target.get()
         with self._condition:
@@ -505,7 +534,7 @@ class GpuBackend:
                 output_size, largest = target_plan(source, graph, order, steps)
                 color_cost = workflow_cost(graph,largest)
             except ValueError:
-                return CPU_BACKEND_IDENTITY, "target_limit"
+                return self._strips(source, graph, order, spec, "target_limit", strips)
             final_w, final_h = output_size
             out_w, out_h = spec.size_for(final_w, final_h)
             from ..core.contracts.gpu import ImageOutputSpec
@@ -522,13 +551,16 @@ class GpuBackend:
                 self._lost()
                 return CPU_BACKEND_IDENTITY, "device_lost"
             estimate = status.gpu_ms * largest * max(1, len(requirements), color_cost/8, tool_cost) / 1600000
-            if (largest * 16 > min(info["max_binding_size"], info["max_buffer_size"])
-                    or not formal and ((final_w + out_w - 1) // out_w + 1) * ((final_h + out_h - 1) // out_h + 1) > 4096
+            if (not formal and ((final_w + out_w - 1) // out_w + 1) * ((final_h + out_h - 1) // out_h + 1) > 4096
                     or max(out_w, out_h) > 32768
                     or (out_w + 7) // 8 > info["max_workgroups"] or (out_h + 7) // 8 > info["max_workgroups"]):
                 return CPU_BACKEND_IDENTITY, "target_limit"
+            if largest * 16 > min(info["max_binding_size"], info["max_buffer_size"]):
+                return self._strips(source, graph, order, spec, "target_limit", strips)
             if status.tier == "B" and estimate > 500:
                 return CPU_BACKEND_IDENTITY, "submission_limit"
+            if peak > self._budget(info, info["process_usage"]):
+                return self._strips(source, graph, order, spec, "target_budget", strips)
             budget = self._budget(info)
             if peak > budget:
                 # 进程的显存占用里有一部分不在缓存账上：分配器申请的块里还空着的部分，新缓冲照样能用，按自己的算。
@@ -539,6 +571,9 @@ class GpuBackend:
                 self._device.trim()
                 budget = self._reserved_budget()
                 if peak > budget:
+                    selected = self._strips(source, graph, order, spec, "target_budget", strips)
+                    if selected[1] == "gpu_strips":
+                        return selected
                     with self._cache.lock:
                         partial = [key for key, value in self._cache.items()
                                    if getattr(value, "partial", False) and value.carrier.nbytes > RETAINED_BYTES]
@@ -594,6 +629,55 @@ class GpuBackend:
     def cached_source(self, metadata, context, cancelled):
         from .gpu_source_input import cached_source
         return cached_source(self, metadata, context, cancelled)
+
+    def prepare_strips(self, source_input, metadata, context, cancelled):
+        from .gpu_strips import prepare
+        return prepare(self, source_input, metadata, context, cancelled)
+
+    def cached_strips(self, metadata, context, cancelled):
+        from .gpu_strips import cached
+        return cached(self, metadata, context, cancelled)
+
+    @contextmanager
+    def strip_rows(self, top, size):
+        """这期间算的是整幅（size）里从 top 行起的一条：各步的结果按条区分，坐标按整幅算。"""
+        previous = getattr(self._local, "strip", None)
+        self._local.strip = top, tuple(size)
+        try:
+            yield
+        finally:
+            self._local.strip = previous
+
+    def strip_frame(self):
+        strip = getattr(self._local, "strip", None)
+        return None if strip is None else (*strip[1], 0, strip[0])
+
+    def keeps_masks(self, nbytes):
+        """分条时各蒙版的整幅权重合计 nbytes 字节，放得进显存缓存额度的一半时跨帧保留。"""
+        frame = getattr(self._local, "frame", None)
+        return frame is not None and nbytes <= self.settings.cache_bytes(frame.budget) // 2
+
+    def mask_rows(self, source, key, compute, cancelled):
+        """分条时一个蒙版这一条的权重。整幅一张跨帧保留，这一条的行算过就直接用，没算过就现算、写进去。
+        返回整幅那张，按整幅行号取用；这一帧提交成功后才记下新写好的行。"""
+        full_w, full_h, _, top = self.strip_frame()
+        count = source.pixels.shape[0]
+        width = -(-full_w // 4)
+        artifact = source.gpu_image
+        frame = self._local.frame
+        with self._hold(frame):
+            entry = frame.masks.get(key) or self._cache.recent(key)
+        if entry is None:
+            entry = _MaskRows(self._run(frame, lambda: frame.device.empty(width, full_h, cancelled)))
+        if not any(first <= top and top + count <= last for first, last in entry.rows):
+            weight = compute().gpu_image.resident.carrier
+            target = entry.carrier
+            self._run(frame, lambda: frame.device.color_op(frame.device.view(weight, 0, 0, width, count), weight, weight,
+                                                           weight, 22, [], [], cancelled, None, (target, top)))
+            entry = _MaskRows(target, _merged(entry.rows, (top, top + count)))
+        frame.masks[key] = entry
+        return GpuArtifact(GpuResident(entry.carrier, artifact.backend_identity, None, ("gpu.mask.rows", key)),
+                           self, artifact.family, artifact.source_path)
 
     @contextmanager
     def host_memory(self, size, cancelled):
@@ -879,7 +963,9 @@ class GpuBackend:
                 self._run(frame, lambda: self._share() or device.flush(cancelled))
                 for key, resident in frame.stable:
                     self._cache[key] = resident
-                if frame.stable:
+                for key, entry in frame.masks.items():
+                    self._cache[key] = entry
+                if frame.stable or frame.masks:
                     self._trim(budget)
         except BaseException:
             device.discard()
@@ -913,7 +999,7 @@ class GpuBackend:
             return entry.output
 
     def keep(self, slot, key, output, cancelled):
-        if output.gpu_image is None:
+        if output.gpu_image is None or output.gpu_image.resident.carrier is None:
             return
         with self.borrow(cancelled):
             if self._status.identity == output.backend_identity:
@@ -947,6 +1033,9 @@ class GpuBackend:
                                     input_identity=input_identity)
         frame.family = frame.family or artifact.family
         incoming = artifact.resident.identity if input_identity is None else input_identity
+        strip = getattr(self._local, "strip", None)
+        if strip is not None:
+            identity = identity, ("gpu.frame", *strip)
         key = artifact.source_path, name, incoming, identity, tuple(size)
         try:
             hash(key)

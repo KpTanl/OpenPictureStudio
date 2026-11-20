@@ -2,9 +2,9 @@ use super::*;
 use numpy::PyReadonlyArray1;
 
 impl State {
-    fn source_image(self: &Arc<Self>, io: &mut Io, data: &[u8], width: usize, height: usize, channels: usize,
-                    depth: usize, filtered: bool, big_endian: bool, lut: &[f32], output_width: usize,
-                    output_height: usize, matrix: &[f32], blocks: Option<&[u32]>, cancelled: Option<Py<PyAny>>) -> PyResult<GpuImage> {
+    /// 上传整数源，PNG 滤波的就地还原；返回的缓冲按行保存整数像素，每行前留一个滤波字节。
+    pub(super) fn source_bytes(self: &Arc<Self>, io: &mut Io, data: &[u8], width: usize, height: usize, channels: usize,
+                    depth: usize, filtered: bool, blocks: Option<&[u32]>, cancelled: Option<Py<PyAny>>) -> PyResult<Arc<Allocation>> {
         self.check()?;
         if !self.pipelines.contains_key("source_input") || filtered && !self.pipelines.contains_key("png_restore") {
             return Err(error("source_input_capability", "GPU source input kernel is unavailable"));
@@ -65,22 +65,37 @@ impl State {
                 }
             }
         }
-        let table = self.allocate((lut.len() * 4) as u64)?;
-        self.queue.write_buffer(table.buffer.as_ref().unwrap(), 0, bytemuck::cast_slice(lut));
+        Ok(input)
+    }
+
+    /// 把整数源的 [top, top+rows) 行转成浮点；output_width 小于宽度时横向缩小。
+    pub(super) fn source_rows(self: &Arc<Self>, io: &mut Io, input: &Allocation, width: usize, height: usize, channels: usize,
+                   depth: usize, filtered: bool, big_endian: bool, lut: &[f32], output_width: usize,
+                   top: usize, rows: usize, premultiply: bool, matrix: &[f32]) -> PyResult<GpuImage> {
+        let table = self.data("ops-source-lut", lut)?;
         self.uploaded.fetch_add((lut.len() * 4) as u64, Ordering::Relaxed);
-        let target = self.allocate((output_width * height * 16) as u64)?;
-        let resize = output_width != width || output_height != height;
+        let target = self.allocate((output_width * rows * 16) as u64)?;
         let mut params = [0u32; 24];
         params[..12].copy_from_slice(&[width as u32, height as u32, channels as u32, (depth / 8) as u32,
-            output_width as u32, height as u32, filtered as u32, big_endian as u32,
-            resize as u32, (!matrix.is_empty()) as u32, 0, 0]);
+            output_width as u32, rows as u32, filtered as u32, big_endian as u32,
+            premultiply as u32, (!matrix.is_empty()) as u32, top as u32, 0]);
         for (i, value) in matrix.iter().enumerate() { params[12 + i / 3 * 4 + i % 3] = value.to_bits(); }
         let uniform = self.uniform("ops-source-input", bytemuck::cast_slice(&params))?;
-        self.dispatch(self.encoder(io)?, "source_input", &[input.buffer.as_ref().unwrap(), table.buffer.as_ref().unwrap(),
-            target.buffer.as_ref().unwrap(), &uniform], ((output_width as u32).div_ceil(8), (height as u32).div_ceil(8)));
+        self.dispatch(self.encoder(io)?, "source_input", &[input.buffer.as_ref().unwrap(), &table,
+            target.buffer.as_ref().unwrap(), &uniform], ((output_width as u32).div_ceil(8), (rows as u32).div_ceil(8)));
         let ticket = self.ticket(io);
-        let mut image = GpuImage { storage: target, width: output_width, height, generation: self.generation,
-                                   ticket, stride: output_width, offset: 0 };
+        Ok(GpuImage { storage: target, width: output_width, height: rows, generation: self.generation,
+                      ticket, stride: output_width, offset: 0 })
+    }
+
+    fn source_image(self: &Arc<Self>, io: &mut Io, data: &[u8], width: usize, height: usize, channels: usize,
+                    depth: usize, filtered: bool, big_endian: bool, lut: &[f32], output_width: usize,
+                    output_height: usize, matrix: &[f32], blocks: Option<&[u32]>, cancelled: Option<Py<PyAny>>) -> PyResult<GpuImage> {
+        let clone_cancel = || cancelled.as_ref().map(|value| Python::with_gil(|py| value.clone_ref(py)));
+        let input = self.source_bytes(io, data, width, height, channels, depth, filtered, blocks, clone_cancel())?;
+        let resize = output_width != width || output_height != height;
+        let mut image = self.source_rows(io, &input, width, height, channels, depth, filtered, big_endian, lut,
+                                         output_width, 0, height, resize, matrix)?;
         if output_height != height {
             image = self.encode_image_op(io, &image, &image, 9, &[0.0, height as f32], output_width, output_height)?;
         }
@@ -89,7 +104,6 @@ impl State {
         }
         self.flush(io, clone_cancel())?;
         drop(input);
-        drop(table);
         Ok(image)
     }
 }

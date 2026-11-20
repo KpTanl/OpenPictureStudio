@@ -62,7 +62,7 @@ def target_plan(source, graph, order, steps=None):
         incoming_size = width, height
         if kind == "crop":
             width, height = rotated_size((width, height), params["rotation_angle"])
-            if width * height > 100_000_000 or max(width, height) > 32768:
+            if max(width, height) > 32768:
                 raise ValueError("GPU 旋转尺寸超限")
             largest = max(largest, width * height)
             left, top, right, bottom = crop_box(params["crop_rect"], (width, height))
@@ -81,11 +81,11 @@ def target_plan(source, graph, order, steps=None):
             largest = max(largest, photo_size[0]*photo_size[1])
             width, height = SHEET_SIZE if params["layout"] == LAYOUT_SHEET else photo_size
             largest = max(largest, width*height)
-        if width * height > 100_000_000 or max(width, height) > 32768:
+        if max(width, height) > 32768:
             raise ValueError("GPU 几何尺寸超限")
         if steps is not None:
             steps[node.node_id] = incoming_size, (width, height)
-    if largest > 100_000_000 or max(source.pixels.shape[:2]) > 32768:
+    if max(source.pixels.shape[:2]) > 32768:
         raise ValueError("GPU 输入尺寸超限")
     return (width, height), largest
 

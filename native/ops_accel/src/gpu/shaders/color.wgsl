@@ -1,6 +1,6 @@
 struct Params {
     output:vec4<u32>, source:vec4<u32>, auxiliary:vec4<u32>, field:vec4<u32>, extra:vec4<u32>,
-    args:array<vec4<f32>,8>
+    args:array<vec4<f32>,8>, frame:vec4<u32>
 };
 @group(0) @binding(0) var<storage,read> source:array<vec4<f32>>;
 @group(0) @binding(1) var<storage,read> auxiliary:array<vec4<f32>>;
@@ -111,8 +111,8 @@ fn gamut(v:vec3<f32>)->vec3<f32> {
     return l+c*clamp(scale,0.0,1.0);
 }
 fn mask(q:vec2<u32>,kind:u32,legacy:bool)->f32 {
-    var uv=(vec2<f32>(q)+0.5)*p.args[3].xy/vec2<f32>(p.output.xy);
-    if legacy { uv=vec2<f32>(q)/max(vec2<f32>(p.output.xy)-1.0,vec2<f32>(1.0)); }
+    let at=q+p.frame.zw; var uv=(vec2<f32>(at)+0.5)*p.args[3].xy/vec2<f32>(p.frame.xy);
+    if legacy { uv=vec2<f32>(at)/max(vec2<f32>(p.frame.xy)-1.0,vec2<f32>(1.0)); }
     let g=p.args[0]; let v=p.args[1];
     if kind==0u {
         let d=g.zw-g.xy; let length=dot(d,d); if length<0.00000001 { return 1.0; }
@@ -171,13 +171,19 @@ fn main(@builtin(global_invocation_id) id:vec3<u32>) {
             out=vec4<f32>(v,pixel.a);
         }
         case 9u: { out=p.args[0]; }
-        case 10u: { out=pixel+aux.x*p.args[0]; }
+        case 10u: {
+            var base=pixel; if p.args[2].x!=0.0 { base=p.args[1]; }
+            var weight=aux.x;
+            if p.args[2].z!=0.0 { let r=q+p.frame.zw; weight=auxiliary[at(vec2<u32>(r.x/4u,r.y),p.auxiliary)][r.x%4u]; }
+            out=base+weight*p.args[0];
+            if p.args[2].y!=0.0 { out=clamp(out,p.args[3],p.args[4]); }
+        }
         case 11u: { out=clamp(pixel,p.args[0],p.args[1]); }
         case 12u: { out=vec4<f32>(mask(q,u32(p.args[2].x),p.args[2].y!=0.0)); }
         case 13u: { out=vec4<f32>(0.0); }
         case 14u: { out=vec4<f32>(select(pixel.x*(1.0-aux.x),max(pixel.x,aux.x),p.args[0].x==0.0)); }
         case 15u: {
-            let uv=(vec2<f32>(q)+0.5)*p.args[0].xy/vec2<f32>(p.output.xy); let radius=p.args[0].z; var distance=3.4e38;
+            let uv=(vec2<f32>(q+p.frame.zw)+0.5)*p.args[0].xy/vec2<f32>(p.frame.xy); let radius=p.args[0].z; var distance=3.4e38;
             let count=u32(p.args[1].x); var previous=vec2<f32>(data[0],data[1]);
             for(var i=0u;i<count;i++) {
                 let current=vec2<f32>(data[i*2u],data[i*2u+1u]); let d=current-previous; let rel=uv-previous;
@@ -188,7 +194,7 @@ fn main(@builtin(global_invocation_id) id:vec3<u32>) {
             out=vec4<f32>(w*p.args[1].y);
         }
         case 16u: {
-            let uv=clamp((vec2<f32>(q)+0.5)*vec2<f32>(p.auxiliary.xy)/vec2<f32>(p.output.xy)-0.5,vec2<f32>(0.0),vec2<f32>(p.auxiliary.xy)-1.0);
+            let uv=clamp((vec2<f32>(q+p.frame.zw)+0.5)*vec2<f32>(p.auxiliary.xy)/vec2<f32>(p.frame.xy)-0.5,vec2<f32>(0.0),vec2<f32>(p.auxiliary.xy)-1.0);
             let a=vec2<u32>(floor(uv)); let b=min(a+1u,p.auxiliary.xy-1u); let t=fract(uv);
             let top=auxiliary[at(a,p.auxiliary)].x*(1.0-t.x)+auxiliary[at(vec2<u32>(b.x,a.y),p.auxiliary)].x*t.x;
             let bottom=auxiliary[at(vec2<u32>(a.x,b.y),p.auxiliary)].x*(1.0-t.x)+auxiliary[at(b,p.auxiliary)].x*t.x;
@@ -198,7 +204,12 @@ fn main(@builtin(global_invocation_id) id:vec3<u32>) {
         case 18u: { out=vec4<f32>(lum(pixel.rgb)+(pixel.rgb-lum(pixel.rgb))*field.z,pixel.a); }
         case 19u: { out=vec4<f32>((1.0-field.x)*pixel.rgb+field.x*aux.rgb,pixel.a); }
         case 21u: { out=vec4<f32>(pixel.bgr,pixel.a); }
+        case 22u: {
+            let x=q.x*4u;
+            out=vec4<f32>(auxiliary[at(vec2<u32>(x,q.y),p.auxiliary)].x,auxiliary[at(vec2<u32>(x+1u,q.y),p.auxiliary)].x,
+                          auxiliary[at(vec2<u32>(x+2u,q.y),p.auxiliary)].x,auxiliary[at(vec2<u32>(x+3u,q.y),p.auxiliary)].x);
+        }
         default: { out=vec4<f32>(decode(clamp(pixel.rgb,vec3<f32>(0.0),vec3<f32>(1.0))),pixel.a); }
     }
-    result[q.y*p.output.x+q.x]=out;
+    result[(q.y+p.output.w)*p.output.x+q.x]=out;
 }

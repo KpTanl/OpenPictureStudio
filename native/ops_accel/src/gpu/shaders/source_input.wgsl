@@ -37,8 +37,9 @@ fn lanczos(v: f32) -> f32 {
 }
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-    if id.x >= p.output.x || id.y >= p.image.y { return; }
-    var value = pixel(id.x, id.y);
+    if id.x >= p.output.x || id.y >= p.output.y { return; }
+    let row = id.y + p.options.z;
+    var value = pixel(id.x, row);
     if p.output.x != p.image.x {
         let scale = f32(p.image.x) / f32(p.output.x);
         let center = (f32(id.x) + 0.5) * scale;
@@ -50,7 +51,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         for (var x = first; x < last; x++) {
             let weight = lanczos((f32(x) - center + 0.5) / support);
             mass += weight;
-            sum += pixel(u32(x), id.y) * weight;
+            sum += pixel(u32(x), row) * weight;
         }
         value = sum / mass;
     }

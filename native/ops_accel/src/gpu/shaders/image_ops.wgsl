@@ -119,9 +119,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             for(var c=0u;c<4u;c++) { let k=c*size+index; value[c]=source[k/4u][k%4u]; }
         }
         case 12u: {
-            let q=vec2<f32>(id.xy); var inside=all(q>=p.v0.xy)&&all(q<=p.v0.zw)&&all(q>=p.v1.xy)&&all(q<=p.v1.zw);
+            let q=vec2<f32>(id.xy)+vec2<f32>(0.0,p.v2.y); var inside=all(q>=p.v0.xy)&&all(q<=p.v0.zw)&&all(q>=p.v1.xy)&&all(q<=p.v1.zw);
             if inside && p.v2.x>0.0 {
-                let row=auxiliary[p.b.w+(id.y-u32(p.v0.y))*p.b.z];
+                let row=auxiliary[p.b.w+(u32(q.y)-u32(p.v0.y))*p.b.z];
                 inside=q.x>=p.v0.x+row.x&&q.x<=p.v0.x+row.y;
             }
             value=vec4<f32>(max(value.x,select(0.0,255.0,inside)));

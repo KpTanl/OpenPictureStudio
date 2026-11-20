@@ -2128,6 +2128,7 @@ def save_render_source(
     *,
     ext: str | None = None,
     quality: int = 95,
+    threads: int = 1,
 ) -> None:
     """将 RenderSource 保存到指定路径。
     若目标为 .tif / .tiff：以标准 16-bit uint16 TIFF 保存（经过 sRGB OETF 传递函数）；
@@ -2145,10 +2146,10 @@ def save_render_source(
         write_tiff(src, target_path)
         return
 
-    encode_render_source(src, target_path, ext=ext, quality=quality)
+    encode_render_source(src, target_path, ext=ext, quality=quality, threads=threads)
 
 
-def encode_render_source(src: RenderSource, target, *, ext: str, quality: int = 95) -> None:
+def encode_render_source(src: RenderSource, target, *, ext: str, quality: int = 95, threads: int = 1) -> None:
     """将线性源图编码为 8 位图像，target 可为路径或二进制流。"""
 
     ext = ext.lower()
@@ -2158,7 +2159,11 @@ def encode_render_source(src: RenderSource, target, *, ext: str, quality: int = 
         from dataclasses import replace
         src = src.materialize()
         src = replace(src, pixels=src.pixels * src.alpha[..., None] + (1 - src.alpha[..., None]), alpha=None)
-    with _pil_from(src) as pil_img:
+    if ext == ".png" and _HAS_RUST_ACCEL and hasattr(ops_accel, "png_filter_rows"):
+        from .png_writer import write_png
+        write_png(display_rgba8(src, parallelism=threads), target, channels=3 if src.alpha is None else 4, threads=threads)
+        return
+    with _pil_from(src, parallelism=threads) as pil_img:
         if ext in (".jpg", ".jpeg", ".webp"):
             pil_img.save(target, format=formats.get(ext), quality=quality)
         else:

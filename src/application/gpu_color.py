@@ -68,6 +68,36 @@ def working_memory(graph, steps):
     return peak
 
 
+def _parameters(settings, version):
+    from ..core.local_color import effective_globals
+    params, masks = dict(settings), ()
+    if version in (3, 4):
+        masks = prepare_components(settings.get("masks")) if version == 4 else prepare_masks(settings.get("masks"))
+    if masks:
+        params = effective_globals(params)
+    else:
+        import ops_accel
+        for key in ("temperature", "tint", "highlights", "shadows", "blacks", "whites", "vibrance"):
+            params[key] = params.get(key, 0) if type(params.get(key, 0)) is int else 0
+        params["texture"], params["clarity"], params["dehaze"] = ops_accel.color_detail_parameters(params)
+        ev = max(-5, min(5, float(params.get("exposure", 0)))) if version == 1 else float(params.get("exposure", 0))
+        brightness = float(params.get("brightness", 1))
+        if brightness > 0 and brightness != 1:
+            ev += math.log2(brightness)
+        params["exposure"] = max(-10, min(10, ev))
+    return params, masks
+
+
+def strip_capable(settings):
+    """逐点的调色才能分条算；阴影、高光、纹理、清晰度、去雾要看整幅的低频。"""
+    _, version = color_identity(settings)
+    params, masks = _parameters(settings, version)
+    if GpuColor.active(params, masks, ("shadows", "highlights", "texture", "clarity", "dehaze")):
+        return False
+    return version not in (1, 2) or not any(int(mask["params"].get("shadows", 0)) or int(mask["params"].get("highlights", 0))
+        for mask in settings.get("masks") or () if mask.get("enabled", True) and mask.get("params"))
+
+
 @lru_cache(maxsize=2)
 def _transfer(inverse):
     import ops_accel
@@ -77,6 +107,7 @@ def _transfer(inverse):
 class GpuColor:
     def __init__(self, backend, assets=None):
         self.backend, self.assets = backend, assets
+        self._weights, self._keep = {}, False
 
     def stage(self, source, name, mode, cancelled, *, args=(), data=(), auxiliary=None, field=None, extra=None,
               source_dependent=True):
@@ -88,9 +119,10 @@ class GpuColor:
         identity = (mode, tuple(args), data,
                     *(item.resident.identity if value is not None else () for item, value in zip(others, supplied)))
         size = source.pixels.shape[1], source.pixels.shape[0]
+        frame = self.backend.strip_frame()
         result = self.backend.operate(artifact, "color." + name, identity, size, lambda device, abort:
             device.color_op(artifact.resident.carrier, *(item.resident.carrier for item in others),
-                            mode, list(args), list(data), abort), cancelled,
+                            mode, list(args), list(data), abort, frame), cancelled,
             input_identity=None if source_dependent else ())
         return GpuGeometry.updated(source, result)
 
@@ -141,10 +173,34 @@ class GpuColor:
                                 args=(int(component["op"] == "subtract"),))
         return result
 
+    def mask_weight(self, source, mask, cancelled):
+        """一个蒙版的权重，同一次调色里各组参数共用。分条时整幅一张跨帧保留，这时每 4 个像素存成一组。
+        返回权重和是否这样存。"""
+        held = self._weights.get(id(mask))
+        if held is None or held[0] is not mask:
+            def compute():
+                return self.composite(source, mask, cancelled) if mask.kind == 2 else self.weight(source, mask, cancelled)
+            frame = self.backend.strip_frame()
+            if self._keep and frame is not None:
+                key = (source.source_path, "color.mask.rows", self.backend._stages.key("gpu.mask.rows", (
+                    mask.kind, getattr(mask, "geometry", None), getattr(mask, "components", None),
+                    source.orig_size, frame[:2])), source.backend_identity)
+                held = mask, self.backend.mask_rows(source, key, compute, cancelled), True
+            else:
+                held = mask, compute(), False
+            self._weights[id(mask)] = held
+        return held[1:]
+
     def fields(self, source, params, masks, keys, cancelled):
-        defaults = tuple(float(params.get(key, 1 if key in ("contrast", "saturation") else 0)) for key in keys)
-        defaults += (0,) * (4-len(defaults))
-        if not masks:
+        pad = (0,) * (4-len(keys))
+        defaults = tuple(float(params.get(key, 1 if key in ("contrast", "saturation") else 0)) for key in keys) + pad
+        lows, highs = (tuple(values) + pad for values in zip(*(EFFECTIVE_RANGES[key] for key in keys))) if masks else ((), ())
+        deltas = [delta for delta in (tuple(mask.delta[LOCAL_KEYS.index(key)] for key in keys) + pad for mask in masks)]
+        active = [(mask, delta) for mask, delta in zip(masks, deltas) if any(delta)]
+        if not active:
+            if masks:
+                defaults = tuple(float(min(max(float32(value), float32(low)), float32(high)))
+                                 for value, low, high in zip(defaults, lows, highs))
             artifact = source.gpu_image
             def constant(device, abort):
                 pixel = device.view(artifact.resident.carrier, 0, 0, 1, 1)
@@ -152,16 +208,14 @@ class GpuColor:
             result = self.backend.operate(artifact, "color.field.base", ("constant", defaults), (1, 1),
                 constant, cancelled, input_identity=())
             return GpuGeometry.updated(source, result)
-        result = self.stage(source, "field.base", 9, cancelled, args=defaults, source_dependent=False)
-        for mask in masks:
-            delta = tuple(mask.delta[LOCAL_KEYS.index(key)] for key in keys)
-            if any(delta):
-                weight = self.composite(source, mask, cancelled) if mask.kind == 2 else self.weight(source, mask, cancelled)
-                result = self.stage(result, "field.add", 10, cancelled, auxiliary=weight, args=(*delta, *((0,) * (4-len(delta)))))
-        if masks:
-            lows, highs = zip(*(EFFECTIVE_RANGES[key] for key in keys))
-            result = self.stage(result, "field.clamp", 11, cancelled,
-                args=(*lows, *((0,) * (4-len(keys))), *highs, *((0,) * (4-len(keys)))))
+        result = source
+        for index, (mask, delta) in enumerate(active):
+            last = index == len(active) - 1
+            weight, packed = self.mask_weight(source, mask, cancelled)
+            result = self.stage(result, "field.add", 10, cancelled, auxiliary=weight,
+                args=(*delta, *defaults, int(index == 0), int(last), int(packed), 0,
+                      *(lows if last else (0,) * 4), *(highs if last else (0,) * 4)),
+                source_dependent=index > 0)
         return result
 
     def filtered(self, source, radius, eps, subsample, cancelled):
@@ -217,27 +271,14 @@ class GpuColor:
                         reference.implementation_version), settings) or source.gpu_image is None:
             raise GpuExecutionError("chain_capability_missing", "GPU color implementation is unavailable")
         from ..core.photo_engine import curve_lut
-        from ..core.local_color import effective_globals
         from ..core.mixer_sampling import MIXER_CHANNELS, MIXER_CENTERS, MIXER_WIDTHS
         look, version = color_identity(settings)
         stages = look_stages(look, source.color_pipeline)
         if not stages and is_color_neutral(settings, include_look=False):
             return source
-        params, masks = dict(settings), ()
-        if version in (3, 4):
-            masks = prepare_components(settings.get("masks")) if version == 4 else prepare_masks(settings.get("masks"))
-        if masks:
-            params = effective_globals(params)
-        else:
-            import ops_accel
-            for key in ("temperature", "tint", "highlights", "shadows", "blacks", "whites", "vibrance"):
-                params[key] = params.get(key, 0) if type(params.get(key, 0)) is int else 0
-            params["texture"], params["clarity"], params["dehaze"] = ops_accel.color_detail_parameters(params)
-            ev = max(-5, min(5, float(params.get("exposure", 0)))) if version == 1 else float(params.get("exposure", 0))
-            brightness = float(params.get("brightness", 1))
-            if brightness > 0 and brightness != 1:
-                ev += math.log2(brightness)
-            params["exposure"] = max(-10, min(10, ev))
+        params, masks = _parameters(settings, version)
+        frame = self.backend.strip_frame()
+        self._keep = bool(masks) and frame is not None and self.backend.keeps_masks(len(masks) * -(-frame[0] // 4) * 16 * frame[1])
         initial = self.fields(source, params, masks, ("temperature", "tint", "exposure"), cancelled)
         result = self.stage(source, "initialize", 0, cancelled, args=(1 if version == 1 else 2,), data=_transfer(False), field=initial)
         for stage in stages:

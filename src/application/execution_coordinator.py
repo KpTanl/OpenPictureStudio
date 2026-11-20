@@ -153,7 +153,7 @@ class ExecutionCoordinator:
                          context.request_id, context.engine, context.attempt, cancelled(),
                          (monotonic() - started) * 1000)
 
-    def _plan(self, source, graph, registry, target, requirements, order, force_cpu, output_boundary=True):
+    def _plan(self, source, graph, registry, target, requirements, order, force_cpu, output_boundary=True, strips=True):
         from ..core.contracts.source import PixelSpecification
         from ..core.contracts.workflow import WorkflowGraph
         from ..core.contracts.gpu import display_target, ImageOutputSpec
@@ -174,7 +174,7 @@ class ExecutionCoordinator:
             backend, reason = ((CPU_BACKEND_IDENTITY, "cpu_required") if force_cpu else
                 self.gpu.select(incoming, segment, replace(target, size=incoming.pixels.shape[1::-1]),
                     (item,) if item is not None else (), (node_id,),
-                    workflow_identity=graph.workflow_hash()))
+                    workflow_identity=graph.workflow_hash(), strips=strips))
             if item is None:
                 backend, reason = CPU_BACKEND_IDENTITY, "capability_missing"
             preparation = (CPU_BACKEND_IDENTITY if item is not None and
@@ -193,7 +193,7 @@ class ExecutionCoordinator:
                 prefix_requirements = tuple(item for item in requirements if item.node_id in ids)
                 preparation_stages = self._plan(full, prefix_graph, registry,
                     replace(target, size=(width, height), proxy=False), prefix_requirements,
-                    tuple(part.node_id for part in prefix_graph.nodes), force_cpu, False)
+                    tuple(part.node_id for part in prefix_graph.nodes), force_cpu, False, strips)
             stages.append(ExecutionStage(node_id, backend, reason, preparation, preparation_stages))
             previous = backend
             spec = registry.get(node.node_type, node.version)
@@ -209,10 +209,19 @@ class ExecutionCoordinator:
             (previous, "passthrough") if not output_gpu else
             self.gpu.select(incoming, WorkflowGraph(nodes=(), edges=()),
                 replace(target, size=incoming.pixels.shape[1::-1]), (), (),
-                workflow_identity=graph.workflow_hash()))
+                workflow_identity=graph.workflow_hash(), strips=strips))
         stages.append(ExecutionStage(None, backend, reason))
         first = next((stage for stage in stages if stage.reason != "passthrough"), stages[-1])
-        if not force_cpu and first.backend_identity[0] == "gpu" and self.gpu.source_capable(source):
+        adapter = not force_cpu and first.backend_identity[0] == "gpu" and self.gpu.source_capable(source)
+        if any(stage.reason == "gpu_strips" for stage in stages):
+            # 分条从常驻的整数源逐条转出，整条链都得在 GPU 上逐条算
+            from .gpu_strips import capable, source_capable
+            if not (all(stage.backend_identity[0] == "gpu" for stage in stages if stage.reason != "passthrough")
+                    and capable(source, graph, order, spec) and source_capable(self.gpu, source)):
+                return self._plan(source, graph, registry, target, requirements, order, force_cpu, output_boundary,
+                                  strips=False)
+            adapter = True
+        if adapter:
             stages[0] = replace(stages[0], input_adapter=source.input_spec)
             for index, stage in enumerate(stages):
                 if stage.node_id is None or graph.node(stage.node_id).node_type not in ("source", "export"):
@@ -228,13 +237,14 @@ class ExecutionCoordinator:
             first = next(stage for stage in context.stages if stage.backend_identity[0] == "gpu")
             active = replace(context, engine=first.backend_identity[0], backend_revision=first.backend_identity[1],
                 device=first.backend_identity[2], stage_id="source.input", is_cancelled=cancelled)
-            cached = self.gpu.cached_source(source.metadata, active, cancelled)
+            strips = any(stage.reason == "gpu_strips" for stage in context.stages)
+            cached = (self.gpu.cached_strips if strips else self.gpu.cached_source)(source.metadata, active, cancelled)
             if cached is not None:
                 return cached
             def prepare(source_input, metadata, abort):
                 token = current_execution.set(active)
                 try:
-                    return self.gpu.prepare_source(source_input, metadata, active, abort)
+                    return (self.gpu.prepare_strips if strips else self.gpu.prepare_source)(source_input, metadata, active, abort)
                 finally:
                     current_execution.reset(token)
             with self.preparation(cancelled):
@@ -284,7 +294,8 @@ class ExecutionCoordinator:
                                 (requirement,) if requirement is not None else (),
                                 tuple(node.node_id for node in graph.nodes),
                                 workflow_identity=context.workflow_identity)
-                            if selected != stage.backend_identity:
+                            from .gpu_strips import is_strip
+                            if selected != stage.backend_identity or reason == "gpu_strips" and not is_strip(source):
                                 from ..core.contracts.gpu import GpuExecutionError
                                 raise GpuExecutionError(reason, "GPU stage admission changed")
                         transfers.enter_context(self.gpu.frame(stage.backend_identity, cancelled))

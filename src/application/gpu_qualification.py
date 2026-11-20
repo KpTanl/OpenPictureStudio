@@ -26,6 +26,10 @@ class _Qualification:
     def resolve(artifact, cancelled):
         return artifact
 
+    @staticmethod
+    def strip_frame():
+        return None
+
 
 def qualify_color(device, compute, cancelled):
     from uuid import UUID

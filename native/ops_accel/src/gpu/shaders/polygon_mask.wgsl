@@ -1,4 +1,4 @@
-struct Params { w:u32,h:u32,count:u32,subtract:u32 };
+struct Params { w:u32,h:u32,count:u32,subtract:u32,top:u32,pad0:u32,pad1:u32,pad2:u32 };
 @group(0) @binding(0) var<storage,read> source:array<vec4<f32>>;
 @group(0) @binding(1) var<storage,read> edges:array<vec4<f32>>;
 @group(0) @binding(2) var<storage,read_write> result:array<vec4<f32>>;
@@ -7,7 +7,7 @@ fn intersection(e:vec4<f32>,y:f32)->f32 { return (y-e.y)*((e.z-e.x)/(e.w-e.y))+e
 fn away(x:f32)->f32 { return sign(x)*floor(abs(x)+0.5); }
 @compute @workgroup_size(8)
 fn main(@builtin(global_invocation_id) id:vec3<u32>) {
-    let row=id.x; if row>=p.h { return; } let y=f32(row);
+    let row=id.x; if row>=p.h { return; } let y=f32(row+p.top);
     var hits:array<f32,1024>; var count=0u; var ymax=0.0;
     for(var n=0u;n<p.count;n++) { ymax=max(ymax,max(edges[n].y,edges[n].w)); }
     for(var n=0u;n<p.count;n++) {

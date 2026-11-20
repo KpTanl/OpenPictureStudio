@@ -45,7 +45,7 @@ Si les bibliothèques ATL sont fournies séparément, définissez la variable d�
 
 ### Construire l’installateur
 
-Il faut Inno Setup, la chaîne d’outils Rust et toutes les dépendances (programme, IA, retouche de portrait et empaquetage). `requirements-build.lock.txt` fige les versions testées, et les versions de distribution s’installent avec lui ; `requirements-build.txt` en est la source. Avant la compilation, le script vérifie la version de Python, que les dépendances sont complètes et qu’il n’y a qu’une seule distribution d’OpenCV dans l’environnement.
+Il faut Inno Setup 6.7.1, la chaîne d’outils Rust et toutes les dépendances (programme, IA, retouche de portrait et empaquetage). `requirements-build.lock.txt` fige les versions testées, et les versions de distribution s’installent avec lui ; `requirements-build.txt` en est la source. Avant la compilation, le script vérifie la version de Python, que les dépendances sont complètes et qu’il n’y a qu’une seule distribution d’OpenCV dans l’environnement.
 
 ```powershell
 pip install -r requirements-build.lock.txt

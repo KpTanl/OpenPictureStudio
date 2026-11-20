@@ -142,8 +142,7 @@ jobs:
         working-directory: native/ops_accel
         run: cargo fetch --locked --target x86_64-pc-windows-msvc
       - name: Install Inno Setup
-        run: |
-          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup --no-progress -y }
+        run: choco install innosetup --version=6.7.1 --allow-downgrade --force --no-progress -y
       - name: Build installer
         run: ./build.ps1 -SkipNativeBuild
       - name: Verify installer checksum

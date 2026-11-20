@@ -45,7 +45,7 @@ If ATL build libraries are supplied separately, set the process environment vari
 
 ### Building the Installer
 
-You need Inno Setup, the Rust toolchain, and the full set of dependencies (app, AI, portrait retouching, and packaging). `requirements-build.lock.txt` pins the tested versions and is what release builds install from. `requirements-build.txt` is its source. Before building, the script checks the Python version, whether the dependencies are complete, and that the environment has only one OpenCV distribution.
+You need Inno Setup 6.7.1, the Rust toolchain, and the full set of dependencies (app, AI, portrait retouching, and packaging). `requirements-build.lock.txt` pins the tested versions and is what release builds install from. `requirements-build.txt` is its source. Before building, the script checks the Python version, whether the dependencies are complete, and that the environment has only one OpenCV distribution.
 
 ```powershell
 pip install -r requirements-build.lock.txt

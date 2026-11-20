@@ -8,6 +8,10 @@
 ;       /DAppVersion=0.17.0 /DRepoRoot="C:\src\OpenPictureStudio" ^
 ;       packaging\OpenPictureStudio.iss
 
+#if Ver != EncodeVer(6,7,1)
+  #error Inno Setup 6.7.1 is required
+#endif
+
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
@@ -44,7 +48,10 @@ DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 DisableDirPage=auto
-AppMutex=Global\OpenPictureStudioApp
+AlwaysShowDirOnReadyPage=yes
+ShowLanguageDialog=yes
+UsePreviousLanguage=yes
+LanguageDetectionMethod=uilanguage
 SetupMutex=Global\OpenPictureStudioMaintenance
 CloseApplications=no
 RestartApplications=no
@@ -64,22 +71,39 @@ ArchitecturesAllowed=x64compatible
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"
+Name: "zh_CN"; MessagesFile: "{#SourcePath}languages\ChineseSimplified.isl"
+Name: "fr"; MessagesFile: "compiler:Languages\French.isl"
+
+#include "installer-messages.iss"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
+[Dirs]
+; upgrade.iss creates {app} before Setup reaches it, so Setup would otherwise leave the empty folder behind.
+Name: "{app}"; Flags: uninsalwaysuninstall
+
 [Files]
-; Whole PyInstaller onedir output (exe + _internal + bundled resources).
-Source: "dist\OpenPictureStudio\*"; DestDir: "{app}"; Excludes: "install-manifest.txt"; Flags: ignoreversion recursesubdirs createallsubdirs
+; The manifest stays first: extracting from a solid archive decompresses everything stored before the file.
 Source: "dist\OpenPictureStudio\install-manifest.txt"; Flags: dontcopy
+; Whole PyInstaller onedir output (exe + _internal + bundled resources). Empty folders stay out of {app}: the
+; manifest lists only files, so the next upgrade would reject them as unknown directories.
+Source: "dist\OpenPictureStudio\*"; DestDir: "{app}"; Excludes: "install-manifest.txt"; Flags: ignoreversion recursesubdirs; Check: ShouldInstallFile
+
+[InstallDelete]
+; The uninstall shortcut is named in the installer's language, and Setup never removes a renamed entry.
+Type: files; Name: "{group}\Uninstall {#AppName}.lnk"
+Type: files; Name: "{group}\卸载 {#AppName}.lnk"
+Type: files; Name: "{group}\Désinstaller {#AppName}.lnk"
 
 [Icons]
 Name: "{group}\{#AppName}";              Filename: "{app}\{#AppExeName}"
-Name: "{group}\Uninstall {#AppName}";   Filename: "{uninstallexe}"
+Name: "{group}\{cm:UninstallProgram,{#AppName}}";   Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}";       Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 [UninstallDelete]
 Type: files; Name: "{app}\install-manifest.txt"
 
 [Code]
+#include "running-applications.iss"
 #include "upgrade.iss"

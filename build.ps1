@@ -67,7 +67,7 @@ $IsccCandidates = @(
 )
 $Iscc = $IsccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $Iscc) {
-    throw "Inno Setup (ISCC.exe) not found. Install: winget install JRSoftware.InnoSetup"
+    throw "Inno Setup (ISCC.exe) not found. Install version 6.7.1: winget install JRSoftware.InnoSetup --version 6.7.1"
 }
 Write-Host "Inno Setup: $Iscc"
 

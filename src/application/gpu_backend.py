@@ -842,6 +842,10 @@ class GpuBackend:
                 pressure = isinstance(reason, MemoryError) or bool(reason.args and reason.args[0] == "memory_pressure")
                 if attempt or not pressure:
                     raise
+                info = self._device.info()
+                logger.debug("GPU 显存不足，清空驻留缓存后重试 cache_bytes=%s allocated_bytes=%s process_usage=%s "
+                             "process_budget=%s", self._cache.nbytes, info["allocated_bytes"], info["process_usage"],
+                             info["process_budget"])
                 self._cache.clear()
                 self._device.flush()
                 self._device.trim()
@@ -1181,10 +1185,14 @@ class GpuBackend:
         limit = self.settings.cache_bytes(budget)
         with self._cache.lock:
             if self._cache.nbytes > limit:
+                count, nbytes = len(self._cache), self._cache.nbytes
                 for key in [key for key in self._cache if key[0] not in self._window] + list(self._cache):
                     if self._cache.nbytes <= limit:
                         break
                     self._cache.pop(key)
+                if limit < self.settings.cache_bytes(self._status.budget_bytes):
+                    logger.debug("GPU 显存余量不足，驻留缓存缩小 limit_bytes=%s budget_bytes=%s entries=%s freed_bytes=%s",
+                                 limit, budget, count - len(self._cache), nbytes - self._cache.nbytes)
         if path is not None and self._window and path not in self._window:
             return False
         return limit > 0

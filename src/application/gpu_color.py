@@ -285,7 +285,6 @@ class GpuColor:
             result = self.stage(result, "look", 1, cancelled, args=(len(stage.tone_lut), len(stage.hue_sat), stage.tone_strength, stage.sat_strength),
                                 data=(*stage.tone_lut, *stage.hue_sat))
         result = self.tone(result, params, masks, cancelled)
-        fields = self.fields(source, params, masks, ("contrast", "vibrance", "saturation"), cancelled)
         offsets, lengths, curves = [], [], []
         for key in ("rgb", "r", "g", "b"):
             points = (params.get("curves") or {}).get(key)
@@ -293,12 +292,18 @@ class GpuColor:
             offsets.append(len(curves))
             lengths.append(len(values))
             curves.extend(values)
-        result = self.stage(result, "curves", 2, cancelled, args=(*offsets, *lengths), data=curves, field=fields)
         mixer = params.get("color_mixer") or {}
         channels = [key for key in MIXER_CHANNELS if any(mixer.get(key, {}).get(part, 0) for part in ("hue", "sat", "lum"))]
         data = [value for key in channels for value in (MIXER_CENTERS[key], MIXER_WIDTHS[key],
             *(mixer[key].get(part, 0) for part in ("hue", "sat", "lum")))]
-        result = self.stage(result, "mixer", 3, cancelled, args=(len(channels),), data=data, field=fields)
+        shaped = any(lengths) or self.active(params, masks, ("contrast",))
+        mixed = bool(channels) or self.active(params, masks, ("vibrance", "saturation"))
+        if shaped or mixed:
+            fields = self.fields(source, params, masks, ("contrast", "vibrance", "saturation"), cancelled)
+            if shaped:
+                result = self.stage(result, "curves", 2, cancelled, args=(*offsets, *lengths), data=curves, field=fields)
+            if mixed:
+                result = self.stage(result, "mixer", 3, cancelled, args=(len(channels),), data=data, field=fields)
         result = self.details(result, params, masks, cancelled)
         result = self.stage(result, "finish", 4, cancelled, data=_transfer(True))
         if version in (1, 2):

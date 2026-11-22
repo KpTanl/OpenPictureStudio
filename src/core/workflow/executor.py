@@ -151,6 +151,8 @@ class WorkflowExecutor:
             root_identity = value.gpu_image.resident.identity
         dependencies = tuple((requirements.get(identity), stages[identity].identity)
                              for identity in order) if execution else ()
+        # 分条请求的节点结果是逐条的计划，不能取用整幅算出的检查点，反之亦然
+        strips = execution is not None and any(stage.reason == "gpu_strips" for stage in execution.stages)
 
         def evaluate(position, cancelled):
             if cancelled():
@@ -163,7 +165,7 @@ class WorkflowExecutor:
             spec = self.registry.get(node.node_type, node.version)
             prefix = prefixes[position - 1] if position else ""
             stage = stages.get(node.node_id)
-            key = (self.coordinator.results.key("checkpoint", (origin, root_identity, execution.target,
+            key = (self.coordinator.results.key("checkpoint", (origin, root_identity, execution.target, strips,
                 dependencies[:position + 1], prefixes[position])) if execution else ())
             def load(abandoned):
                 incoming = evaluate(position - 1, abandoned)

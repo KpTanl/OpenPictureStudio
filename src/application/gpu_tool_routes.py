@@ -40,6 +40,8 @@ class _Route:
 
     @property
     def capable(self):
+        if self.reference.tool_id == "denoise" and not self.resources:
+            return self.neutral or self.reference.implementation_version == "3" and self.owner.backend._denoise_ready
         return self.neutral or self.reference.tool_id == "beauty" or self.required <= self.passed
 
     def face_session(self, cancelled):

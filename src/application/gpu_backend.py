@@ -42,6 +42,8 @@ class _Frame:
     results: WeakValueDictionary = field(default_factory=WeakValueDictionary)
     stable: list = field(default_factory=list)
     masks: dict = field(default_factory=dict)
+    # 只在这一帧里用的中间结果，帧结束就放掉，例如分条时的滤波系数、美颜结果、旋转前的行块
+    scratch: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -185,6 +187,8 @@ class GpuBackend:
         self._source_ready = frozenset()
         self._source_reasons = ()
         self._blocks_ready = False
+        self._denoise_ready = False
+        self._denoise_mismatch = False
         self._implementations = frozenset((("source", "1"), ("export", "1")))
         from .gpu_tool_routes import GpuToolRoutes
         self.routes = GpuToolRoutes(self)
@@ -226,7 +230,7 @@ class GpuBackend:
     def execute_tool(self, reference, source, settings, upstream_identity, cancelled, assets=None, context=None):
         from .gpu_strips import is_strip
         if is_strip(source):
-            return source.gpu_image.service.extend(source, reference, settings, assets, cancelled)
+            return source.gpu_image.service.extend(source, reference, settings, assets, cancelled, context)
         if self.routes.supported(reference):
             return self.routes.execute(reference, source, settings, context, cancelled)
         if reference.tool_id == "color_adjust":
@@ -259,7 +263,8 @@ class GpuBackend:
             info = self._device.info() if self._device is not None else {}
             return {"backend_identity":self._status.identity,"geometry":self._geometry_ready,
                 "source_inputs": tuple(sorted(self._source_ready)), "source_reasons": self._source_reasons,
-                "source_blocks": self._blocks_ready,
+                "source_blocks": self._blocks_ready, "denoise": self._denoise_ready,
+                "denoise_mismatch": self._denoise_mismatch,
                 "color":self._color_ready,"face_analysis":tuple(identity for identity in self._face_qualifications
                     if self.face_capable(identity)), "tools": self.routes.pending(), "driver": info.get("driver", ""),
                 "kernels": {key: info.get(key) for key in ("shader_compiler", "compiler_reason", "kernel_compilation_ms",
@@ -324,6 +329,7 @@ class GpuBackend:
             self._source_ready = frozenset()
             self._source_reasons = ()
             self._blocks_ready = False
+            self._denoise_ready = False
             self._cache.clear()
             if self._closed:
                 state, reason = "disabled", "closed"
@@ -384,9 +390,10 @@ class GpuBackend:
                 key = qualification_key(candidate, device.info().get("shader_compiler", "fxc"))
                 stored = stored_qualification(key)
                 if stored is not None:
-                    qualification, source_ready = stored
+                    qualification, source_ready, denoise_ready = stored
                     geometry_ready = color_ready = blocks_ready = True
                     geometry_reason = color_reason = blocks_reason = ""
+                    denoise_reason = "" if denoise_ready else "stored_mismatch"
                     source_reasons = ()
                     logger.info("GPU 自检沿用上次的结果 driver=%s", candidate["driver"])
                 else:
@@ -397,18 +404,20 @@ class GpuBackend:
                     color_ready, color_reason = False, "device_qualification"
                     source_ready, source_reasons = frozenset(), ()
                     blocks_ready, blocks_reason = False, "device_qualification"
+                    denoise_ready, denoise_reason = False, "device_qualification"
                     if qualification["max_lsb"] <= 1:
-                        from .gpu_qualification import qualify_geometry, qualify_color
+                        from .gpu_qualification import qualify_geometry, qualify_color, qualify_denoise
                         geometry_ready, geometry_reason = self._qualify_tool(device,qualify_geometry,cancelled)
                         color_ready, color_reason = self._qualify_tool(device,qualify_color,cancelled)
                         from .gpu_source_input import qualify_source
                         source_ready, source_reasons = qualify_source(device, self.compute, cancelled)
                         from .gpu_source_input import qualify_blocks
                         blocks_ready, blocks_reason = self._qualify_tool(device, qualify_blocks, cancelled)
-                    # 只存全部通过的结果：有一项没过时下次照常自检
+                        denoise_ready, denoise_reason = self._qualify_tool(device, qualify_denoise, cancelled)
+                    # 只存全部通过的结果：有一项没过时下次照常自检。降噪与 CPU 不一致也存下，以后不再测
                     if (qualification["max_lsb"] <= 1 and geometry_ready and color_ready and blocks_ready
-                            and not source_reasons):
-                        store_qualification(key, qualification, source_ready)
+                            and not source_reasons and (denoise_ready or denoise_reason.startswith("denoise_numeric"))):
+                        store_qualification(key, qualification, source_ready, denoise_ready)
             if not qualification["max_lsb"] <= 1:
                 raise GpuExecutionError("self_check", "GPU qualification did not pass")
             device.trim()
@@ -420,6 +429,8 @@ class GpuBackend:
                 self._color_ready = color_ready
                 self._source_ready, self._source_reasons = source_ready, source_reasons
                 self._blocks_ready = blocks_ready
+                self._denoise_ready = denoise_ready
+                self._denoise_mismatch = stored is None and denoise_reason.startswith("denoise_numeric")
                 info = device.info()
                 compiler = info.get("shader_compiler", "fxc")
                 self._status = GpuStatus("ready", "A" if candidate["kind"] == "DiscreteGpu" else "B",
@@ -431,6 +442,7 @@ class GpuBackend:
                 logger.info("GPU 调色资格 ready=%s reason=%s", color_ready, color_reason)
                 logger.info("GPU 源输入资格 ready=%s reasons=%s", tuple(sorted(source_ready)), source_reasons)
                 logger.info("GPU 源分块资格 ready=%s reason=%s", blocks_ready, blocks_reason)
+                logger.info("GPU 降噪资格 ready=%s reason=%s", denoise_ready, denoise_reason)
                 logger.info("GPU 内核 compiler=%s compile_ms=%s first_submission_ms=%s fxc_ms=%s reason=%s",
                     compiler, info.get("kernel_compilation_ms"), info.get("kernel_first_submission_ms"),
                     info.get("fxc_compilation_ms"), info.get("compiler_reason"))
@@ -513,7 +525,8 @@ class GpuBackend:
             if not source.content_identity:
                 return CPU_BACKEND_IDENTITY, "content_identity_missing"
             from .gpu_geometry import IMPLEMENTATIONS, target_plan
-            from .gpu_color import IMPLEMENTATIONS as COLOR_IMPLEMENTATIONS, workflow_cost, working_memory
+            from .gpu_color import (IMPLEMENTATIONS as COLOR_IMPLEMENTATIONS, DEVICE_BLOCK_BYTES,
+                                    workflow_cost, working_memory)
             registered = (self._implementations | (IMPLEMENTATIONS if self._geometry_ready else frozenset())
                           | (COLOR_IMPLEMENTATIONS if self._color_ready else frozenset()))
             if (source.patches or any("gpu" not in item.engines or not (
@@ -545,7 +558,8 @@ class GpuBackend:
             peak = max(pixels * 32, largest * (96 if formal else 64), working_memory(graph, steps))
             peak += out_w * out_h * (32 if formal else 8)
             tool_peak, tool_cost = self.routes.estimate(requirements, graph, steps)
-            peak = max(peak, tool_peak)
+            # wgpu 建资源前要求预算里还容得下一整块（128 MiB）：最后一块可能只用上一点，按整块留
+            peak = max(peak, tool_peak) + DEVICE_BLOCK_BYTES
             info = self._device.info()
             if info["lost"]:
                 self._lost()
@@ -963,6 +977,8 @@ class GpuBackend:
         self._local.frame = frame
         try:
             yield frame
+            # 帧内结果先放掉：旋转行块的计算函数引用着这一帧，不清掉会成环，显存要等垃圾回收才还
+            frame.scratch.clear()
             with self._hold(frame):
                 self._run(frame, lambda: self._share() or device.flush(cancelled))
                 for key, resident in frame.stable:
@@ -972,6 +988,7 @@ class GpuBackend:
                 if frame.stable or frame.masks:
                     self._trim(budget)
         except BaseException:
+            frame.scratch.clear()
             device.discard()
             raise
         finally:
@@ -1154,6 +1171,9 @@ class GpuBackend:
     def resolve(self, artifact, cancelled, bounds=None):
         if not artifact.patches and bounds is None:
             return artifact
+        from .gpu_strips import StripPlan
+        if isinstance(artifact.service, StripPlan):
+            return artifact.service.resolve_region(artifact, bounds, cancelled)
         from ..core.photo_engine import RenderSource
         from ..core.contracts.gpu import DevicePixels
         from .gpu_geometry import GpuGeometry

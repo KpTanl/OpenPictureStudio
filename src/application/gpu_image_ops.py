@@ -30,7 +30,8 @@ class GpuImageOps:
 
     def view(self, image, bounds):
         image = self.artifact(image)
-        if image.patches:
+        from .gpu_strips import StripPlan
+        if image.patches or isinstance(image.service, StripPlan):
             return self.backend.resolve(image, self.cancelled, bounds)
         left, top, right, bottom = bounds
         return self.backend.operate(image, "image.view", tuple(bounds), (right-left, bottom-top),

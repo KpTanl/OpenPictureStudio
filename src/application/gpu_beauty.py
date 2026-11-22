@@ -276,12 +276,15 @@ class GpuBeauty:
         lab = ops.stage(candidate, 0)
         base = ops.guided(lab, ops.stage(lab, 40), max(1, round(.08*distance)), .04**2)
         result = ops.zero(candidate)
-        protected_candidate = ops.stage(candidate, 10, auxiliary=ops.channel(weights, 2))
+        protection, = self.retained("eye.protection", index, bounds, lambda: (ops.channel(weights, 2),))
+        protected_candidate = ops.stage(candidate, 10, auxiliary=protection)
         eyes = []
         for (upper, lower), (outer, inner) in zip(UNDER_EYE_CHAINS, ((33, 133), (263, 362))):
             arguments = (index, *size, outer, *bounds[:2], inner)
-            geometry = ops.stage(candidate, 21, auxiliary=snapshot.artifact, args=arguments,
-                                 data=(*upper, *lower), source_dependent=False)
+            # 眼下的几何场只取决于关键点和范围：按眼保留，不随每帧的候选图重算
+            geometry, = self.retained("eye.geometry", (index, outer), (bounds, arguments), lambda arguments=arguments: (
+                ops.stage(candidate, 21, auxiliary=snapshot.artifact, args=arguments, data=(*upper, *lower),
+                          source_dependent=False),), pixels=False)
 
             def measure(arguments=arguments):
                 control = ops.stage(candidate, 36, auxiliary=snapshot.artifact, size=(1, 1), args=arguments,
@@ -312,8 +315,11 @@ class GpuBeauty:
         image = ops.view(source, bounds)
         result = ops.zero(image)
         skipped = 0
-        if any(params[key] for key in ("sharpen", "teeth_whiten", "spot_remove")):
-            previous, skipped = self.independent(ops.view(source, regions.bounds), regions, params, index)
+        independent = tuple(params[key] for key in ("sharpen", "teeth_whiten", "spot_remove"))
+        if any(independent):
+            # 锐化、美白牙齿、祛斑不看皮肤和眼袋的滑块：按人脸保留，拖动磨皮、提亮、红润、去眼袋时不重算
+            previous, skipped = self.retained("independent", index, (regions.bounds, *independent),
+                lambda: self.independent(ops.view(source, regions.bounds), regions, params, index))
             result = ops.embed(result, previous, (regions.bounds[0]-bounds[0], regions.bounds[1]-bounds[1]))
         if any(params[key] for key in ("skin_smooth", "skin_brighten", "skin_rosy", "eye_bag_remove")):
             lab = ops.stage(image, 0)
@@ -335,13 +341,47 @@ class GpuBeauty:
         width, height = right-left, bottom-top
         ratio = min(1., 512/max(width, height))
         size = max(1, round(width*ratio)), max(1, round(height*ratio))
+        incoming_size = source.pixels.shape[1::-1]
+        image = source.gpu_image
+        from .gpu_strips import StripPlan
+        if isinstance(image.service, StripPlan):
+            image = self.backend.resolve(image, self.cancelled, (0, 0, 1, 1))
+            source = replace(source, gpu_image=image, patches=())
         field = ops.stage(source, 34, auxiliary=snapshot.artifact, size=size,
-            args=(index, *source.pixels.shape[1::-1], regions.distance, left, top, width, height,
+            args=(index, *incoming_size, regions.distance, left, top, width, height,
                   *(params[key]/100 for key in WARP_KEYS)), data=(*JAW[0], *JAW[1], *EYES[0], *EYES[1]),
             source_dependent=False)
         field = self.backend.operate(field, "beauty.field.resize", (width, height), (width, height),
             lambda device, abort: device.image_op(field.resident.carrier, field.resident.carrier, 7, [], width, height, abort), self.cancelled)
         return ops.stage(field, 6, auxiliary=regions.support)
+
+    @staticmethod
+    def groups(entries):
+        """影响范围（调色范围与形变范围合起来）相交的人脸并成一组，直到各组范围互不相交。
+        返回 [(范围, 组里的人脸), ...]，组和组里的人脸都按原来的顺序。"""
+        groups = []
+        for number, entry in enumerate(entries):
+            _, regions, color_bounds = entry
+            box = (min(color_bounds[0], regions.bounds[0]), min(color_bounds[1], regions.bounds[1]),
+                   max(color_bounds[2], regions.bounds[2]), max(color_bounds[3], regions.bounds[3]))
+            groups.append((box, [(number, entry)]))
+        merged = True
+        while merged:
+            merged = False
+            for i, (first, members) in enumerate(groups):
+                for j in range(i+1, len(groups)):
+                    second, others = groups[j]
+                    if first[0] < second[2] and second[0] < first[2] and first[1] < second[3] and second[1] < first[3]:
+                        box = (min(first[0], second[0]), min(first[1], second[1]),
+                               max(first[2], second[2]), max(first[3], second[3]))
+                        groups[i] = box, sorted(members+others, key=lambda item: item[0])
+                        del groups[j]
+                        merged = True
+                        break
+                if merged:
+                    break
+        groups.sort(key=lambda group: group[1][0][0])
+        return [(box, [entry for _, entry in members]) for box, members in groups]
 
     def execute(self, source, params, snapshot, *, node_id=""):
         if not any(value for key, value in params.items() if key not in BEAUTY_MODEL_FIELDS):
@@ -394,42 +434,51 @@ class GpuBeauty:
             if prod((bounds[2]-bounds[0], bounds[3]-bounds[1])) > 4_000_000:
                 raise GpuExecutionError("beauty_target_limit", "Face statistics target exceeds GPU submission limits")
             entries.append((index, regions, bounds))
-        bounds = (min(item[2][0] for item in entries), min(item[2][1] for item in entries),
-                  max(item[2][2] for item in entries), max(item[2][3] for item in entries))
-        left, top, right, bottom = bounds
-        composition = ops.view(source, bounds)
-        colors = ops.zero(composition) if has_color else None
+        groups = self.groups(entries)
         spots_skipped = 0
-        for index, regions, color_bounds in entries:
-            if has_color:
+        geometry = GpuGeometry(self.backend)
+        result = source
+        compositions = []
+        for bounds, members in groups:
+            left, top, right, bottom = bounds
+            composition = ops.view(source, bounds)
+            compositions.append(composition)
+            if not has_color:
+                continue
+            colors = ops.zero(composition)
+            for index, regions, color_bounds in members:
                 delta, missed = self.retained("color", index, (color_bounds, *(params[key] for key in COLOR_KEYS)),
                     lambda: self.color(source, snapshot, index, regions, color_bounds, params))
                 colors = ops.embed(colors, delta, (color_bounds[0]-left, color_bounds[1]-top), add=True)
                 spots_skipped += missed
-        result = source
-        geometry = GpuGeometry(self.backend)
-        if has_color:
             composed = ops.stage(composition, 12, auxiliary=colors, args=(1,))
             result = geometry.with_patch(result, composed, bounds, (composed.resident.identity,), has_alpha=False)
         if has_warp:
-            def displacement():
-                fields, weights = ops.zero(composition), ops.zero(composition)
-                for index, regions, _ in entries:
-                    offset = regions.bounds[0]-left, regions.bounds[1]-top
-                    fields = ops.embed(fields, self.warp(source, snapshot, index, regions, params), offset, add=True)
-                    weights = ops.embed(weights, regions.support, offset, add=True)
-                field = ops.stage(fields, 28, auxiliary=weights)
-                blocks = ceil((right-left)*(bottom-top)/1024)
-                extents = ops.stage(field, 38, size=(min(blocks, 32768), ceil(blocks/32768)), args=(left, top, *size))
-                extent = ops.stage(extents, 39, size=(1, 1), args=size)
-                return field, tuple(int(v) for v in ops.control(extent)[0, 0])
-            # 位移场和它的取样范围只取决于关键点与形变参数：拖动其他美颜滑块时沿用，不再重算、不再读回
-            field, sample_bounds = self.retained("warp", 0, (
-                bounds, tuple((index, regions.bounds) for index, regions, _ in entries),
-                *(params[key] for key in WARP_KEYS)), displacement, pixels=False)
-            image = self.backend.resolve(result.gpu_image, self.cancelled, sample_bounds)
-            warped = self.backend.operate(image, "beauty.remap", (field.resident.identity, bounds, sample_bounds), (right-left, bottom-top),
-                lambda device, abort: device.image_op(image.resident.carrier, field.resident.carrier, 15,
-                    [left, top, *sample_bounds[:2], *size], right-left, bottom-top, abort), self.cancelled)
-            result = geometry.with_patch(source, warped, bounds, (warped.resident.identity,), has_alpha=source.alpha is not None)
+            # 各组的形变都从加好各组调色补丁的那张图取样，与整组人脸一起算时逐位相同
+            colored, result = result, source
+            for number, ((bounds, members), composition) in enumerate(zip(groups, compositions)):
+                left, top, right, bottom = bounds
+                def displacement(members=members, composition=composition, left=left, top=top, right=right,
+                                 bottom=bottom):
+                    fields, weights = ops.zero(composition), ops.zero(composition)
+                    for index, regions, _ in members:
+                        offset = regions.bounds[0]-left, regions.bounds[1]-top
+                        fields = ops.embed(fields, self.warp(source, snapshot, index, regions, params), offset, add=True)
+                        weights = ops.embed(weights, regions.support, offset, add=True)
+                    field = ops.stage(fields, 28, auxiliary=weights)
+                    blocks = ceil((right-left)*(bottom-top)/1024)
+                    extents = ops.stage(field, 38, size=(min(blocks, 32768), ceil(blocks/32768)), args=(left, top, *size))
+                    extent = ops.stage(extents, 39, size=(1, 1), args=size)
+                    return field, tuple(int(v) for v in ops.control(extent)[0, 0])
+                # 位移场和它的取样范围只取决于关键点与形变参数：拖动其他美颜滑块时沿用，不再重算、不再读回
+                field, sample_bounds = self.retained("warp", number, (
+                    bounds, tuple((index, regions.bounds) for index, regions, _ in members),
+                    *(params[key] for key in WARP_KEYS)), displacement, pixels=False)
+                image = self.backend.resolve(colored.gpu_image, self.cancelled, sample_bounds)
+                warped = self.backend.operate(image, "beauty.remap", (field.resident.identity, bounds, sample_bounds),
+                    (right-left, bottom-top), lambda device, abort, image=image, field=field, left=left, top=top,
+                        sample_bounds=sample_bounds: device.image_op(image.resident.carrier, field.resident.carrier, 15,
+                        [left, top, *sample_bounds[:2], *size], right-left, bottom-top, abort), self.cancelled)
+                result = geometry.with_patch(result, warped, bounds, (warped.resident.identity,),
+                                             has_alpha=source.alpha is not None)
         return replace(result, effect_status=(*source.effect_status, replace(effect, spots_skipped=spots_skipped)))

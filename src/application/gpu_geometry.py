@@ -144,7 +144,9 @@ class GpuGeometry:
 
     @staticmethod
     def updated(source, artifact, *, size=None, alpha=None):
-        width, height = artifact.resident.carrier.size
+        # 分条的图没有整幅缓冲，尺寸取分条计划的输出尺寸
+        carrier = artifact.resident.carrier
+        width, height = carrier.size if carrier is not None else artifact.service.size
         has_alpha = source.alpha is not None if alpha is None else alpha
         return replace(source, pixels=DevicePixels((height, width, 3)),
             alpha=DevicePixels((height, width)) if has_alpha else None, gpu_image=artifact,

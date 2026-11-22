@@ -124,6 +124,36 @@ def qualify_geometry(device, compute, cancelled):
     return True, ""
 
 
+def qualify_denoise(device, compute, cancelled):
+    from ..core.tools.denoise import execute
+    from .gpu_denoise import GpuDenoise
+    y, x = np.mgrid[:41, :47]
+    with compute.borrow(cancelled, priority=2, threads=1):
+        pixels = np.stack(((x % 19)/18, (y % 17)/16, ((x*7+y*11)%37)/36), axis=-1).astype(np.float32)
+        pixels[0, :3] = ((0, 0, 0), (2.5, .03, -.1), (.0003, .0008, .004))
+        alpha = ((x+y)%13).astype(np.float32)/12
+        source = RenderSource(pixels, alpha, "linear32", "qualification", False, (47, 41), "linear_srgb")
+        # 降噪和锐化分开比：降噪结果落在两级正中间时往哪边取整由浮点误差决定，锐化会把这一级放大
+        cases = [{"method": method, "strength": strength, "color_strength": color, "sharpen": 0}
+                 for method in ("bilateral", "gaussian", "median")
+                 for strength, color in ((55, 0), (0, 70), (100, 100))]
+        cases.append({"method": "bilateral", "strength": 0, "color_strength": 0, "sharpen": 40})
+        expected = [display_rgba8(execute(source, params, basic_version=3)) for params in cases]
+    backend = _Qualification(device, cancelled)
+    carrier = device.upload(pixels, alpha, cancelled)
+    artifact = GpuArtifact(GpuResident(carrier, ("gpu", "qualification", "qualification"), identity=("denoise",)),
+                           backend, (), "qualification")
+    gpu_source = replace(source, pixels=DevicePixels((41, 47, 3)), alpha=DevicePixels((41, 47)), gpu_image=artifact)
+    for params, reference in zip(cases, expected):
+        result = GpuDenoise(backend, None, None, cancelled).execute(gpu_source, params, 3)
+        actual = device.display(result.gpu_image.resident.carrier, 47, 41, cancelled)
+        with compute.borrow(cancelled, priority=2, threads=1):
+            difference = int(np.abs(actual.astype(np.int16)-reference.astype(np.int16)).max())
+        if difference > 1:
+            return False, "denoise_numeric:" + (params["method"] if params["strength"] else "sharpen")
+    return True, ""
+
+
 def qualification_key(adapter, compiler):
     """自检结果对应的显卡、驱动、内核修订与应用版本；其中任何一项变了就重新自检。"""
     import ops_accel
@@ -138,26 +168,27 @@ def _qualification_path():
 
 
 def stored_qualification(key):
-    """同一显卡、驱动与版本上次全部通过的自检：(设备自检结果, 可用的源输入格式)；没有时为 None。"""
+    """同一显卡、驱动与版本上次通过的自检：(设备自检结果, 可用的源输入格式, 传统降噪是否与 CPU 一致)；没有时为 None。"""
     try:
         value = json.loads(_qualification_path().read_text(encoding="utf-8"))
         if value["key"] != key:
             return None
-        qualification, inputs = value["qualification"], value["source_inputs"]
-        if not isinstance(qualification, dict) or not qualification["max_lsb"] <= 1:
+        qualification, inputs, denoise = value["qualification"], value["source_inputs"], value["denoise"]
+        if not isinstance(qualification, dict) or not qualification["max_lsb"] <= 1 or not isinstance(denoise, bool):
             return None
-        return qualification, frozenset(tuple(item) for item in inputs)
+        return qualification, frozenset(tuple(item) for item in inputs), denoise
     except (OSError, ValueError, KeyError, TypeError):
         return None
 
 
-def store_qualification(key, qualification, source_inputs):
+def store_qualification(key, qualification, source_inputs, denoise):
     try:
         path = _qualification_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(path.name + ".tmp")
         temporary.write_text(json.dumps({"key": key, "qualification": qualification,
-                                         "source_inputs": [list(item) for item in source_inputs]}, ensure_ascii=False),
+                                         "source_inputs": [list(item) for item in source_inputs],
+                                         "denoise": denoise}, ensure_ascii=False),
                              encoding="utf-8")
         os.replace(temporary, path)
     except (OSError, ValueError) as error:

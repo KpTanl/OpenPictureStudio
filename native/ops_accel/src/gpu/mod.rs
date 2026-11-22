@@ -24,7 +24,7 @@ mod ort;
 pub use ort::{GpuModel, GpuTensor};
 
 pyo3::create_exception!(ops_accel, GpuError, pyo3::exceptions::PyRuntimeError);
-pub const REVISION: &str = "wgpu27-dx12-strips-3";
+pub const REVISION: &str = "wgpu27-dx12-strips-7";
 const PENDING: u64 = u64::MAX;
 const PASS_LIMIT: u32 = 512;
 const TRANSIENT_LIMIT: u64 = 64 << 20;
@@ -522,6 +522,9 @@ impl GpuDevice {
             let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
                 label: Some("OPS"), required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
                 required_limits: limits.clone(),
+                // 显存按 128 MiB 一块分：比块大的缓冲单独分配，不会一块只放一张图、空出大半；
+                // wgpu 建每个资源前要求留出一块的余量，块小了，接近预算时也少报显存不足
+                memory_hints: wgpu::MemoryHints::Manual { suballocated_device_memory_block_size: (128 << 20)..(256 << 20) },
                 ..Default::default()
             })).map_err(|reason| error("device_creation", reason))?;
             let lost = Arc::new(AtomicBool::new(false));
@@ -835,6 +838,20 @@ impl GpuDevice {
     fn guided(&self, py: Python<'_>, image: &GpuImage, guide: &GpuImage, radius: u32, eps: f32,
               subsample: usize, cancelled: Option<Py<PyAny>>) -> PyResult<GpuImage> {
         self.guided_image(py, image, guide, radius, eps, subsample, cancelled)
+    }
+
+    /// 分条时整幅低分辨率引导图上的系数：返回 (a, b, 居中用的 1×1 图)。
+    #[pyo3(signature = (low, radius, eps, subsample, cancelled=None))]
+    fn guided_coefficients(&self, py: Python<'_>, low: &GpuImage, radius: u32, eps: f32, subsample: usize,
+                           cancelled: Option<Py<PyAny>>) -> PyResult<(GpuImage, GpuImage, GpuImage)> {
+        self.guided_coefficients_image(py, low, radius, eps, subsample, cancelled)
+    }
+
+    /// 分条时用整幅系数算一条；frame 为 (整幅宽, 整幅高, 起始列, 起始行)。
+    #[pyo3(signature = (guide, a, b, center, eps, frame, cancelled=None))]
+    fn guided_apply(&self, py: Python<'_>, guide: &GpuImage, a: &GpuImage, b: &GpuImage, center: &GpuImage,
+                    eps: f32, frame: (usize, usize, usize, usize), cancelled: Option<Py<PyAny>>) -> PyResult<GpuImage> {
+        self.guided_apply_image(py, guide, a, b, center, eps, frame, cancelled)
     }
 
     /// rows 为 (起始行, 整幅高) 时只画整幅里从起始行开始的 height 行。

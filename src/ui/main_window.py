@@ -824,6 +824,14 @@ class MainWindow(BaseWindow):
         self.toast.show_message(text, duration_ms)
         self._toast_dock.place()
 
+    def _check_gpu_probe(self, gpu):
+        """显卡自检结束后，这次测出降噪与 CPU 不一致时提示一次。"""
+        if gpu.snapshot().state == "probing":
+            return
+        self._gpu_probe_timer.stop()
+        if gpu.capabilities()["denoise_mismatch"]:
+            self.show_toast(self._tr("settings.compute.denoise_mismatch"), 8000)
+
     def _open_assistant(self):
         self.switch_to_studio()
         if not self.manager.current_path:
@@ -1430,6 +1438,10 @@ class MainWindow(BaseWindow):
         core.restore_disabled_tools(disabled_tools or [])
         core.tools.configure_image_compute(self._image_compute_settings)
         core.tools.execution.gpu.start()
+        self._gpu_probe_timer = QTimer(self)
+        self._gpu_probe_timer.setInterval(1000)
+        self._gpu_probe_timer.timeout.connect(lambda: self._check_gpu_probe(core.tools.execution.gpu))
+        self._gpu_probe_timer.start()
         self._panel_services = {
             "image_source_service": self._image_sources,
             "preview_runner": PreviewTaskRunner(),

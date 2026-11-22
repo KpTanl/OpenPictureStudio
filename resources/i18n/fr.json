@@ -42,6 +42,7 @@
   "settings.compute.feature.bg_remove": "Détourage",
   "settings.compute.feature.ai_enhance": "Amélioration de l’image",
   "settings.compute.feature.id_photo": "Photo d’identité",
+  "settings.compute.denoise_mismatch": "Le débruitage sur GPU diffère du CPU. Le débruitage s’effectuera sur le CPU.",
   "settings.compute.status.cpu_cores": "{name} · {cores} cœurs, {threads} threads",
   "settings.compute.status.cpu_threads": "{name} · {threads} threads",
   "settings.compute.status.threads": "Le traitement d’image utilise {used} threads sur {capacity} : {active} en cours, {waiting} en attente",

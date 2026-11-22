@@ -1,7 +1,13 @@
 from math import ceil, floor, sin, pi, sqrt
 
+import numpy as np
+
 from ..core.contracts.gpu import GpuExecutionError
 from .gpu_image_ops import GpuImageOps
+
+# 输出取到 1..255 级的最小线性值，与 CPU 显示量化同一张表
+DISPLAY_THRESHOLDS = tuple(float(np.float32(encoded/12.92 if encoded <= .04045 else ((encoded+.055)/1.055)**2.4))
+                           for encoded in ((level-.5)/255 for level in range(1, 256)))
 
 
 def _coefficients(length, target):
@@ -31,7 +37,7 @@ class GpuLegacyOps(GpuImageOps):
         return self.stage(image, mode, kernel="legacy", **options)
 
     def encoded(self, source):
-        return self.run(source, 0)
+        return self.run(source, 0, data=DISPLAY_THRESHOLDS)
 
     def resize_u8(self, image, size):
         width, height = image.resident.carrier.size

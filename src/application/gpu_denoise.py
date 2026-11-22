@@ -18,6 +18,30 @@ class GpuDenoise:
         overlap = min(24, tile//4)
         return tile, overlap, max(8, tile-overlap*2)
 
+    @staticmethod
+    def strip_halo(params, version):
+        if params["method"] == "ai" and (params["strength"] or params["color_strength"]):
+            return None
+        radius = 0
+        for strength, luma in ((params["strength"], True), (params["color_strength"], False)):
+            if not strength:
+                continue
+            if params["method"] == "gaussian":
+                if version == 3:
+                    sigma = .35+.65*strength/100 if luma else .5+strength/100
+                    count = round(sigma*8+1) | 1
+                else:
+                    sigma = .2+strength/100*(4.8 if luma else 3)
+                    count = max(3, min(31, round(sigma*6) | 1))
+                radius = max(radius, count//2)
+            elif params["method"] == "median":
+                count = (3 if luma else 5) if version == 3 else max(1, min(11, 1+int(strength/10)*2))
+                radius = max(radius, count//2)
+            else:
+                filter_radius = (2 if luma else 3) if version == 3 else max(3, min(15, 5+int(strength/20)*2))//2
+                radius = max(radius, filter_radius)
+        return radius + (1 if params["sharpen"] else 0)
+
     def channel(self, image, method, strength, luma, version):
         if not strength:
             return image

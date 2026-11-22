@@ -13,6 +13,12 @@ fn reflected(q:vec2<i32>)->vec4<f32> {return load(vec2<i32>(reflect(q.x,i32(p.so
 fn even(v:vec3<f32>)->vec3<f32> {let lo=floor(v);let f=v-lo;return lo+select(vec3<f32>(0.0),vec3<f32>(1.0),(f>vec3<f32>(.5))|((f==vec3<f32>(.5))&(vec3<i32>(lo)%2!=vec3<i32>(0))));}
 fn encoded(v:vec3<f32>)->vec3<f32> {return select(1.055*pow(max(v,vec3<f32>(0.0)),vec3<f32>(1.0/2.4))-.055,v*12.92,v<=vec3<f32>(.0031308));}
 fn decoded(v:vec3<f32>)->vec3<f32> {return select(pow(max((v+.055)/1.055,vec3<f32>(0.0)),vec3<f32>(2.4)),v/12.92,v<=vec3<f32>(.04045));}
+fn quantized(v:f32)->f32 {
+    if !(v>0.0) {return 0.0;}
+    var low=0u;var high=255u;
+    while low<high {let mid=(low+high+1u)/2u;if v>=data[mid-1u] {low=mid;} else {high=mid-1u;}}
+    return f32(low);
+}
 fn ycc(v:vec3<f32>,floating:bool)->vec3<f32> {
     if floating {let y=dot(v,vec3<f32>(.299,.587,.114));return vec3<f32>(y,(v.r-y)*.713+.5,(v.b-y)*.564+.5);}
     let c=vec3<i32>(v);let y=(c.r*4899+c.g*9617+c.b*1868+8192)>>14;
@@ -34,7 +40,7 @@ fn main(@builtin(global_invocation_id) id:vec3<u32>) {
     if any(id.xy>=p.output.xy) {return;}let q=id.xy;let k=q.y*p.output.x+q.x;let mode=p.output.z;
     let s=load(vec2<i32>(q));let a=auxiliary[at(q,p.auxiliary)];let f=fields[at(q,p.field)];let e=extra[at(q,p.extra)];var value=s;
     switch mode {
-        case 0u:{value=vec4<f32>(even(clamp(encoded(s.rgb),vec3<f32>(0.0),vec3<f32>(1.0))*255.0),s.a);}
+        case 0u:{value=vec4<f32>(quantized(s.r),quantized(s.g),quantized(s.b),s.a);}
         case 1u:{
             let axis=u32(p.args[0].x);let index=q[axis];let offset=index*3u;let first=u32(data[offset]);let count=u32(data[offset+1u]);let weights=u32(data[offset+2u]);var total=vec3<i32>(2097152);
             for(var i=0u;i<count;i++) {var pos=q;pos[axis]=first+i;total+=vec3<i32>(load(vec2<i32>(pos)).rgb)*i32(data[weights+i]);}

@@ -94,8 +94,16 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         case 6u: { value=remap(x,y); }
         case 14u, 15u: { value=remap(x+i32(p.v0.x),y+i32(p.v0.y)); }
         case 7u: {
-            let uv=clamp((vec2<f32>(id.xy)+0.5)*vec2<f32>(p.a.xy)/vec2<f32>(p.o.xy)-0.5,vec2<f32>(0.0),vec2<f32>(p.a.xy)-1.0);
-            let q=vec2<i32>(floor(uv)); let t=fract(uv);
+            var uv=clamp((vec2<f32>(id.xy)+0.5)*vec2<f32>(p.a.xy)/vec2<f32>(p.o.xy)-0.5,vec2<f32>(0.0),vec2<f32>(p.a.xy)-1.0);
+            var q=vec2<i32>(floor(uv));
+            if p.v0.z>0.0 {
+                // 按整幅坐标取样：输出像素先换成整幅里的整数坐标，用整幅时的同一算式求出整幅里的取样位置，
+                // 再按整数减去源块的起点。起点不进浮点运算，编译器合并乘加时也与整幅时逐位相同
+                let output=vec2<i32>(id.xy)+vec2<i32>(p.v1.xy);
+                uv=clamp((vec2<f32>(output)+0.5)*p.v0.zw/p.v1.zw-0.5,vec2<f32>(0.0),p.v0.zw-1.0);
+                q=vec2<i32>(floor(uv))-vec2<i32>(p.v0.xy);
+            }
+            let t=fract(uv);
             value=mix(mix(load(q.x,q.y),load(q.x+1,q.y),t.x),mix(load(q.x,q.y+1),load(q.x+1,q.y+1),t.x),t.y);
         }
         case 8u, 9u: {

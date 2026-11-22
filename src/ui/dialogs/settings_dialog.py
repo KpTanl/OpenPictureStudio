@@ -1037,8 +1037,11 @@ class SettingsDialog(BaseDialog):
         features = [name for name, passed in (
             ("source", bool(capabilities.get("source_inputs"))), ("geometry", capabilities.get("geometry")),
             ("color", capabilities.get("color")), ("face", bool(capabilities.get("face_analysis")))) if passed]
-        tools = {route["reference"].tool_id for route in capabilities.get("tools", ()) if route["ready"]}
-        features += [tool for tool in ("beauty", "denoise", "bg_remove", "ai_enhance", "id_photo") if tool in tools]
+        tools = {route["reference"].tool_id for route in capabilities.get("tools", ())
+                 if route["ready"] and route["reference"].tool_id != "denoise"}
+        if capabilities.get("denoise"):
+            tools.add("denoise")
+        features +=[tool for tool in ("beauty", "denoise", "bg_remove", "ai_enhance", "id_photo") if tool in tools]
         if features:
             lines.append(self._tr("settings.compute.status.features", features=self._tr(
                 "settings.compute.status.separator").join(self._tr("settings.compute.feature." + name)

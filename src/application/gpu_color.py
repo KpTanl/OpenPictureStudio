@@ -39,7 +39,19 @@ def workflow_cost(graph, largest):
     return cost
 
 
+DEVICE_BLOCK_BYTES = 128 << 20
+
+
+def packing(nbytes):
+    """显存按 128 MiB 一块分（与 native 的 memory_hints 一致）：比块小的整幅图一块放下几张，剩下的空隙也被占着；
+    比块大的单独分配，没有空隙。返回一张 nbytes 大的图实际占用的倍数。"""
+    return 1 if nbytes > DEVICE_BLOCK_BYTES else DEVICE_BLOCK_BYTES / (DEVICE_BLOCK_BYTES // nbytes * nbytes)
+
+
 def working_memory(graph, steps):
+    """各调色步里最大的显存峰值。每像素的字节数按 3277×2048 上实测的峰值拟合，取偏大的一侧：
+    不带滤波 100，每个蒙版 64，阴影高光 16，纹理、清晰度、去雾用到任一 64，细档和去雾的粗档都用到再加 48，
+    蒙版里带滤波再加 44；降采样后算系数的中间结果每个低分辨率像素 160。"""
     from ..core.tools.color import color_engine_contract
     import ops_accel
     peak = 0
@@ -52,20 +64,27 @@ def working_memory(graph, steps):
         width, height = steps[node.node_id][0]
         side = min(width, height)
         subsamples = []
+        tone = fine = coarse = masked = False
         masks = [mask.get("params", {}) for mask in params.get("masks") or () if mask.get("enabled", True)]
-        for local in (params, *masks):
+        for number, local in enumerate((params, *masks)):
+            filtered = False
             if local.get("shadows") or local.get("highlights"):
                 subsamples.append(max(2, min(6, side//256)))
+                tone = filtered = True
             texture, clarity, dehaze = ops_accel.color_detail_parameters(local)
             if texture or clarity:
                 subsamples.append(max(1, min(4, side//512)))
+                fine = filtered = True
             if clarity:
                 subsamples.append(max(2, min(6, side//200)))
             if dehaze:
                 subsamples.append(max(4, min(12, side//128)))
+                coarse = filtered = True
+            masked = masked or filtered and number > 0
+        per_pixel = 100 + 64*len(masks) + 16*tone + 64*(fine or coarse) + 48*(fine and coarse) + 44*masked
         low_pixels = max((max(1, width//s)*max(1, height//s) for s in subsamples), default=0)
-        peak = max(peak, width*height*(160 if subsamples else 96) + low_pixels*272)
-    return peak
+        peak = max(peak, width*height*per_pixel*packing(width*height*16) + low_pixels*160)
+    return int(peak)
 
 
 def _parameters(settings, version):
@@ -89,13 +108,60 @@ def _parameters(settings, version):
 
 
 def strip_capable(settings):
-    """逐点的调色才能分条算；阴影、高光、纹理、清晰度、去雾要看整幅的低频。"""
+    """能在 GPU 分条计算的调色。旧版本局部蒙版里的阴影、高光各自要一遍整幅滤波，不分条。"""
     _, version = color_identity(settings)
-    params, masks = _parameters(settings, version)
-    if GpuColor.active(params, masks, ("shadows", "highlights", "texture", "clarity", "dehaze")):
-        return False
     return version not in (1, 2) or not any(int(mask["params"].get("shadows", 0)) or int(mask["params"].get("highlights", 0))
         for mask in settings.get("masks") or () if mask.get("enabled", True) and mask.get("params"))
+
+
+def tone_filter(size):
+    """阴影、高光用的引导滤波 (半径, eps, 降采样倍数)；size 是整幅短边。"""
+    return max(4, size//48), float32(.04*.04), max(2, min(6, int(size/256)))
+
+
+def detail_filters(size):
+    """纹理和清晰度共用的细档、清晰度的中档、去雾的粗档。"""
+    return ((max(2, size//256), float32(float32(.10)*float32(.10)), max(1, min(4, int(size/512)))),
+            (max(4, size//24), float32(float32(.14)*float32(.14)), max(2, min(6, int(size/200)))),
+            (max(8, size//8), float32(float32(.20)*float32(.20)), max(4, min(12, int(size/128)))))
+
+
+def strip_filters(settings, size):
+    """分条时这次调色要的引导滤波：(阴影高光那一个或 None, 细节的几个)。"""
+    _, version = color_identity(settings)
+    if is_color_neutral(settings, include_look=False):
+        return None, ()
+    params, masks = _parameters(settings, version)
+    side = min(size)
+    tone = tone_filter(side) if GpuColor.active(params, masks, ("shadows", "highlights")) else None
+    active = tuple(GpuColor.active(params, masks, (key,)) for key in ("texture", "clarity", "dehaze"))
+    fine, mid, coarse = detail_filters(side)
+    details = tuple(spec for spec, used in ((fine, active[0] or active[1]), (mid, active[1]), (coarse, active[2])) if used)
+    return tone, details
+
+
+# 滤波之后才用到的参数：改它们不改滤波的输入，系数可以沿用
+_AFTER_TONE_INPUT = ("shadows", "highlights", "blacks", "whites", "contrast", "vibrance", "saturation", "curves",
+                     "color_mixer", "texture", "clarity", "dehaze", "sharpness")
+_AFTER_DETAIL_INPUT = ("texture", "clarity", "dehaze", "sharpness")
+
+
+def filter_input_settings(settings, stage):
+    """去掉只在滤波之后才用到的参数，剩下的决定 stage（"tone" 或 "detail"）这一步滤波的输入。"""
+    later = _AFTER_TONE_INPUT if stage == "tone" else _AFTER_DETAIL_INPUT
+    result = {key: value for key, value in settings.items() if key not in later}
+    if settings.get("masks"):
+        result["masks"] = [{**mask, "params": {key: value for key, value in (mask.get("params") or {}).items()
+                                               if key not in later}} for mask in settings["masks"]]
+    return result
+
+
+class FilterInput(Exception):
+    """分条准备时算到了还没有系数的引导滤波：source 是它的输入这一条，spec 是 (半径, eps, 降采样倍数)。"""
+
+    def __init__(self, source, spec):
+        super().__init__(spec)
+        self.source, self.spec = source, spec
 
 
 @lru_cache(maxsize=2)
@@ -105,8 +171,10 @@ def _transfer(inverse):
 
 
 class GpuColor:
-    def __init__(self, backend, assets=None):
+    def __init__(self, backend, assets=None, coefficients=None):
+        """coefficients：分条时各引导滤波在整幅低分辨率图上算好的系数，按 (半径, eps, 降采样倍数) 取。"""
         self.backend, self.assets = backend, assets
+        self.coefficients = coefficients or {}
         self._weights, self._keep = {}, False
 
     def stage(self, source, name, mode, cancelled, *, args=(), data=(), auxiliary=None, field=None, extra=None,
@@ -220,10 +288,19 @@ class GpuColor:
 
     def filtered(self, source, radius, eps, subsample, cancelled):
         artifact = source.gpu_image
-        result = self.backend.operate(artifact, "color.filter", (radius, eps, subsample),
-            source.pixels.shape[1::-1], lambda device, abort:
-                device.guided(artifact.resident.carrier, artifact.resident.carrier, radius, eps, subsample, abort),
-            cancelled)
+        frame = self.backend.strip_frame()
+        if frame is None:
+            result = self.backend.operate(artifact, "color.filter", (radius, eps, subsample), source.pixels.shape[1::-1],
+                lambda device, abort: device.guided(artifact.resident.carrier, artifact.resident.carrier, radius, eps,
+                                                    subsample, abort), cancelled)
+            return GpuGeometry.updated(source, result)
+        spec = radius, eps, subsample
+        held = self.coefficients.get(spec)
+        if held is None:
+            raise FilterInput(source, spec)
+        result = self.backend.operate(artifact, "color.filter.apply", (spec, held.a.identity, held.b.identity),
+            source.pixels.shape[1::-1], lambda device, abort: device.guided_apply(artifact.resident.carrier,
+                held.a.carrier, held.b.carrier, held.center.carrier, eps, frame, abort), cancelled)
         return GpuGeometry.updated(source, result)
 
     @staticmethod
@@ -239,9 +316,10 @@ class GpuColor:
         need_base = self.active(params, masks, keys[:2])
         base = None
         if need_base:
-            size = min(source.pixels.shape[:2])
+            frame = self.backend.strip_frame()
+            size = min(frame[:2]) if frame is not None else min(source.pixels.shape[:2])
             luma = self.stage(source, "tone.luma", 5, cancelled)
-            base = self.filtered(luma, max(4, size//48), float32(.04*.04), max(2, min(6, int(size/256))), cancelled)
+            base = self.filtered(luma, *tone_filter(size), cancelled)
         return self.stage(source, "tone", 6, cancelled, args=(int(need_base),), auxiliary=base,
                           field=self.fields(source, params, masks, keys, cancelled))
 
@@ -250,19 +328,21 @@ class GpuColor:
         active = tuple(self.active(params, masks, (key,)) for key in keys)
         if not any(active):
             return source
-        size = min(source.pixels.shape[:2])
+        frame = self.backend.strip_frame()
+        size = min(frame[:2]) if frame is not None else min(source.pixels.shape[:2])
         fields = self.fields(source, params, masks, keys, cancelled)
         luma = self.stage(source, "detail.luma", 5, cancelled)
         target, fine = luma, None
+        fine_filter, mid_filter, coarse_filter = detail_filters(size)
         if active[0] or active[1]:
-            fine = self.filtered(luma, max(2, size//256), float32(float32(.10)*float32(.10)), max(1, min(4, int(size/512))), cancelled)
+            fine = self.filtered(luma, *fine_filter, cancelled)
         if active[0]:
             target = self.stage(target, "detail.texture", 7, cancelled, args=(0, 1), auxiliary=luma, extra=fine, field=fields)
         if active[1]:
-            mid = self.filtered(luma, max(4, size//24), float32(float32(.14)*float32(.14)), max(2, min(6, int(size/200))), cancelled)
+            mid = self.filtered(luma, *mid_filter, cancelled)
             target = self.stage(target, "detail.clarity", 7, cancelled, args=(1, .8), auxiliary=fine, extra=mid, field=fields)
         if active[2]:
-            coarse = self.filtered(luma, max(8, size//8), float32(float32(.20)*float32(.20)), max(4, min(12, int(size/128))), cancelled)
+            coarse = self.filtered(luma, *coarse_filter, cancelled)
             target = self.stage(target, "detail.dehaze", 7, cancelled, args=(2, .5), auxiliary=luma, extra=coarse, field=fields)
         return self.stage(source, "details", 8, cancelled, auxiliary=target, field=fields)
 

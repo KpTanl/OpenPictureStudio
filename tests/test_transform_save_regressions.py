@@ -7,6 +7,7 @@ from PySide6.QtCore import QThreadPool
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QFileDialog
 
+from src.core import png_writer
 from src.ui.services.transform_save import TransformSaveWorker
 from src.ui.widgets.message_dialog import MessageDialog
 from tests.support import wait_for_studio, wait_for_thumbnails, wait_for_viewer
@@ -163,6 +164,8 @@ def test_failed_save_keeps_source_and_reports_error(window, qtbot, monkeypatch):
         raise OSError("模拟编码失败")
 
     monkeypatch.setattr(Image.Image, "save", fail)
+    # 有原生模块时 PNG 由 png_writer 编码，不经过 Pillow
+    monkeypatch.setattr(png_writer, "write_png", fail)
     win._rotate_90()
     qtbot.waitUntil(lambda: "模拟编码失败" in win.toast.text() and not win.toast.isHidden())
     assert win.manager.current_path == str(paths[0])

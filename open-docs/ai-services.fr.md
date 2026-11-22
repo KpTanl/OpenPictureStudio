@@ -4,93 +4,105 @@
 
 [Retour à l’accueil](../README.fr.md) · [Documentation](README.fr.md)
 
-## Outils IA locaux et assistant de retouche
+OpenPictureStudio sépare strictement les outils IA locaux de l’assistant de retouche IA en ligne. Aucune photo ni donnée ne quitte votre ordinateur tant que vous ne configurez pas explicitement un service et n’autorisez pas le partage.
 
-| Fonction | Utilisation |
+> **Remarque :** Les outils IA locaux (super-résolution, réduction du bruit IA, suppression du flou, détourage et retouche de portrait) fonctionnent entièrement hors ligne une fois leurs modèles téléchargés. Seul l’**Assistant IA** en ligne envoie des requêtes vers les services externes configurés.
+
+## Frontières de données et confidentialité
+
+```mermaid
+flowchart LR
+    subgraph L["Environnement local hors ligne (reste sur l’appareil)"]
+        RAW["Photos d’origine et fichiers de projet"]
+        MOD["Modèles IA locaux et inférence DirectML"]
+        KEY["Clés d’API et identifiants chiffrés par Windows DPAPI"]
+        HIST["Historique, discussions, pièces jointes et styles"]
+    end
+    subgraph G["Contrôles d’envoi (gérés par requête)"]
+        OPT["Contexte et options photo : Image actuelle / Image d’origine / Ne pas envoyer la photo"]
+    end
+    subgraph R["Service IA externe configuré par l’utilisateur"]
+        API["Requêtes API Discussion / Planification / Réglage / Agent"]
+    end
+    L --> OPT
+    OPT -->|"Messages, résumés de réglages et aperçus JPEG sans EXIF si activés"| R
+```
+
+- **Stockage local chiffré :** les clés d’API, en-têtes personnalisés et identifiants proxy sont chiffrés localement avec Windows DPAPI. Les discussions, styles nommés et aperçus joints restent stockés sur votre ordinateur.
+- **Aperçus sans métadonnées :** lorsque l’envoi d’images est activé, OPS génère des aperçus JPEG réencodés ne contenant aucune donnée EXIF d’origine (paramètres de prise de vue, numéro de série ou géolocalisation).
+- **Facturation indépendante :** les tests de modèle, échanges et tâches Agent en plusieurs étapes sont décomptés selon la tarification et le quota de votre fournisseur. Aucune requête réseau n’est émise sans configuration.
+
+## Configuration et connexions
+
+### Outils IA locaux
+
+| Capacité | Emplacement | Accélération |
+| --- | --- | --- |
+| Télécharger, importer, désinstaller et définir les modèles par défaut | **Paramètres → Outils et modèles** | Fonctionne hors ligne après téléchargement ou import local |
+| Calcul d’image GPU général | **Paramètres → Performances et mémoire** | Option **GPU en priorité** active après réussite de l’autotest |
+| Environnement DirectML facultatif | **Paramètres → Moteurs d’exécution** | Actif après redémarrage pour accélérer les modèles compatibles |
+
+### Assistant IA en ligne
+
+1. Ouvrez **Paramètres → Services IA**, cliquez sur **Ajouter une connexion**, puis indiquez un nom, l’URL de base (racine du service ou point d’accès Chat Completions / Responses) et votre clé d’API.
+2. Ajustez le protocole d’API, la méthode d’authentification ainsi que le proxy ou les en-têtes personnalisés dans les **options de connexion**.
+3. Cliquez sur **Vérifier et charger les modèles** (ou utilisez **Ajouter un modèle manuellement** si aucune liste n’est renvoyée), puis cochez **Réception d’images**, **Prise en charge des appels d’outils**, le streaming et les limites de sortie selon les capacités réelles du modèle.
+4. Lancez un test de modèle, définissez-le par défaut et utilisez le panneau de l’assistant.
+
+| Usage | Capacité de modèle requise |
 | --- | --- |
-| Outils IA locaux : super-résolution, réduction du bruit, détourage, retouche de portrait, etc. | Préparez les modèles nécessaires dans « Paramètres → Outils et modèles ». Les photos sont traitées sur votre ordinateur. Le moteur GPU facultatif se gère dans « Paramètres → Moteurs d’exécution » |
-| Assistant de retouche IA | Configurez une connexion et un modèle dans « Paramètres → Services IA ». Le texte, les paramètres et le contenu des photos que vous avez choisis sont envoyés à ce service, qui renvoie des réponses, des propositions ou des résultats d’appels d’outils |
+| Conseils photo uniquement textuels | Tout modèle texte (sélectionnez **Ne pas envoyer la photo** sous le champ de saisie) |
+| Analyse visuelle de la photo, de références ou de variantes A/B | Modèle multimodal avec **Réception d’images** activée |
+| Retouche guidée par Agent et appels d’outils | Modèle compatible avec **Prise en charge des appels d’outils** activée |
+| Inspection locale haute résolution | **Réception d’images** activée avec une limite de grand côté adaptée |
 
-Le téléchargement des modèles et la connexion aux services se gèrent séparément. Les outils locaux fonctionnent hors ligne une fois leurs modèles et leur moteur prêts. L’assistant en ligne doit pouvoir joindre le service choisi.
+## Modes de l’assistant et règles d’envoi
 
-## Configurer la connexion à un service
+### Quatre modes de collaboration
 
-1. Ouvrez « Paramètres → Services IA », puis cliquez sur « Ajouter ».
-2. Renseignez le nom de la connexion, l’adresse de base indiquée par le fournisseur et la clé d’API nécessaire. L’adresse de base peut être la racine du service ou l’adresse complète de l’interface Chat Completions ou Responses.
-3. Dans « Options de connexion », choisissez le protocole API et le mode d’authentification demandés par le service. Si vous avez besoin d’un proxy ou d’en-têtes supplémentaires, renseignez aussi ces réglages.
-4. Cliquez sur « Vérifier et charger les modèles », puis ajoutez des modèles depuis la liste renvoyée. Si le service ne renvoie pas de liste, utilisez « Ajouter un modèle manuellement » et saisissez l’ID exact du modèle.
-5. Développez « Réglages du modèle » et configurez, selon ce que le modèle prend réellement en charge, la réception d’images, l’appel d’outils, la réponse en flux et la limite de sortie.
-6. Lancez le test du modèle pour vérifier qu’il répond. Vous pouvez définir par défaut le modèle que vous utilisez le plus, puis revenir au panneau de l’assistant pour commencer.
+| Mode | Rôle | Effet sur la photo |
+| --- | --- | --- |
+| **Discussion** | Échanger sur le cadrage, la lumière et les idées de retouche | Lecture seule, aucune modification |
+| **Planification** | Examiner l’état actuel et proposer un plan par étapes | Conserve la photo inchangée |
+| **Réglage** | Générer et appliquer des paramètres de couleur ou de beauté | S’écrit directement dans l’historique (annulable/rétablissable) |
+| **Agent** | Enchaîner plusieurs appels d’outils et contrôler le rendu | Écrit les étapes appliquées dans l’historique ; les **variantes A/B** attendent le clic sur **Adopter** |
 
-Le test du modèle envoie un court message de test. L’usage de l’API, les frais et les quotas, pour les tests comme pour les discussions courantes, sont comptés sur le compte du service choisi. Une tâche à plusieurs étapes de l’Agent peut comporter plusieurs requêtes.
+Vous pouvez joindre une image de référence ou enregistrer des styles nommés et préférences durables après validation par carte de confirmation.
 
-## Choisir les capacités du modèle selon l’usage
+### Options de photo et de contexte
 
-| Cas d’usage | Capacités à configurer |
+Avant chaque envoi, choisissez la source d’image sous la zone de texte ; l’en-tête du panneau affiche toujours ce qui est autorisé pour la requête :
+
+| Option | Contenu envoyé | Taille maximale |
+| --- | --- | --- |
+| **Image actuelle** (par défaut au premier tour) | Aperçu de la photo avec les retouches en cours | Grand côté jusqu’à 1536 px (jamais agrandi) |
+| **Image d’origine** | Aperçu brut sans les retouches appliquées | Grand côté jusqu’à 2048 px (jamais agrandi) |
+| **Ne pas envoyer la photo** | N’envoie ni la photo, ni les références, ni les captures d’outils | — |
+
+Lorsque l’envoi de photos et **Réception d’images** sont actifs, l’assistant peut aussi consulter des comparaisons avant/après ou des zones détaillées autorisées. Les options de contexte permettent d’inclure ou d’exclure l’historique de conversation, les paramètres courants, le résumé du flux et les analyses locales de luminance ou de visage ; même avec **Ne pas envoyer la photo**, le contexte textuel sélectionné reste utilisable.
+
+## Gestion locale et dépannage
+
+### Pièces jointes et politiques fournisseur
+
+Vous pouvez supprimer d’anciennes discussions ou effacer les pièces jointes photo à tout moment sans affecter les fichiers originaux, les messages ni l’historique de retouche. Une fois envoyées, les données sont régies par les conditions d’utilisation et de confidentialité de votre fournisseur.
+
+### Problèmes de connexion courants
+
+| Symptôme | Solution |
 | --- | --- |
-| Discussion et conseils de photographie | Un modèle de texte utilisable. S’il n’accepte pas les images, choisissez « Ne pas envoyer la photo » |
-| Analyse visuelle de la photo en cours, d’une image de référence ou d’une proposition | Un modèle qui accepte les images, avec « Réception d’images » activée dans « Réglages du modèle » |
-| Appel des outils de retouche par l’Agent | Un modèle qui prend en charge l’appel d’outils, avec « Prise en charge des appels d’outils » activée dans « Réglages du modèle » |
-| Observation détaillée d’une zone | « Réception d’images » activée, puis les options d’image, comme « Grand côté effectif », réglées selon les capacités du modèle |
+| Échec de vérification ou d’authentification | Vérifiez l’URL de base, le protocole API, la méthode d’authentification, les droits de la clé et le proxy |
+| Aucune liste de modèles renvoyée | Utilisez **Ajouter un modèle manuellement** avec l’identifiant exact du modèle |
+| Le modèle ne prend pas en charge les images | Choisissez un modèle multimodal avec **Réception d’images** activée ou passez à **Ne pas envoyer la photo** |
+| L’Agent répond uniquement par texte | Vérifiez que le modèle gère les appels d’outils et activez **Prise en charge des appels d’outils** |
+| Délai dépassé ou coupure du streaming | Vérifiez le réseau et l’état du service, augmentez le délai ou désactivez le streaming |
+| Contexte au-delà du budget | Utilisez **Réduire le contexte**, limitez l’historique inclus ou ajustez la fenêtre du modèle |
+| Espace local des pièces jointes saturé | Supprimez d’anciennes discussions ou effacez les pièces jointes photo avant de renvoyer |
 
-Les capacités du modèle dépendent de ce que le service prend réellement en charge. La réception d’images, l’appel d’outils et la réponse en flux se configurent séparément.
+> **Conseil :** Lors d’un signalement sur [GitHub Issues](https://github.com/KpTanl/OpenPictureStudio/issues), précisez la version de l’application, le message d’erreur et les étapes de reproduction, après avoir retiré vos clés d’API, identifiants proxy et photos personnelles.
 
-## Utiliser l’assistant
+## Documentation associée
 
-| Mode | Tâches adaptées |
-| --- | --- |
-| Discussion | Échanger sur la photographie, l’image et les idées de traitement |
-| Planification | Examiner la photo en cours et l’état de la retouche, discuter d’un plan de traitement, sans modifier la photo |
-| Réglage | Générer et appliquer, selon votre demande, les réglages de couleur ou de portrait adaptés |
-| Agent | Enchaîner plusieurs appels d’outils autour d’un objectif, traiter la photo et vérifier le résultat |
-
-Les retouches que l’assistant applique avec succès sont écrites dans l’historique de la photo : vous pouvez les annuler, les rétablir ou continuer à les modifier à la main. Pour comparer deux propositions, demandez des variantes A/B. Elles servent d’abord à la prévisualisation et à la comparaison, et ne sont écrites dans la retouche en cours qu’après un clic sur « Adopter ».
-
-Vous pouvez ajouter une image de référence pour exprimer votre objectif, ou demander d’enregistrer un style nommé ou une préférence durable. L’enregistrement d’un style ou d’une préférence doit être confirmé dans une carte de confirmation.
-
-## Options d’envoi des photos
-
-Avant d’envoyer un message, vous pouvez choisir sous le champ de saisie comment les photos sont envoyées. Le haut du panneau de l’assistant indique ce qui peut être envoyé pour la requête en cours.
-
-| Option | Contenu photo envoyé |
-| --- | --- |
-| Vue actuelle | Par défaut, le premier message joint un aperçu de la photo en cours, retouches comprises, avec un grand côté de 1536 pixels au maximum |
-| Originale | Le premier message joint l’image sans les retouches, avec un grand côté de 2048 pixels au maximum |
-| Ne pas envoyer la photo | La requête ne joint aucune photo ; les images de référence et les photos renvoyées par les observations d’outils ne sont pas envoyées non plus |
-
-Une image plus petite que ces dimensions est envoyée à sa taille d’origine, sans agrandissement. Si la réception d’images n’est pas activée pour le modèle, aucune photo n’est envoyée non plus.
-
-Quand l’envoi des photos est activé, l’assistant peut aussi consulter, selon ses besoins, des aperçus de l’image d’origine, de l’image avant le début de la tâche et de l’image actuelle, ainsi que des détails à haute résolution si les réglages du modèle l’autorisent. Une image de référence ajoutée est jointe ou non selon l’option d’envoi des photos et la capacité d’image du modèle. Toutes les photos envoyées sont des JPEG réencodés, sans les informations de prise de vue du fichier d’origine.
-
-## Texte, paramètres et analyse de la photo
-
-En plus des photos, l’assistant peut envoyer ce qui suit, selon les options de contexte :
-
-- Le texte que vous saisissez, ainsi que l’historique de discussion choisi, les consignes fixes et le résumé de la discussion.
-- Les paramètres de réglage actuels, le résumé du flux de travail et les résultats d’outils utiles à la tâche en cours.
-- Une analyse de la photo calculée sur votre ordinateur, par exemple la luminosité, les dominantes de couleur et les visages. Ces informations sont envoyées sous forme de texte ou de valeurs.
-- Le style nommé choisi, les préférences durables confirmées et l’analyse correspondante d’une image de référence.
-
-Avec « Ne pas envoyer la photo », le texte, les paramètres et les analyses autorisés peuvent toujours faire partie de la requête. Vous pouvez ajuster ce qui est envoyé dans les options de contexte de l’assistant.
-
-## Données locales et données côté service
-
-Les clés d’API, les en-têtes supplémentaires et les identifiants du proxy sont chiffrés avec Windows DPAPI puis enregistrés sur votre ordinateur. Les discussions, les pièces jointes d’aperçu des photos, les styles nommés et les préférences sont aussi enregistrés localement ; le contenu choisi comme contexte d’une requête est envoyé au service choisi.
-
-Vous pouvez supprimer les discussions inutiles ou effacer les pièces jointes photo d’une discussion. Effacer les pièces jointes conserve la photo d’origine, les messages et l’historique de retouche de la photo ; pour revoir la photo ensuite, vous pouvez joindre de nouveau la photo en cours.
-
-Les règles de conservation et d’utilisation des données côté service dépendent du fournisseur choisi. Consultez les réglages et la politique de confidentialité de votre compte pour choisir le service et l’étendue d’envoi qui vous conviennent.
-
-## Problèmes de connexion courants
-
-| Problème | Que faire |
-| --- | --- |
-| La connexion ne se vérifie pas, ou une erreur d’authentification s’affiche | Vérifiez l’adresse de base, le protocole API, le mode d’authentification, la clé et les droits du compte ; avec un proxy, vérifiez son adresse |
-| Le service ne renvoie pas de liste de modèles | Ajoutez le modèle manuellement, avec l’ID donné par le fournisseur |
-| Un message indique que le modèle n’accepte pas les images | Choisissez un modèle qui accepte les images et activez « Réception d’images », ou passez l’option photo sur « Ne pas envoyer la photo » |
-| L’Agent ne peut que discuter | Choisissez un modèle qui prend en charge l’appel d’outils et activez « Prise en charge des appels d’outils » dans les réglages du modèle |
-| La requête expire ou la réponse en flux échoue | Vérifiez le réseau et l’état du service, ajustez le délai de requête selon les capacités du service ou désactivez la réponse en flux, puis réessayez |
-| Un message indique que le contexte dépasse le budget | Utilisez « Réduire le contexte », réduisez ce qui est envoyé ou ajustez la fenêtre de contexte selon les capacités réelles du modèle |
-| Un message indique que l’espace des pièces jointes est insuffisant | Supprimez les discussions inutiles ou effacez les pièces jointes photo, puis joignez de nouveau les photos nécessaires |
-
-Pour signaler un problème, indiquez dans [GitHub Issues](https://github.com/KpTanl/OpenPictureStudio/issues) la version de l’application, le message d’erreur et les étapes pour le reproduire. Avant de publier une pièce jointe, retirez-en les clés d’API, les identifiants de proxy et les photos privées.
+- [Installation et mises à niveau](installation.fr.md)
+- [Configuration requise et performances](performance.fr.md)
+- [Architecture et accélération native](architecture.fr.md)

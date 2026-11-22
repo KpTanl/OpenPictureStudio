@@ -2,42 +2,58 @@
 
 [简体中文](licensing.md) | [English](licensing.en.md) | [Français](licensing.fr.md)
 
-[Back to README](../README.en.md)
+[Back to Home](../README.en.md) · [Documentation](README.en.md)
 
-The original code of OpenPictureStudio is open source under the [MIT License](../LICENSE). Third-party dependencies, models, and assets follow their own licenses. The UI icons come from [Tabler Icons](https://github.com/tabler/tabler-icons) under the MIT License, and the license text is stored with the icons in [resources/icons/ui/LICENSE.txt](../resources/icons/ui/LICENSE.txt).
+OpenPictureStudio's original source code is licensed under the [MIT License](../LICENSE). UI frameworks, third-party dependencies, AI models, and icon assets follow their own respective licenses.
 
-The program folder of the installer and the portable version includes the following materials, generated from what is actually packaged by [tools/collect_licenses.py](../tools/collect_licenses.py), which runs during the build:
+## License Structure and Distribution Notices
 
-- `THIRD_PARTY_NOTICES.txt`: the name, version, license, and homepage of each component, plus the models and runtimes that are downloaded as needed;
-- `licenses/`: the license text and copyright notice of each component;
-- `SOURCE.txt`: the commit and source address of this program, plus the address and checksum of the corresponding source for GPL, LGPL, and MPL components;
-- `components.json`: how components map to the distributed files;
-- `LICENSE` (MIT), `GPL-3.0.txt`, and `LGPL-3.0.txt`.
+```mermaid
+flowchart LR
+    SRC["OPS Original Source (MIT License)"] --> PKG["Verified & bundled by collect_licenses.py at build time"]
+    QT["PySide6 Essentials / Shiboken / Qt 6.11.3 (LGPLv3 / GPLv3 / Commercial)"] --> PKG
+    DEP["Python, Rust & System Dependencies (Respective Open-Source Licenses)"] --> PKG
+    ICO["Tabler Icons UI Assets (MIT License)"] --> PKG
+    PKG --> OUT["Bundled notices, license texts & corresponding source info"]
+    DL["Local AI Models & DirectML Runtime (Downloaded On Demand)"] -.->|"Governed by catalog terms"| OUT
+```
 
-License texts missing from upstream packages, and components that need their source provided, are registered in [packaging/licenses](../packaging/licenses). The build stops if any distributed file has no component it belongs to, if a component has no license text, or if a GPL, LGPL, or MPL component has no registered corresponding source.
+Every installer and staged program directory includes compliance files generated and verified by [tools/collect_licenses.py](../tools/collect_licenses.py) (builds fail automatically if any shipped file lacks an owner, license text, or GPL/LGPL/MPL source record):
 
-This project uses PySide6 Essentials, Shiboken, and Qt. The project's original code is under the MIT License. Each third-party component follows its own license, and the license texts and corresponding source information ship with the program.
+| Bundled File or Folder | Purpose |
+| --- | --- |
+| `THIRD_PARTY_NOTICES.txt` | Lists names, versions, licenses, and homepages for all bundled packages plus on-demand models/runtimes |
+| `licenses/` | Contains original license texts and copyright notices for third-party components |
+| `SOURCE.txt` | Records the build commit, repository URL, and source locations/hashes for GPL, LGPL, and MPL components |
+| `components.json` | Maps each shipped file to its corresponding software component |
+| `LICENSE`, `GPL-3.0.txt`, `LGPL-3.0.txt` | Top-level license texts for OPS original code and Qt components |
 
-The PySide6 and Shiboken Python modules, the extension modules, and the Qt dynamic libraries are distributed as separate files and can be replaced with compatible versions. When distributing the installer or the portable version, keep the copyright notices and license texts, and provide the corresponding source and build information for the relevant components. For the exact requirements, see [Qt open source licensing](https://doc.qt.io/qt-6/licensing.html) and [Qt LGPL distribution obligations](https://www.qt.io/development/open-source-lgpl-obligations).
-
-For the sources of the logo, screenshots, diagrams, and icons in the README, see [Asset sources](../.github/assets/readme/SOURCES.en.md).
+> **Note:** Interface icons come from [Tabler Icons](https://github.com/tabler/tabler-icons) (MIT License). Sources for the logo, screenshots, and README diagrams are listed in [Asset Sources](../.github/assets/readme/SOURCES.en.md).
 
 ## Migrating from PyQt6 to PySide6
 
-Starting with 0.17.0, the UI components changed from PyQt6 to PySide6, and the installer is no longer distributed as a whole under GPLv3. For 0.16.1 and earlier, the license follows the files shipped with that version. [PyQt6 is offered under GPLv3 and a commercial license](https://www.riverbankcomputing.com/software/pyqt/intro), and [Qt for Python, which includes PySide6, is offered under LGPLv3/GPL and commercial license options](https://doc.qt.io/qtforpython-6/). The project's original code stays under the MIT License. PySide6, Shiboken, Qt, and the other dependencies each follow their own terms.
+Starting with 0.17.0, UI components migrated from PyQt6 to PySide6, and the installer is no longer distributed as a whole under GPLv3. Releases 0.16.1 and earlier remain governed by the license files shipped with those releases.
 
-Components distributed under LGPL conditions keep their license and copyright notices, the corresponding source information, and the user's right to replace compatible libraries. The installer already includes the UI components needed to run, so users just upgrade in place as described in [Installation and Upgrades](installation.en.md). For the exact components and licenses of each version, see the `THIRD_PARTY_NOTICES.txt`, `licenses/`, and `SOURCE.txt` that ship with that version.
+- **License change:** [PyQt6 is offered under GPLv3 and a commercial license](https://www.riverbankcomputing.com/software/pyqt/intro), whereas [Qt for Python (PySide6) offers LGPLv3/GPL and commercial license options](https://doc.qt.io/qtforpython-6/).
+- **Original source:** Original OPS code stays under the MIT License; PySide6, Shiboken, Qt, and all other dependencies retain their own terms.
+- **Upgrades:** Full installers for 0.17.0 and later include all required PySide6/Qt components; upgrade in place directly following [Installation and Upgrades](installation.en.md).
 
-## Qt Components and Distribution
+## Qt Components and LGPL Obligations
 
-PySide6/Shiboken are offered under LGPLv3, GPLv3, and commercial license options, and which licenses a Qt module offers depends on the actual component. The current release manifest records PySide6 Essentials, Shiboken, and Qt 6.11.3. When a new Qt module is added, check again the license of that module and of its third-party dependencies.
+Current builds use **PySide6 Essentials**, **Shiboken**, and **Qt 6.11.3** (adding new Qt modules requires re-auditing their licenses and third-party notices).
 
-When distributing under LGPL conditions, provide the applicable license and copyright notices, the corresponding source, and the necessary build information, and keep the user's right to replace the relevant libraries and debug their modifications. The current packaging configuration keeps the PySide6/Shiboken modules and the Qt dynamic libraries as separate files. For the exact requirements, the [official Qt distribution obligations](https://www.qt.io/development/open-source-lgpl-obligations) and the [Qt for Python third-party license list](https://doc.qt.io/qtforpython-6/licenses.html) apply.
+When distributing builds under LGPL terms, OPS preserves all copyright notices, license texts, and corresponding source references, and packages PySide6/Shiboken modules and Qt shared libraries as separate files so users retain the right to replace compatible libraries and debug modifications. Refer to [Qt Licensing](https://doc.qt.io/qt-6/licensing.html), [Qt LGPL Obligations](https://www.qt.io/development/open-source-lgpl-obligations), and [Qt for Python Third-Party Licenses](https://doc.qt.io/qtforpython-6/licenses.html) for full details.
 
-## Dependency and Model References
+## Dependency, Model, and Asset Catalogs
 
-- [Component sources and corresponding-source records](../packaging/licenses/manifest.json)
-- [Qt third-party notices](../packaging/licenses/qt/QT_THIRD_PARTY_NOTICES.txt)
-- [AI model catalog and licenses](../resources/models/catalog.json)
-- [Optional runtime catalog](../resources/runtimes/catalog.json)
-- [UI icon sources](../resources/icons/ui/SOURCE.txt) and [license](../resources/icons/ui/LICENSE.txt)
+- [Component Source & Attribution Manifest (manifest.json)](../packaging/licenses/manifest.json)
+- [Qt Third-Party Notices](../packaging/licenses/qt/QT_THIRD_PARTY_NOTICES.txt)
+- [AI Models Catalog and Licenses](../resources/models/catalog.json)
+- [Optional Runtimes Catalog](../resources/runtimes/catalog.json)
+- [UI Icon Source](../resources/icons/ui/SOURCE.txt) and [MIT License](../resources/icons/ui/LICENSE.txt)
+
+## Related Documentation
+
+- [Installation and Upgrades](installation.en.md)
+- [Development and Building](building.en.md)
+- [Architecture and Native Acceleration](architecture.en.md)

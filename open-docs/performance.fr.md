@@ -2,68 +2,82 @@
 
 [简体中文](performance.md) | [English](performance.en.md) | [Français](performance.fr.md)
 
-[Retour à l’accueil](../README.fr.md)
+[Retour à l’accueil](../README.fr.md) · [Documentation](README.fr.md)
 
-## Configuration recommandée
+OpenPictureStudio calcule par défaut les aperçus à la taille de l’affichage à l’écran, garantissant une retouche fluide sur des machines modestes. Pour l’inspection à 100 % et l’export de fichiers RAW haute définition ou d’images dépassant 100 Mpx, la VRAM et la RAM système déterminent la capacité maximale et la vitesse.
 
-| Élément | Usage de base | Configuration recommandée | Pour aller plus loin |
+## Matériel recommandé
+
+| Élément | Usage courant | Configuration recommandée | Usage intensif |
 | --- | --- | --- | --- |
-| Système | Windows 10/11, 64 bits | Windows 10/11, 64 bits | Windows 10/11, 64 bits |
-| CPU | x64, CPU multicœur récent | Intel Core i5 de 7e génération ou AMD Ryzen de 1re génération, ou mieux | Processeur Intel de 12e génération ou AMD Ryzen de 5e génération, ou mieux |
-| Mémoire | 8 Go, adaptés à la visualisation et à la retouche légère | 16 Go, adaptés aux RAW et à la retouche avec plusieurs outils | 32 Go ou plus, adaptés aux images haute résolution, aux masques nombreux et aux traitements par lots |
-| GPU | Carte graphique intégrée | GTX 950 ou mieux | RTX 2060 ou mieux |
-| Stockage | 3 Go d’espace libre | 6 Go d’espace libre, SSD conseillé | 12 Go d’espace libre, SSD conseillé |
+| **Système** | Windows 10/11 (64 bits) | Windows 10/11 (64 bits) | Windows 10/11 (64 bits) |
+| **Processeur** | CPU x64 multicœur récent | Intel Core i5 7e gén. / Ryzen 1000 ou mieux | Intel 12e gén. / Ryzen 5000 ou mieux |
+| **Mémoire vive** | 8 Go | 16 Go | 32 Go ou plus |
+| **Carte graphique** | iGPU DirectX 12 ou GPU dédié 2 Go | GPU dédié 4 Go+ (GTX 1650 ou mieux) | GPU dédié 6–8 Go+ (RTX 2060 ou mieux) |
+| **Stockage** | 3 Go libres | 6 Go libres (SSD conseillé) | 12 Go libres (SSD conseillé) |
+| **Usage type** | Tri et retouche légère 12–24 Mpx | RAW 24–45 Mpx avec masques locaux | Images 45–100+ Mpx et exports par lots |
 
-La version installée embarque ses dépendances d’exécution ; les modèles IA se téléchargent à la demande ; l’assistant de retouche IA demande de configurer un service en ligne.
+## Limites selon la VRAM et la RAM
 
-## Performances du traitement d’image
+En mode d’aperçu **Automatique**, le canevas s’adapte aux pixels physiques de l’écran sans subir la limite de VRAM d’une image entière. Les repères ci-dessous concernent l’**aperçu pleine résolution et l’export** (images 8 bits standards sous budgets par défaut) :
 
-Ordinateur de test : Intel Core i5-12600KF, 32 Go de mémoire, Windows 11. Plus le temps est court, mieux c’est.
+### Capacité VRAM et traitement par bandes
 
-### Python et Rust
+| Catégorie GPU | Budget VRAM approx. | Couleur GPU image entière | Image entière avec détails et débruitage | Bandes GPU (images 8 bits standards) |
+| --- | ---: | ---: | ---: | --- |
+| GPU intégré (8 Go RAM) | ~1,5 GiB | ~16 Mpx | ~8–9 Mpx | Limité par la RAM ; conseillé ≤ 45 Mpx |
+| GPU dédié 4 Go | 2,9–3,2 GiB | ~32 Mpx | ~16–17 Mpx | Prend en charge 100–133 Mpx |
+| GPU dédié 8 Go | 5,8–6,4 GiB | ~65 Mpx | ~32–35 Mpx | Prend en charge 133 Mpx et plus |
+| GPU dédié 12 Go et plus | ≥ 8,6 GiB | ≥ 96 Mpx | ≥ 48–51 Mpx | Prend en charge 133 Mpx et plus |
 
-#### Conversion des couleurs RAW
+- Les PNG 16 bits et les RAW d’appareil photo occupent environ le double par pixel par rapport au 8 bits, divisant de moitié les limites sur image entière ; la limite matérielle par côté est de 32768 px.
+- Au-delà du budget sur image entière, les flux composés d’outils compatibles avec le découpage (couleur, ombres/hautes lumières/texture/clarté/voile, masques locaux, recadrage et rotation, formes/lasso, beauté et débruitage classique qualifié) basculent automatiquement sur les bandes GPU.
+- En présence de nœuds non pris en charge par bandes (débruitage IA, amélioration IA, détourage, photo d’identité ou plug-in), l’exécution complète bascule automatiquement sur le chemin CPU.
 
-À partir du résultat de décodage d’un même RAW Nikon Z 50, on compare le temps de conversion des couleurs entre Python/NumPy et Rust sur 8 threads ; après préchauffage, 9 mesures alternées, et on retient la médiane. Date du test : 5 octobre 2026.
+### Mémoire système et protection
 
-| Traitement | Taille de l’image | Python/NumPy | Rust |
-| --- | --- | ---: | ---: |
-| Conversion des couleurs RAW | 1864×2800 | 95,0 ms | 7,7 ms |
-| Conversion des couleurs RAW | 3728×5600 | 371,3 ms | 29,4 ms |
+Par défaut, OPS plafonne l’usage mémoire à **90 %** de la RAM physique tout en réservant au minimum **10 %** (et au moins 0,8 GiB) au système :
 
-#### Retouche de portrait
+| Mémoire système | Recommandation |
+| --- | --- |
+| **8 Go** | Adapté aux retouches 12–24 Mpx ; conservez l’aperçu **Automatique** ou **Toujours un aperçu de 1600 px** pour les grands formats |
+| **16 Go** | Adapté aux RAW plein format 24–61 Mpx avec masques locaux multiples |
+| **32 Go et plus** | Adapté aux images 61–133 Mpx, piles de masques complexes et exports en série soutenus |
 
-Même portrait, mêmes paramètres de retouche, un visage traité par image, Rust sur 8 threads. Python/NumPy est mesuré sur 10 images et Rust sur 30 ; le tableau donne la médiane, du traitement jusqu’à la génération de l’image d’aperçu. Date du test : 25 octobre 2026.
+## Mesures de performances réelles
 
-| Traitement | Taille de l’image | Python/NumPy | Rust |
-| --- | --- | ---: | ---: |
-| Retouche courante | 3840×2560 | 1,956 s | 1,148 s |
-| Retouche et forme du visage | 3840×2560 | 2,652 s | 1,854 s |
-| Retouche courante | 6720×4480 | 6,211 s | 3,411 s |
-| Retouche et forme du visage | 6720×4480 | 7,425 s | 4,692 s |
+Plateforme de test : Intel Core i5-12600KF, 32 Go RAM, NVIDIA GeForce RTX 5060 (8 Go), Windows 11, threads limités à 6 cœurs P (12 threads), mesures de novembre 2026 comparant le GPU (`wgpu / D3D12`) au CPU (`Rust + AVX2`). Les durées réelles varient selon le matériel, la charge système et le contenu de l’image.
 
-#### Masques locaux
+### Réactivité interactive sur un portrait de 26,8 Mpx
 
-Image synthétique de 1600×1067, avec des réglages combinés de tonalité, de couleur et de détail, Rust sur 10 threads. Ces données viennent d’un prototype de masques : pour Python, un seul résultat après préchauffage ; pour Rust, la médiane de 30 mesures avec 1, 3 et 8 masques, et un seul résultat avec 128 masques. Date du test : 19 octobre 2026.
+![Latence interactive sur portrait 26,8 Mpx](../.github/assets/docs/perf-27mp.fr.svg)
 
-| Nombre de masques | Python | Rust |
-| --- | ---: | ---: |
-| 1 | 2419,629 ms | 70,750 ms |
-| 3 | 2747,778 ms | 94,494 ms |
-| 8 | 3121,199 ms | 119,038 ms |
-| 128 | 13245,931 ms | 2984,170 ms |
+- **Aperçu automatique :** les curseurs de couleur simples restent autour de 20–35 ms sur GPU comme sur CPU (CPU légèrement plus rapide) ; avec la retouche de portrait active, le lissage sur GPU est **2 à 3,5× plus rapide** que sur CPU.
+- **Aperçu pleine résolution :** le glissement des curseurs est **6 à 16× plus rapide** sur GPU et une modification isolée est **3 à 3,5× plus rapide**. La qualification GPU au démarrage prend environ 2,1 s la première fois puis 1,4 s ensuite grâce aux résultats mis en cache.
 
-### Rust et Rust + AVX2
+### Grandes images de 133 Mpx par bandes et export
 
-Image synthétique de 6000×4000, même traitement mesuré sur 8 threads, avec des mesures répétées dont on retient la médiane. Date du test : 29 octobre 2026.
+![Performances par bandes GPU sur image 133 Mpx](../.github/assets/docs/perf-133mp.fr.svg)
 
-| Traitement | Rust | Rust + AVX2 |
-| --- | ---: | ---: |
-| Conversion pour l’affichage | 30,39 ms | 18,95 ms |
-| Réglages de couleur de base | 101,63 ms | 64,35 ms |
-| Courbes et mélange des couleurs | 382,15 ms | 296,51 ms |
-| Réglages de couleur spatiaux | 1459,20 ms | 633,68 ms |
-| Réglages locaux avec trois masques | 516,26 ms | 415,92 ms |
-| Conversion des couleurs RAW | 23,03 ms | 17,07 ms |
+- **Très haute définition et export :** au-delà du budget global des 8 Go de VRAM sur le PNG 15360×8640, les bandes GPU accélèrent l’aperçu ajusté à l’écran et la vue à 100 % d’un facteur **29 à 73×**, et l’export PNG d’un facteur **1,6 à 4,1×**.
+- **Fiabilité avec masques complexes :** en associant réglage couleur et deux masques locaux à 133 Mpx, le chemin CPU échoue par manque de mémoire alors que le traitement par bandes GPU aboutit sans incident (184 ms en vue ajustée, 3,9 s à l’export PNG).
 
-La vitesse réelle varie selon l’ordinateur, les photos et les réglages.
+### Accélération CPU native
+
+Sans GPU dédié ou en mode **CPU uniquement**, balance des blancs, exposition, courbes, masques locaux, filtres guidés, conversion matricielle RAW, rééchantillonnage beauté et réduction d’affichage s’exécutent en parallèle en Rust avec détection automatique d’AVX2 (ou chemin Rust générique sans AVX2).
+
+## Caches et espace disque
+
+| Élément | Valeurs par défaut et limites | Où modifier |
+| --- | --- | --- |
+| **Caches disque miniatures et retouche/source** | Miniatures : 512 MiB par défaut ; cache retouche/source : 2 GiB par défaut (jusqu’à 32 GiB chacun) | **Paramètres → Stockage** |
+| **Mémoire d’aperçu et cache VRAM GPU** | Cache RAM aperçu : 64 MiB par défaut (jusqu’à 1024 MiB) ; cache VRAM : Automatique, Désactivé ou MiB personnalisés | **Paramètres → Performances et mémoire** |
+| **Espace programme et ressources facultatives** | Programme ~0,55 GiB ; 6 modèles IA locaux ~435 MiB installés ; moteur DirectML ~67 MiB | **Paramètres → Outils et modèles / Moteurs d’exécution** |
+
+Avec les caches disque par défaut remplis, l’occupation totale avoisine **3,6 GiB**. Les traitements groupés et files d’export traitent les photos séquentiellement et libèrent les tampons temporaires après chaque image.
+
+## Documentation associée
+
+- [Architecture et accélération native](architecture.fr.md)
+- [Installation et mises à niveau](installation.fr.md)
+- [Services IA et confidentialité](ai-services.fr.md)

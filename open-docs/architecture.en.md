@@ -2,91 +2,107 @@
 
 [简体中文](architecture.md) | [English](architecture.en.md) | [Français](architecture.fr.md)
 
-[Back to README](../README.en.md)
+[Back to Home](../README.en.md) · [Documentation](README.en.md)
 
-## Current Layers
+OpenPictureStudio pairs a Python desktop host and non-destructive workflow engine with Rust multithreaded/AVX2 native kernels, a Windows wgpu/D3D12 general-purpose GPU pipeline, and optional DirectML AI model inference.
 
-The desktop host uses Python and PySide6. The UI works through application services to reach the core editing and project capabilities. Suitable hotspots connect to the Rust native module through PyO3/NumPy.
+## Layered Architecture
 
 ```mermaid
 flowchart TD
-    UI[PySide6 desktop UI] --> APP[Application services]
-    APP --> CORE[Core: image operations, tools, workflows, projects]
-    CORE --> CPU[Rust / Rayon / AVX2]
-    APP --> GPU[wgpu / D3D12 / FXC]
-    CORE --> PY[Python / NumPy]
-    APP --> AI[Optional AI models and inference adapters]
+    UI["PySide6 Desktop UI (src/ui)"] --> APP["Application Services (src/application)"]
+    APP --> CORE["Core Engine and Project Model (src/core)"]
+    APP --> GPU["wgpu / D3D12 General GPU (full-frame & strips)"]
+    APP --> AI["Optional DirectML Inference · Trusted image/1 Plugins"]
+    CORE --> CPU["Rust / Rayon / AVX2 Native CPU (native/ops_accel)"]
+    CORE --> PY["Python / NumPy Fallback Path"]
 ```
 
-| Directory | Responsibility |
+| Directory | Responsibilities |
 | --- | --- |
-| `src/ui` | Windows, workspaces, tool panels, user interaction |
-| `src/application` | Service assembly, task scheduling, caches, models and runtimes, output coordination |
-| `src/core` | Image algorithms, tool contracts, workflow execution, projects and history |
-| `native/ops_accel` | Rust native computation, exchanging arrays with NumPy through PyO3 |
-| `resources` | Translations, themes, model and runtime catalogs |
+| `src/ui` | Windows, viewer and editing workspaces, tool panels, settings dialogs, and interactions |
+| `src/application` | Service wiring, task scheduling, caches, VRAM budgets, model/runtime management, and export coordination |
+| `src/core` | Image algorithms, unified tool contracts, non-destructive workflow execution, and `.opsproj` project persistence |
+| `native/ops_accel` | Rust native CPU kernels, wgpu/D3D12 GPU compute backend, and ONNX tensor bridge |
+| `resources` | Translations, UI themes, built-in looks, model/runtime catalogs, and sample plugins |
+
+## Image Execution Pipeline and Routing
+
+Viewer preheating, canvas interaction, 100% region inspection, assistant observations, and batch export share one execution entry that freezes request specifications, traces checkpoints backward, and computes only missing stages.
+
+```mermaid
+flowchart LR
+    REQ["Freeze Request (source identity · workflow · target spec)"] --> HIT{"Checkpoint & cache hit?"}
+    HIT -->|"Hit"| OUT["Deliver read-only artifact"]
+    HIT -->|"Miss"| GATE{"GPU qualified & nodes supported?"}
+    GATE -->|"No, or CPU only selected"| CPU["Complete-chain CPU execution (Rust + AVX2)"]
+    GATE -->|"Yes"| MEM{"Fits full-frame VRAM budget & buffer limit?"}
+    MEM -->|"Yes"| GPU_F["Full-frame GPU execution"]
+    MEM -->|"No, strip-capable nodes"| GPU_S["GPU strip execution"]
+    MEM -->|"Strips unsupported or out of budget"| CPU
+    GPU_F -->|"Device fault or VRAM pressure"| CPU
+    GPU_S -->|"VRAM pressure"| CPU
+    GPU_F --> OUT
+    GPU_S --> OUT
+    CPU --> OUT
+```
+
+- **Batched GPU recording and cross-frame retention:** Compute passes within a frame record into a single command encoder and flush only at readbacks, frame end, or buffer thresholds. Cross-frame slots retain node outputs, face regions, skin filter fields, and warp displacement so slider drags avoid redundant upstream work.
+- **On-demand readback and seamless handoff:** Full-resolution previews read back only the screen-sized display frame or visible viewport tile while dragging, then backfill the complete frame on release. Matching viewer frames hand off directly into the edit session, and hold-to-compare preserves active crop and rotation.
+- **Default tool order:** New edits default to **Beauty → Color → Denoise → Crop** while existing projects keep their saved node order. Because face analysis derives from the source image and pre-beauty geometry, color adjustments never re-trigger face detection.
+
+## Dual GPU Paths and Capability Matrix
+
+GPU acceleration spans two coordinated paths: **built-in wgpu / D3D12 image compute** (qualified in the background at startup for everyday grading, geometry, beauty, and denoise kernels) and **optional DirectML AI inference** (running neural models on the same physical adapter via the Rust ONNX Runtime C API under a shared VRAM budget).
+
+| Stage or Tool | Full-Frame GPU | GPU Strips | Default Execution Path |
+| --- | --- | --- | --- |
+| Source decode & upload (JPEG / 8·16-bit PNG / RAW) | Supported | Supported | GPU decode/conversion once qualified |
+| Color grading & local masks (incl. shadows/highlights/texture/clarity/dehaze) | Supported | Supported | GPU; strip mode builds low-res detail coefficients over full frame |
+| Crop, rotation, shape crop & lasso | Supported | Supported | GPU; rotated crops share upstream row blocks per output band |
+| Portrait beauty (grouped patches by influence bounds) | Supported | Supported | GPU; disjoint face groups compose independently |
+| Classic denoise (process version 3) | Supported | Supported | GPU if startup self-check matches CPU; otherwise logs, notifies once, and falls back to CPU |
+| AI denoise, AI enhancement, cutout & ID photo | Implemented, pending qualification | Not supported | CPU chain (optionally accelerated with DirectML runtime) |
+| Trusted `image/1` image plugins | — | — | Executed in CPU subprocesses per contract |
+
+> **Note:** At startup, only core source, color, and display shaders compile eagerly; remaining shaders compile sequentially on a background thread or on demand. Qualification results are cached by adapter, driver, shader compiler, app version, and native revision to speed up subsequent launches. CPU renders initial frames until the GPU is ready, then upgrades idle views automatically.
+
+## VRAM Budgeting, Strip Execution, and Recovery
+
+- **Adaptive VRAM budgets:** Discrete GPUs cap at the lesser of 4/5 dedicated VRAM or 3/4 of the process budget granted by Windows at startup. Integrated GPUs base their cap on 3/4 of the lesser of 1/4 physical RAM or the app memory policy (further capped at 3/4 process budget) with per-submission duration limits. Runtime checks target 9/10 of the live DXGI process budget minus unaccounted usage, counting unreturned native allocator blocks as available headroom. Users can toggle **Prefer GPU / CPU only** and configure the **GPU memory cache** in **Settings → Performance & memory**.
+- **Out-of-VRAM GPU strip rendering:** When full-resolution requests exceed single-buffer limits or full-frame VRAM budgets, eligible workflows switch to strip execution. Compact integer source data stays resident on the GPU, converts strip-by-strip to float32, and stitches display tiles or reads back strips for export using multithreaded 8-bit conversion and 64-row parallel PNG compression (hardware limit 32768 px per side).
+- **Fault recovery and diagnostics:** Under memory pressure, OPS evicts optional retained buffers first; if execution still cannot fit or a device is lost, the request automatically restarts end-to-end on the CPU from the shared source and disables a lost device for the session. If any beauty kernel exceeds two seconds under FXC compilation, OPS falls back to static DXC compilation; the active shader compiler and any DXC fallback reasons are recorded in logs and diagnostics.
 
 ## CPU Computation and Compatibility
 
-Rayon handles multithreaded tasks, and AVX2 SIMD speeds up operations that vectorize well. The thread count is still coordinated by the execution budget. AVX2 support is detected when the native module initializes. Set `OPS_CPU_KERNEL` before starting the process:
+Release builds target portable x86_64 so processors without AVX2 remain fully supported. The native module detects CPU features on load, and `OPS_CPU_KERNEL` can override selection before launch:
 
-| Value | Behavior |
+| `OPS_CPU_KERNEL` Value | Behavior |
 | --- | --- |
-| Unset, empty, `auto` | Use the wired-in AVX2 kernels if the CPU supports AVX2, otherwise use the portable Rust path |
-| `portable` | Use the portable Rust path, for compatibility diagnosis and performance comparison |
-| `avx2` | Require AVX2. If it is not supported, native module initialization fails with an error |
+| Unset / empty / `auto` | Uses AVX2 kernels when supported; otherwise uses portable Rust |
+| `portable` | Forces portable Rust kernels for diagnostics and baseline comparison |
+| `avx2` | Requires AVX2 support; fails module initialization if unavailable |
 
-Release builds keep a portable CPU target, and AVX2 is an optional acceleration. The kernels currently use separate multiply and add, and FMA is not yet enabled.
-
-| Kernel group | Hotspots covered |
+| Native Kernel Groups | Operations Covered |
 | --- | --- |
-| `tone` | Per-pixel operations such as white balance, exposure v2, vibrance, and saturation |
-| `color_space` | Color conversion lookups, gamut compression |
-| `curves` | Applying curve LUTs |
-| `local` | The per-pixel stages of local adjustments where they apply, combined with constant-parameter precomputation, weight reuse, and buffer reuse |
-| `raw` | Normalization of decoded RAW data and f64 color matrix conversion |
-| `filter` | The independent product, coefficient, output, and scaling stages of the guided filter |
-| `display` | Linear RGB to RGBA8 display output, area-weighted downscaling in display space, and alpha compositing |
-| `remap` | Rayon-parallel beauty warping with cubic sampling, neighborhood clamping, and premultiplied alpha |
+| `tone` / `color_space` / `curves` | White balance, exposure v2, vibrance & saturation, color LUTs, gamut compression, tone curves |
+| `local` / `filter` | Local parameter fields and key guided-filter stages |
+| `raw` / `display` / `remap` | RAW matrix conversion, linear-to-RGBA8 display & area-weighted downscale, Rayon cubic beauty remap |
 
-Coverage includes the applicable stages of the operations above. Exponential, power, and trigonometric functions, and scans that depend on order, keep their own portable implementations. RAW matrix conversion sits in the processing chain after decoding. The embedded JPEG fast preview already exists for NEF and other RAW formats, while full RAW decoding is still handled by the current RAW loading chain.
+## Core Subsystems and Plugin Architecture
 
-## Two GPU Paths
+| Subsystem | Core Responsibility |
+| --- | --- |
+| **Image Engine** | Shared pixel, color, alpha, and coordinate-space contracts with dual CPU/GPU backends |
+| **Workflow Engine** | Non-destructive graph scheduling, checkpoints, priority queues, cancellation, and region evaluation |
+| **Project Model** | Edit state, undo/redo history, pinned tool/resource versions, and `.opsproj` persistence |
 
-The unified execution entry fixes each request's tool chain, target specification, engine, and cancellation context. Windows image devices use wgpu, D3D12, and FXC. Background qualification checks hardware, compiles kernels, validates small images, and benchmarks a short chain including transfers. Qualified discrete GPUs are tier A, qualified integrated GPUs are tier B, and other devices use tier C CPU processing. Requests use CPU while qualification is pending. Each request also checks complete tool capabilities, color specifications, and target budgets. Source display, independently qualified color processing, and floating-point crop/rotation, shape, and lasso versions can form GPU preview chains. Color processing covers the existing process versions, sequential masks, local parameter fields, brushes, and asset sampling. Fully qualified beauty, AI denoising, deblurring, and super-resolution can also form GPU preview chains. Nested preparation inherits the parent engine, with explicit CPU model sessions for CPU chains.
+Built-in tools and trusted plugins share one runtime contract. Zoomed-in auto previews request only visible viewport regions, letting region-aware tools compute locally while nonlocal operators evaluate full reference domains before slicing the requested region.
 
-Workflows query the target checkpoint first; a hit skips upstream decoding and computation. Checkpoints, face preparation, and operator memoization share an in-flight table and image resource budget. Subscribers cancel independently, and shared work follows the highest priority among active subscribers. Beauty processing reuses regions, displacement fields, filters, and independent contributions; color processing reuses the image before detail adjustments and multiscale filters; cropping reuses rotation results. Automatic previews use the canvas size in physical pixels, while the 1600 and full modes carry explicit specifications through the same path. Matching loading frames transfer directly to the editing session.
+Key contracts: [Tools](../src/core/contracts/tools.py) · [Workflow](../src/core/contracts/workflow.py) · [Executor](../src/core/workflow/executor.py) · [Project Model](../src/core/project) · [Built-in Tool Modules](../src/application/tool_modules.py)
 
-Beauty results consist of a read-only base and rectangular patches containing RGB, optional Alpha, and the full reference size. Color composition and displacement accumulation stay within face bounds; bicubic sampling retains global coordinates and neighborhood boundaries. Display conversion reuses the base frame for the requested specification and updates affected display regions. Other tools compose temporary inputs at their execution boundary. Commits, 16-bit output, sampling, and grid tiles read the effective patched pixels, while the resource pool counts shared root buffers once.
+## Related Documentation
 
-GPU images use read-only carriers, leases, and completion markers. Result identities include the device and kernel revision. Input uploads and target viewport readbacks share the in-flight table. The content window covers the current, previous, and next two images, with priority and budget governing eviction. In-process DXGI queries supply the dynamic budget for active buffers, cached content, idle allocations, staging, and model reservations; shared allocations count once. Image submissions and existing DirectML inference share admission for the selected physical adapter, releasing CPU capacity while waiting and executing device work. Integrated GPUs also account for shared system memory and estimated submission time.
-
-Device operators cover RGB/Alpha bicubic remapping, self-guided and independent guided filtering, separable Lanczos resizing, integer shape and polygon rasterization, feathering, and alpha composition. Rotation results reuse the upstream identity and angle; crop rectangles use read-only views of shared allocations. GPU bases and patches remain on the device. Sampling and masks read current pixels from the requested region, and CPU materialization retains its readback lease. GPU checkpoints share in-flight work; the device cache budget governs retention across requests.
-
-Memory pressure first evicts optional content. Execution failures restart the complete chain on CPU from the common source; device loss disables GPU processing for the session. Image computation can prefer the GPU or use the CPU only, and the GPU memory cache can be automatic, off, or custom. **Settings → Performance & memory** shows the GPU and CPU status and GPU memory use. The Rust ONNX Runtime C API image adapter uses the same D3D12 device and queue, FLOAT32 NCHW/NHWC tensors with three or four channels, and device-side layout conversion. CPU operator fallback is disabled. It supports four-dimensional image models with one input and one output. Model capabilities are registered against weights, runtime, and device identities after complete numerical comparisons. Missing capabilities or insufficient target budgets select the entire CPU chain. Image adapters explicitly carry linear or encoded input and output color identities. General image computation uses [wgpu](https://github.com/gfx-rs/wgpu), and OPS currently ships on Windows.
-
-The device tensor bridge also supports one input with multiple FLOAT32 outputs of different ranks. The original face task and YuNet weights are preserved in ONNX conversions with fixed identities. Detection, landmarks, the three preparation specifications, face regions, and support masks use device interfaces. Face qualification is registered per model, runtime, specification, and device; eight manual comparison categories must pass before the preparation interface becomes available. Complete beauty capabilities additionally require individual strengths, combinations, multiple faces, Alpha, crop, and no-face comparisons. Images and model tensors remain resident, scheduling reads small control descriptors, and callers explicitly request final analysis delivery.
-
-Beauty performs Lab conversion, skin distributions, medians and covariance, spot donor searches, eye-bag statistics, contribution composition, and regional warping on the device. Results preserve read-only patches and global sampling boundaries. Rust CPU kernels provide Lab conversion and skin contribution composition. AI enhancement preserves denoise, deblur, and super-resolution order, the original tile and row-band boundaries, encoded-color mixing, linear output, Lanczos Alpha, and target layouts. Transparent-region propagation uses bounded submissions. Candidate, statistical, or resource limits restart the entire chain on CPU through the shared execution entry.
-
-Classic denoising preserves the versioned sRGB8 stage, luminance/chroma filters, and sharpening. Legacy AI denoising preserves tiled inference, reflection padding, and overlap blending. U2Net preprocessing, mask normalization, 8-bit Lanczos resizing, edge blur, and alpha composition run on the same device. ID photos retain the original crop, segmentation, background composition, linear resizing, and sheet layout order. Each tool joins a complete GPU chain after numerical qualification for its implementation, model, and device.
-
-Commits, exports, and grid output select the complete chain engine using the full output specification. Fixed-size resizing and padding stay on the device; float32 linear pixels are read back at the final encoding boundary. Readback or output adaptation failures restart the complete CPU chain from the common source, preserving target protection and publication transactions. Kernels report cold compilation and first submission times. If an FXC beauty kernel takes more than two seconds to compile, the device tries static DXC before numerical qualification. Runtime status shows the selected compiler, with diagnostics retaining the reason when DXC cannot be used.
-
-## How the Three Core Systems Evolve
-
-| System | Target responsibility | Existing foundation |
-| --- | --- | --- |
-| Image Engine | Image operations, color and pixel contracts, CPU/GPU backend execution | `photo_engine`, the Rust pipeline, tool and image capability contracts |
-| Workflow Engine | Orchestrating dependencies, task scheduling, cancellation, and result delivery | `WorkflowGraph`, `WorkflowExecutor`, the single-image processing chain |
-| Project Model | Edit state, versions, history, resource references, and persistence | `.opsproj`, project documents, resource and recovery storage |
-
-The CPU and GPU backends share the contract for image-operation parameters, versions, color space, alpha, and bit depth. Each backend manages its own memory layout, uploads and downloads, and execution resources. The plan is to stabilize a small set of common operations first, then expand according to real workloads, and keep a CPU path that does not need AVX2.
-
-## Everything is Plugin
-
-Built-in and trusted third-party tools share declarations for parameters, images, space, resources, cancellation, and caching. The `image/1` plugin interface carries linear float32 RGB, separate alpha, reference dimensions, and named read-only auxiliary artifacts. An sRGB8 adapter supports the legacy PNG protocol. Project schema 4 pins plugin package digests, implementations, and interface versions. Deterministic and seeded plugins reuse complete dependencies; other plugins deliver an independent result per request. See [Image Plugins](image-plugins.en.md). Installation management, complete external agent access, node-based workflows, and system-level isolation follow the [roadmap](roadmap.en.md).
-
-The automatic canvas requests its visible region when enlarged. Basic point color adjustments, unrotated crops, shape crops, lassos, and the vignette extension support regional computation. Global statistics, filters, faces, and models retain their full reference domain and preparation before delivering the requested region. Region, proxy, and complete-output identities are separate, and panning updates the region. AI enhancement, background removal, legacy denoise, and ID photos reuse intermediates according to model inputs and parameter dependencies.
-
-Key contracts: [tools](../src/core/contracts/tools.py), [workflows](../src/core/contracts/workflow.py), [executor](../src/core/workflow/executor.py), [projects](../src/core/project), [built-in tool modules](../src/application/tool_modules.py).
+- [System Requirements and Performance](performance.en.md)
+- [Image Plugins](image-plugins.en.md)
+- [Development and Building](building.en.md)

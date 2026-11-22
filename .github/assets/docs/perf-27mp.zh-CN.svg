@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="460" viewBox="0 0 840 460" role="img" aria-labelledby="title desc">
+  <title id="title">2680 万像素人像交互耗时对比</title>
+  <desc>6554x4096 PNG 样图下，RTX 5060 显卡（wgpu / D3D12）与 CPU（Rust + AVX2）的帧间隔对比，越短越好。</desc>
+  <style>
+    .bg { fill: #ffffff; stroke: #d0d7de; }
+    .divider { stroke: #e5e7eb; }
+    .grid { stroke: #eef2f6; stroke-width: 1; }
+    .axis { stroke: #d0d7de; stroke-width: 1; }
+    .title { fill: #1f2328; font: 700 17px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .subtitle { fill: #59636e; font: 400 12.5px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .section { fill: #1f2328; font: 600 13px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .label { fill: #24292f; font: 500 12.5px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .tick { fill: #6e7781; font: 400 11px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .val-gpu { fill: #1d4ed8; font: 600 11.5px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .val-cpu { fill: #57606a; font: 500 11.5px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .bar-gpu { fill: #2563eb; }
+    .bar-cpu { fill: #94a3b8; }
+    .badge-bg { fill: #eff6ff; stroke: #bfdbfe; }
+    .badge-fg { fill: #1d4ed8; font: 600 11.5px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .badge-neutral-bg { fill: #f6f8fa; stroke: #d0d7de; }
+    .badge-neutral-fg { fill: #57606a; font: 500 11.5px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; stroke: #30363d; }
+      .divider { stroke: #21262d; }
+      .grid { stroke: #21262d; }
+      .axis { stroke: #30363d; }
+      .title { fill: #e6edf3; }
+      .subtitle { fill: #8b949e; }
+      .section { fill: #e6edf3; }
+      .label { fill: #c9d1d9; }
+      .tick { fill: #8b949e; }
+      .val-gpu { fill: #60a5fa; }
+      .val-cpu { fill: #9ca3af; }
+      .bar-gpu { fill: #3b82f6; }
+      .bar-cpu { fill: #64748b; }
+      .badge-bg { fill: #172554; stroke: #1d4ed8; }
+      .badge-fg { fill: #93c5fd; }
+      .badge-neutral-bg { fill: #161b22; stroke: #30363d; }
+      .badge-neutral-fg { fill: #9ca3af; }
+    }
+  </style>
+
+  <rect class="bg" x="0.5" y="0.5" width="839" height="459" rx="12" stroke-width="1"/>
+
+  <!-- 标题与图例 -->
+  <text class="title" x="28" y="38">2680 万像素人像交互耗时对比（越短越好）</text>
+  <text class="subtitle" x="28" y="59">6554×4096 PNG · RTX 5060（wgpu / D3D12）对比 CPU（Rust + AVX2）</text>
+
+  <rect class="bar-gpu" x="626" y="27" width="12" height="12" rx="3"/>
+  <text class="label" x="644" y="37">显卡 GPU</text>
+  <rect class="bar-cpu" x="722" y="27" width="12" height="12" rx="3"/>
+  <text class="label" x="740" y="37">仅 CPU</text>
+
+  <!-- 上区：自动预览（0–100 ms，plotX=192，plotW=470，4.7 px/ms） -->
+  <text class="section" x="28" y="94">自动预览（按屏幕像素计算 · 尺度 0–100 ms）</text>
+
+  <line class="axis" x1="192" y1="106" x2="192" y2="204"/>
+  <line class="grid" x1="309.5" y1="106" x2="309.5" y2="204"/>
+  <line class="grid" x1="427" y1="106" x2="427" y2="204"/>
+  <line class="grid" x1="544.5" y1="106" x2="544.5" y2="204"/>
+  <line class="grid" x1="662" y1="106" x2="662" y2="204"/>
+
+  <text class="tick" x="192" y="219" text-anchor="middle">0</text>
+  <text class="tick" x="309.5" y="219" text-anchor="middle">25 ms</text>
+  <text class="tick" x="427" y="219" text-anchor="middle">50 ms</text>
+  <text class="tick" x="544.5" y="219" text-anchor="middle">75 ms</text>
+  <text class="tick" x="662" y="219" text-anchor="middle">100 ms</text>
+
+  <!-- 组 1：拖动曝光 21 vs 16 -->
+  <text class="label" x="178" y="133" text-anchor="end">拖动曝光</text>
+  <rect class="bar-gpu" x="192" y="113" width="98.7" height="12" rx="3"/>
+  <text class="val-gpu" x="298.7" y="123">21 ms</text>
+  <rect class="bar-cpu" x="192" y="129" width="75.2" height="12" rx="3"/>
+  <text class="val-cpu" x="275.2" y="139">16 ms</text>
+  <rect class="badge-neutral-bg" x="720" y="115" width="92" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-neutral-fg" x="766" y="131" text-anchor="middle">CPU 略快</text>
+
+  <!-- 组 2：拖动磨皮 38 vs 89 -->
+  <text class="label" x="178" y="181" text-anchor="end">拖动磨皮</text>
+  <rect class="bar-gpu" x="192" y="161" width="178.6" height="12" rx="3"/>
+  <text class="val-gpu" x="378.6" y="171">38 ms</text>
+  <rect class="bar-cpu" x="192" y="177" width="418.3" height="12" rx="3"/>
+  <text class="val-cpu" x="618.3" y="187">89 ms</text>
+  <rect class="badge-bg" x="720" y="163" width="92" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="766" y="179" text-anchor="middle">GPU 快 2.3×</text>
+
+  <line class="divider" x1="28" y1="236" x2="812" y2="236" stroke-width="1"/>
+
+  <!-- 下区：完整预览（0–2400 ms，plotX=192，plotW=470，0.195833 px/ms） -->
+  <text class="section" x="28" y="261">完整分辨率预览（全尺寸计算 · 尺度 0–2400 ms）</text>
+
+  <line class="axis" x1="192" y1="273" x2="192" y2="419"/>
+  <line class="grid" x1="309.5" y1="273" x2="309.5" y2="419"/>
+  <line class="grid" x1="427" y1="273" x2="427" y2="419"/>
+  <line class="grid" x1="544.5" y1="273" x2="544.5" y2="419"/>
+  <line class="grid" x1="662" y1="273" x2="662" y2="419"/>
+
+  <text class="tick" x="192" y="434" text-anchor="middle">0</text>
+  <text class="tick" x="309.5" y="434" text-anchor="middle">600 ms</text>
+  <text class="tick" x="427" y="434" text-anchor="middle">1200 ms</text>
+  <text class="tick" x="544.5" y="434" text-anchor="middle">1800 ms</text>
+  <text class="tick" x="662" y="434" text-anchor="middle">2400 ms</text>
+
+  <!-- 组 3：拖动曝光 50 vs 346 -->
+  <text class="label" x="178" y="299" text-anchor="end">拖动曝光</text>
+  <rect class="bar-gpu" x="192" y="279" width="9.8" height="12" rx="3"/>
+  <text class="val-gpu" x="209.8" y="289">50 ms</text>
+  <rect class="bar-cpu" x="192" y="295" width="67.8" height="12" rx="3"/>
+  <text class="val-cpu" x="267.8" y="305">346 ms</text>
+  <rect class="badge-bg" x="720" y="281" width="92" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="766" y="297" text-anchor="middle">GPU 快 6.9×</text>
+
+  <!-- 组 4：开美颜拖动曝光 73 vs 428 -->
+  <text class="label" x="178" y="347" text-anchor="end">开美颜拖动曝光</text>
+  <rect class="bar-gpu" x="192" y="327" width="14.3" height="12" rx="3"/>
+  <text class="val-gpu" x="214.3" y="337">73 ms</text>
+  <rect class="bar-cpu" x="192" y="343" width="83.8" height="12" rx="3"/>
+  <text class="val-cpu" x="283.8" y="353">428 ms</text>
+  <rect class="badge-bg" x="720" y="329" width="92" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="766" y="345" text-anchor="middle">GPU 快 5.9×</text>
+
+  <!-- 组 5：拖动磨皮 136 vs 2234 -->
+  <text class="label" x="178" y="395" text-anchor="end">拖动磨皮</text>
+  <rect class="bar-gpu" x="192" y="375" width="26.6" height="12" rx="3"/>
+  <text class="val-gpu" x="226.6" y="385">136 ms</text>
+  <rect class="bar-cpu" x="192" y="391" width="437.5" height="12" rx="3"/>
+  <text class="val-cpu" x="637.5" y="401">2234 ms</text>
+  <rect class="badge-bg" x="720" y="377" width="92" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="766" y="393" text-anchor="middle">GPU 快 16.4×</text>
+</svg>

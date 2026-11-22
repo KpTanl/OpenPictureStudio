@@ -2,135 +2,81 @@
 
 [简体中文](roadmap.md) | [English](roadmap.en.md) | [Français](roadmap.fr.md)
 
-[Back to README](../README.en.md)
+[Back to Home](../README.en.md) · [Documentation](README.en.md)
 
-## Project Vision
+OpenPictureStudio brings professional image processing and AI collaboration together into an open image creation platform directed by creators and extensible by developers.
 
-**Starting from professional photo processing, OPS will gradually bring together AI collaboration, automated workflows, and multi-mode image editing, to build an open AI image creation platform that creators control and developers extend together.**
+## Product Vision
 
-OpenPictureStudio (OPS) aims to combine professional imaging capabilities with AI, so that people can manage photos, grade color professionally, retouch intelligently, automate processing, and take on a wider range of image creation tasks in one creative environment.
+Professional creators need predictable color, tonal precision, non-destructive history, and consistent delivery; everyday users want an approachable path from an initial idea to a finished photo; developers and AI agents need clear, composable, inspectable tool contracts. OPS evolves around a unified image and project model where human aesthetic judgment, native algorithms, and AI execution work together on the same asset.
 
-Everyday users can start from a photo and an idea;
+## Current Baseline
 
-professional creators can take deep control of color, light and shadow, and detail;
+OPS delivers a complete Windows desktop application (see individual [Release Notes](https://github.com/KpTanl/OpenPictureStudio/releases) for version-specific changes):
 
-developers can bring new algorithms, models, and tools into the platform.
+- **Viewing and non-destructive editing:** Standard formats and camera RAW decoding, rating/culling, linked comparison, non-destructive color grading and local masks, portrait retouching, edit history, group sync, and batch export.
+- **GPU & native acceleration:** General-purpose wgpu/D3D12 image compute with out-of-VRAM GPU strip rendering (color grading, local masks, crop/rotation, portrait beauty, and qualified classic denoise), Rust/Rayon/AVX2 CPU acceleration, and optional DirectML model inference.
+- **AI collaboration:** Multi-mode AI assistant with reference-image analysis, A/B candidate comparison, named style memory, and undoable history integration.
+- **Extensibility:** Unified tool descriptors, workflow engine, `.opsproj` schema 4 project model, and trusted `image/1` subprocess image plugins.
 
-As workflows and external interfaces mature, AI agents will also be able to organize tool execution around a creative goal and hand the results back to the creator for review.
+## Four-Stage Product Evolution
 
-Human judgment, professional tools, and AI execution will collaborate on the same work. Creative experience can build up with a project and gradually become a method that can be reused, combined, and shared.
-
-## Where We Are Now
-
-OPS already offers a Windows release. The project currently covers photo browsing and culling, RAW decoding and color grading, local masks, non-destructive editing, AI image enhancement, an intelligent retouching assistant, photo group processing, project history, and batch export. For the specific features in each version, see the matching [release notes](https://github.com/KpTanl/OpenPictureStudio/releases).
-
-- **Professional processing**: Built on linear image processing, RAW color grading, and local adjustments, and the creative process is saved through parameters, history, and projects.
-- **AI collaboration**: The foundations are in place, including the retouching assistant, reference images, plan comparison, and named styles, and applicable adjustments go into an undoable edit history.
-- **Group delivery**: Photo culling, group adjustments, and batch export already exist, building a base for continuous processing and reusing workflows.
-- **Open extension**: Tool registration, workflow execution, and the project model already exist, and the development interfaces for third parties will keep being refined.
-
-## The Four-Stage Roadmap
-
-| Stage | Product goal | Main plans |
-| --- | --- | --- |
-| **Stage 1: Deepen AI creative collaboration** | Help AI understand user intent better and assist with professional image editing tasks | Expand the Agent's tool abilities, strengthen context understanding, reference image analysis, and style memory, and support multi-step adjustments, local refinement, and plan comparison |
-| **Stage 2: Build automated workflows** | Turn repeated operations and creative experience into flows that can be reused, combined, and run | Build a configurable workflow system with step orchestration, parameter reuse, conditional execution, batch tasks, background scheduling, and calls from external AI agents |
-| **Stage 3: Broaden all-round image creation** | Bring several ways of editing images into one project and widen the creative range | On top of non-destructive editing, gradually add layers, professional selections, pixel-level editing, and generative AI editing, with unified project saving and edit history |
-| **Stage 4: Build an open extension ecosystem** | Let creators and developers extend the platform's abilities together | Stabilize the public API and plugin SDK, support third-party algorithms, models, and tools, improve plugin isolation and permissions, and grow the sharing and distribution of styles, workflows, and plugins |
+```mermaid
+flowchart LR
+    S1["Stage 1 · AI Collaboration"] --> S2["Stage 2 · Automated Workflows"]
+    S2 --> S3["Stage 3 · All-Round Creation"]
+    S3 --> S4["Stage 4 · Open Plugin Ecosystem"]
+```
 
 ### Stage 1: Deepen AI Creative Collaboration
 
-Starting from the existing retouching assistant, let AI take part in a fuller creative process, drawing on the photo's content, the editing state, and the user's goal. Users can describe the mood they want, the details to keep, and the delivery requirements, then get closer to the goal step by step through preview, comparison, and parameter adjustment.
+Connect the assistant more closely with image content, editing context, and creative intent:
 
-Main directions:
-
-- **Cross-tool collaboration**: Expand the editing tools the assistant can call, connecting culling, global color grading, local adjustments, portrait processing, and export.
-- **Creative context**: Draw up multi-step plans from the current photo, the project, the edit history, and the user's requests, and support changing the goal midway and carrying on adjusting.
-- **Reference images and personal style**: Strengthen the analysis of the color, light, and style of reference images, so that users can build up, name, and reuse their own creative preferences.
-- **Controlled execution**: Improve plan preview, local refinement, and comparison of several plans, so that key changes can be reviewed, adopted, undone, and edited further.
-
-This stage aims to make natural language, professional parameters, and visual feedback one continuous creative process. Users can use AI to lower the cost of operating the tools, and can still go deep into the tools to control details at any time.
+- **Cross-tool execution:** Expand tool coverage across culling, global grading, local masks, portrait retouching, and export.
+- **Context & personal style:** Improve reference-image color/tone analysis and reusable named styles and preferences.
+- **Controllable edits:** Refine multi-step planning, local refinement, and A/B candidate review with full undo/redo support.
 
 ### Stage 2: Build Automated Workflows
 
-Keep a processing method that worked once, so that it can be applied to the next photo, the next set of material, and the next task. Personal styles, parameter combinations, and delivery rules will gradually become creative flows that can be combined and run.
+Turn successful manual adjustments into composable, reusable, schedulable workflows:
 
-Main directions:
-
-- **Flow orchestration**: Support combining processing steps and configuring inputs, parameters, and outputs, and gradually add conditional execution, multi-input processing, and reusable flow fragments.
-- **Group processing**: Apply the matching flow based on culling results, photo groups, and differences in the material, to improve consistency and delivery efficiency for a set of works.
-- **Background tasks**: Improve task progress, pause, cancel, retry on failure, and result management, so that long-running processing is easier to schedule and take over.
-- **External Agent interface**: Gradually open up photo loading, processing, preview, project saving, and export, so that an external AI agent can organize tasks without opening the desktop interface.
-
-This stage aims to save the time spent on repeated operations for creative judgment, so that individuals and small teams can reliably reuse their processing methods and turn daily experience into a workflow they can keep using.
+- **Flow orchestration:** Configurable node graphs, parameter reuse, conditional execution, multi-input steps, and reusable subflows.
+- **Group delivery & background jobs:** Smart batch application across photo groups with pause, cancel, and retry controls.
+- **External agent interface:** Expose loading, processing, previewing, project saving, and export contracts so external AI agents can orchestrate tasks headlessly.
 
 ### Stage 3: Broaden All-Round Image Creation
 
-Building on the existing non-destructive editing, gradually connect photo processing, pixel editing, and generative creation. In one project, users can organize material, adjust the picture, and change local content, while keeping the state and history needed to continue creating.
+Combine parametric photo editing, pixel compositing, and generative AI in a single project format:
 
-| Way of editing | Direction |
+| Editing Paradigm | Direction |
 | --- | --- |
-| **Non-destructive editing** | Keep improving RAW, color, local masks, and parametric processing, and keep the adjustable steps and creative judgment |
-| **Pixel and layer editing** | Gradually introduce layers, professional selections, compositing, and direct pixel changes, tied to undo, history, and project saving |
-| **Generative editing** | Explore image generation, local repainting, and content changes, and combine generated results with the regular editing tools |
-
-The several ways of editing will work together around one unified project: generated results can go on to color grading and local processing, pixel changes and parameter adjustments can both take part in making a work, and project saving can carry the material, the processing steps, and the resource references that are needed.
-
-This stage aims to extend creation from fixing an existing picture to combining material, changing content, and building new visual expression.
+| **Non-destructive adjustments** | Continue refining RAW color science, local masks, and high-precision parametric pipelines |
+| **Layers & pixel editing** | Add layers, advanced selections, compositing, and direct pixel brushwork backed by unified history and `.opsproj` |
+| **Generative editing** | Integrate image generation, inpainting, and localized synthesis alongside standard grading tools |
 
 ### Stage 4: Build an Open Extension Ecosystem
 
-Along the direction of Everything is Plugin, let new algorithms, models, tools, and creative methods keep entering the platform. Creators can choose the combination of abilities that suits them, and developers can contribute extensions around clear needs.
+Advance the **Everything is Plugin** architecture for sustainable third-party extensibility:
 
-Main directions:
+- **Public API & plugin SDK:** Stabilize tool contracts, parameter schemas, resource management, and runtime documentation.
+- **Sandboxing & permissions:** Strengthen plugin isolation, explicit permission boundaries, resource quotas, and version compatibility.
+- **Community sharing:** Support distributing third-party algorithms, model adapters, named styles, and workflow templates.
 
-- **Public API and plugin SDK**: Gradually stabilize tool integration, parameter declarations, resource management, and the execution interface, and provide documentation and examples to lower the cost of third-party extensions.
-- **Tool and model extensions**: Support new image algorithms, model adapters, and creative tools taking part in manual editing, workflow execution, and AI calls.
-- **Isolation and permissions**: Keep improving plugin execution isolation, permission declarations, resource access, and version compatibility, so that what an extension does and where it can be used is clearer.
-- **Sharing creative methods**: Grow the sharing and distribution of named styles, workflow templates, and plugins, so that professional experience can be learned, combined, and built on again.
+## Continuous Engineering Tracks
 
-In the long run, the hope is for an ecosystem where creators and developers support each other: real needs bring new tools, tools and flows carry new methods, and sharing in turn drives more creative practice.
-
-## Ongoing Engineering
-
-Performance, stability, compatibility, and engineering quality run through every stage and support the continued growth of the product.
-
-### Native Image Computation Engine
-
-Rust is the preferred native computation path, with a fallback to Python/NumPy kept for compatibility. Computation, data copying, and buffer reuse keep being optimized, and together with Rayon multithreading they improve the efficiency of large-image editing and batch processing.
-
-CPUs that support AVX2 automatically enable the kernels already wired in, and other CPUs use the portable Rust path. Later work will explore further optimizations such as FMA, extending the acceleration within the limits of numerical precision and compatibility.
-
-### Cross-Hardware Acceleration
-
-Building on the wgpu/D3D12 image backend, extend coverage across Intel, AMD, and NVIDIA Windows hardware, record numerical quality and measured gains for each tool, model, and device qualification, and keep a reliable CPU execution path.
-
-As image operation interfaces and resource management mature, continue support for more hardware and platforms. DirectML inference and GPU image processing coordinate through the unified execution contract to serve the editing experience.
-
-### RAW and Color Processing
-
-Keep optimizing full RAW decoding, preview switching, cache management, and high bit depth image processing, to improve color accuracy, processing speed, and memory efficiency. Using real photos and the usage scenarios of different devices, improve how large images, local adjustments, and group processing perform.
-
-### Application Architecture and Quality
-
-Keep improving the desktop experience on the PySide6 interface already adopted, move the architecture toward more modular designs, and strengthen quality checks, crash recovery, and project compatibility across versions. Improvements in performance and resource management will cover the whole process of loading, editing, background tasks, saving, and export.
-
-Image computation, flow execution, and project data together form the long-term foundation:
-
-| Foundation | Goal |
+| Engineering Track | Focus Areas |
 | --- | --- |
-| **Image computation** | Provide consistent image operations, color, and output for manual editing, AI tools, and workflows |
-| **Flow execution** | Connect operation orchestration, task scheduling, cancellation, and result delivery, and support interactive and background processing |
-| **Project data** | Organize material, edit state, history, and resource references in one place, so that different tools can work together on the same work |
+| **Native CPU Engine** | Expand Rust + Rayon parallelism and buffer reuse, broaden AVX2 coverage, and evaluate FMA where precision permits while keeping portable x64 support |
+| **Cross-Hardware GPU** | Qualify Intel, AMD, and NVIDIA hardware across more AI and image tools, refining shared wgpu/D3D12 and DirectML memory scheduling |
+| **RAW & Color Management** | Improve full RAW decode throughput, preview responsiveness, and wide-gamut / high-bit-depth color fidelity |
+| **Architecture & Quality** | Evolve modular PySide6 architecture, fault recovery, long-session stability, and backward-compatible project loading |
 
-For the related technical directions, see [Architecture and Native Acceleration](architecture.en.md). For configuration and measured results, see [System Requirements and Performance](performance.en.md).
+## Open Collaboration and License
 
-## Long-Term Direction and Getting Involved
+Original OPS source code is licensed under the [MIT License](../LICENSE), with third-party libraries and models governed by their own licenses. Priorities adapt with technical readiness and community feedback—share ideas or feature requests via [GitHub Issues](https://github.com/KpTanl/OpenPictureStudio/issues).
 
-OPS hopes to gradually build a unified foundation for image creation, in which manual editing, AI generation, and automated workflows work together, while users keep control over the creative process, their data, their models, and the final result.
+## Related Documentation
 
-Professional creators can build up their own styles and methods, everyday users can use the tools and AI to gradually form a personal expression, and developers can build new abilities around the open interfaces. Works, tools, and experience will connect with one another through continued use, and push the platform toward a wider range of image creation scenarios.
-
-The project's original code currently uses the [MIT License](../LICENSE). Third-party components and models follow their own licenses, as described in [Licensing and Third-Party Components](licensing.en.md). To discuss specific use cases, tool needs, and suggestions for extensions, use [GitHub Issues](https://github.com/KpTanl/OpenPictureStudio/issues).
-
-The stages advance according to how capabilities depend on each other, and some directions can run in parallel. The project will adjust priorities based on development progress, technical maturity, and community feedback. The features of each version are defined by the corresponding release notes.
+- [Architecture and Native Acceleration](architecture.en.md)
+- [Image Plugins](image-plugins.en.md)
+- [Licensing and Third-Party Components](licensing.en.md)

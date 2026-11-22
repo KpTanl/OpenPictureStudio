@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="480" viewBox="0 0 840 480" role="img" aria-labelledby="title desc">
+  <title id="title">133 MP Large-Image GPU Strip Latency (Lower is Better)</title>
+  <desc>Interactive preview and PNG export times on a 15360x8640 PNG comparing GPU strips (RTX 5060) against CPU (Rust + AVX2).</desc>
+  <style>
+    .bg { fill: #ffffff; stroke: #d0d7de; }
+    .divider { stroke: #e5e7eb; }
+    .grid { stroke: #eef2f6; stroke-width: 1; }
+    .axis { stroke: #d0d7de; stroke-width: 1; }
+    .title { fill: #1f2328; font: 700 17px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .subtitle { fill: #59636e; font: 400 12.5px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .section { fill: #1f2328; font: 600 13px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .label { fill: #24292f; font: 500 12px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .tick { fill: #6e7781; font: 400 11px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .note { fill: #59636e; font: 400 11.5px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .val-gpu { fill: #1d4ed8; font: 600 11.5px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .val-cpu { fill: #57606a; font: 500 11.5px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .bar-gpu { fill: #2563eb; }
+    .bar-cpu { fill: #94a3b8; }
+    .badge-bg { fill: #eff6ff; stroke: #bfdbfe; }
+    .badge-fg { fill: #1d4ed8; font: 600 11px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; stroke: #30363d; }
+      .divider { stroke: #21262d; }
+      .grid { stroke: #21262d; }
+      .axis { stroke: #30363d; }
+      .title { fill: #e6edf3; }
+      .subtitle { fill: #8b949e; }
+      .section { fill: #e6edf3; }
+      .label { fill: #c9d1d9; }
+      .tick { fill: #8b949e; }
+      .note { fill: #8b949e; }
+      .val-gpu { fill: #60a5fa; }
+      .val-cpu { fill: #9ca3af; }
+      .bar-gpu { fill: #3b82f6; }
+      .bar-cpu { fill: #64748b; }
+      .badge-bg { fill: #172554; stroke: #1d4ed8; }
+      .badge-fg { fill: #93c5fd; }
+    }
+  </style>
+
+  <rect class="bg" x="0.5" y="0.5" width="839" height="479" rx="12" stroke-width="1"/>
+
+  <text class="title" x="28" y="38">133 MP Large-Image GPU Strip Performance (Lower is Better)</text>
+  <text class="subtitle" x="28" y="59">15360×8640 PNG · RTX 5060 GPU Strips (wgpu / D3D12) vs. CPU (Rust + AVX2)</text>
+
+  <rect class="bar-gpu" x="616" y="27" width="12" height="12" rx="3"/>
+  <text class="label" x="634" y="37">GPU strips</text>
+  <rect class="bar-cpu" x="720" y="27" width="12" height="12" rx="3"/>
+  <text class="label" x="738" y="37">CPU only</text>
+
+  <!-- Upper section: Interactive preview (0-10000 ms, plotX=236, plotW=396, 0.0396 px/ms) -->
+  <text class="section" x="28" y="92">Interactive Preview (ms · 0–10000 ms scale)</text>
+
+  <line class="axis" x1="236" y1="104" x2="236" y2="236"/>
+  <line class="grid" x1="335" y1="104" x2="335" y2="236"/>
+  <line class="grid" x1="434" y1="104" x2="434" y2="236"/>
+  <line class="grid" x1="533" y1="104" x2="533" y2="236"/>
+  <line class="grid" x1="632" y1="104" x2="632" y2="236"/>
+
+  <text class="tick" x="236" y="250" text-anchor="middle">0</text>
+  <text class="tick" x="335" y="250" text-anchor="middle">2500 ms</text>
+  <text class="tick" x="434" y="250" text-anchor="middle">5000 ms</text>
+  <text class="tick" x="533" y="250" text-anchor="middle">7500 ms</text>
+  <text class="tick" x="632" y="250" text-anchor="middle">10000 ms</text>
+
+  <text class="label" x="222" y="130" text-anchor="end">Color only · fit view</text>
+  <rect class="bar-gpu" x="236" y="110" width="4.6" height="12" rx="2.3"/>
+  <text class="val-gpu" x="248.6" y="120">115 ms</text>
+  <rect class="bar-cpu" x="236" y="126" width="133.5" height="12" rx="3"/>
+  <text class="val-cpu" x="377.5" y="136">3371 ms</text>
+  <rect class="badge-bg" x="696" y="112" width="116" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="754" y="128" text-anchor="middle">GPU 29× faster</text>
+
+  <text class="label" x="222" y="174" text-anchor="end">Color only · 100% view</text>
+  <rect class="bar-gpu" x="236" y="154" width="3.5" height="12" rx="1.75"/>
+  <text class="val-gpu" x="247.5" y="164">42 ms</text>
+  <rect class="bar-cpu" x="236" y="170" width="120.8" height="12" rx="3"/>
+  <text class="val-cpu" x="364.8" y="180">3051 ms</text>
+  <rect class="badge-bg" x="696" y="156" width="116" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="754" y="172" text-anchor="middle">GPU 73× faster</text>
+
+  <text class="label" x="222" y="218" text-anchor="end">Crop · color · 2 masks · lasso</text>
+  <rect class="bar-gpu" x="236" y="198" width="12.5" height="12" rx="3"/>
+  <text class="val-gpu" x="256.5" y="208">316 ms</text>
+  <rect class="bar-cpu" x="236" y="214" width="362.1" height="12" rx="3"/>
+  <text class="val-cpu" x="606.1" y="224">9144 ms</text>
+  <rect class="badge-bg" x="696" y="200" width="116" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="754" y="216" text-anchor="middle">GPU 29× faster</text>
+
+  <line class="divider" x1="28" y1="266" x2="812" y2="266" stroke-width="1"/>
+
+  <!-- Lower section: PNG export (0-12 s, plotX=236, plotW=396, 33 px/s) -->
+  <text class="section" x="28" y="290">PNG Export (seconds · 0–12 s scale)</text>
+
+  <line class="axis" x1="236" y1="302" x2="236" y2="394"/>
+  <line class="grid" x1="335" y1="302" x2="335" y2="394"/>
+  <line class="grid" x1="434" y1="302" x2="434" y2="394"/>
+  <line class="grid" x1="533" y1="302" x2="533" y2="394"/>
+  <line class="grid" x1="632" y1="302" x2="632" y2="394"/>
+
+  <text class="tick" x="236" y="409" text-anchor="middle">0</text>
+  <text class="tick" x="335" y="409" text-anchor="middle">3 s</text>
+  <text class="tick" x="434" y="409" text-anchor="middle">6 s</text>
+  <text class="tick" x="533" y="409" text-anchor="middle">9 s</text>
+  <text class="tick" x="632" y="409" text-anchor="middle">12 s</text>
+
+  <text class="label" x="222" y="328" text-anchor="end">Color only · export PNG</text>
+  <rect class="bar-gpu" x="236" y="308" width="125.4" height="12" rx="3"/>
+  <text class="val-gpu" x="369.4" y="318">3.8 s</text>
+  <rect class="bar-cpu" x="236" y="324" width="204.6" height="12" rx="3"/>
+  <text class="val-cpu" x="448.6" y="334">6.2 s</text>
+  <rect class="badge-bg" x="696" y="310" width="116" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="754" y="326" text-anchor="middle">GPU 1.6× faster</text>
+
+  <text class="label" x="222" y="374" text-anchor="end">Crop · color · 2 masks · lasso</text>
+  <rect class="bar-gpu" x="236" y="354" width="89.1" height="12" rx="3"/>
+  <text class="val-gpu" x="333.1" y="364">2.7 s</text>
+  <rect class="bar-cpu" x="236" y="370" width="366.3" height="12" rx="3"/>
+  <text class="val-cpu" x="610.3" y="380">11.1 s</text>
+  <rect class="badge-bg" x="696" y="356" width="116" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="754" y="372" text-anchor="middle">GPU 4.1× faster</text>
+
+  <text class="note" x="28" y="441">Note: Cropped workflow output is 11625×5436 (rounded shape + lasso). In an uncropped “color + 2 masks” run,</text>
+  <text class="note" x="28" y="459">the CPU path stopped with an out-of-memory error, whereas GPU strips completed reliably (fit 184 ms, export 3.9 s).</text>
+</svg>

@@ -2,35 +2,37 @@
 
 [简体中文](building.md) | [English](building.en.md) | [Français](building.fr.md)
 
-## Independent candidate builds
+[Back to Home](../README.en.md) · [Documentation](README.en.md)
 
-Use `tools/build_review_candidate.py` for a workspace review candidate, passing native source and artifact manifests that match the release module. The `--native-sources` and `--native-artifacts` arguments are required. The independent `dist/candidate-<version>/` directory contains the candidate installer, source ZIP, source snapshot, dependency identities, and artifact hashes. Builds use a fixed source copy. The program's `components.json` and `SOURCE.txt` identify the included source archive. Installer names contain `candidate`. Formal builds continue to require a clean committed source candidate and manual acceptance. See [Image Plugins](image-plugins.en.md) for extension development.
+This guide covers running OpenPictureStudio from source, compiling the Rust native acceleration module, and building the Windows installer.
 
-[Back to README](../README.en.md)
+## Prerequisites and Running from Source
 
-## Running from Source
-
-Python 3.12 or later is required (development and release builds use 3.13). Dependencies are split by feature, so you can install only the parts you need.
+Development and release builds target **Python 3.13** (minimum Python 3.12). Dependencies are layered so you can install only what you need:
 
 ```powershell
-# 1. Get the source
+# 1. Clone the repository and create a virtual environment
 git clone https://github.com/KpTanl/OpenPictureStudio.git
 cd OpenPictureStudio
 python -m venv .venv
 .\.venv\Scripts\activate
 
-# 2. Install the base dependencies (viewing, color grading, format handling, and output)
+# 2. Install base dependencies (viewing, color grading, formats, export)
 pip install -r requirements.txt
 
-# 3. (Optional) Install the AI and portrait retouching dependencies
+# 3. (Optional) Install local AI and portrait beauty dependencies
 pip install -r requirements-ai.txt
 pip install -r requirements-beauty.txt
 
-# 4. Start the app
+# 4. Launch the application
 python main.py
 ```
 
-The Rust acceleration module is optional. Building requires Rust, MSVC C++ Build Tools, and the Windows SDK. The default static DXC feature also requires the “C++ ATL for x64/x86” component. The first build downloads and verifies the pinned DXC static library. Build the module and copy the result to the repository root:
+When running from source without the compiled native module, image processing automatically falls back to Python/NumPy implementations. See [tests/README.md](../tests/README.md) for running tests.
+
+## Building the Native Acceleration Module
+
+`ops_accel.pyd` is optional when running from source and required for release installers. Building requires the **Rust toolchain**, **MSVC C++ Build Tools**, and the **Windows SDK**. Default static DXC shader compilation also requires the **"C++ ATL for x64/x86"** component (the first build downloads and verifies a pinned DXC static archive):
 
 ```powershell
 cd native\ops_accel
@@ -39,50 +41,33 @@ copy target\release\ops_accel.dll ..\..\ops_accel.pyd
 cd ..\..
 ```
 
-If ATL build libraries are supplied separately, set the process environment variable `OPS_ATL_LIB` to the directory containing `atls.lib`. Use `cargo build --release --locked --no-default-features` for an FXC-only native module. The application does not require these build tools at runtime.
+| Build Variant | Purpose |
+| --- | --- |
+| Set `OPS_ATL_LIB` env var | Point directly to a folder containing `atls.lib` |
+| `cargo build --release --locked --no-default-features` | Build FXC-only native module without ATL |
 
-## Building
+Release builds keep a portable x86_64 CPU target and detect AVX2 at runtime. To test or compare non-AVX2 behavior, launch with `OPS_CPU_KERNEL=portable` (see [CPU Computation and Compatibility](architecture.en.md#cpu-computation-and-compatibility)).
 
-### Building the Installer
+## Building the Windows Installer
 
-You need Inno Setup 6.7.1, the Rust toolchain, and the full set of dependencies (app, AI, portrait retouching, and packaging). `requirements-build.lock.txt` pins the tested versions and is what release builds install from. `requirements-build.txt` is its source. Before building, the script checks the Python version, whether the dependencies are complete, and that the environment has only one OpenCV distribution.
+Packaging requires **Inno Setup 6.7.1**, the Rust toolchain, and pinned build dependencies from [requirements-build.lock.txt](../requirements-build.lock.txt) (which locks `PySide6_Essentials==6.11.3` and `shiboken6==6.11.3` and excludes PyQt5/PyQt6/PySide2):
 
 ```powershell
 pip install -r requirements-build.lock.txt
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-### CI and Releases
+> **Note:** `build.ps1` uses `.venv\Scripts\python.exe`, requires a clean Git working tree with all release sources committed, and wipes `build/` and `dist/` at start. Make sure local Cargo dependency sources are cached (`cargo fetch --locked`) before license collection runs.
 
-CI runs these steps as separate jobs, in order: code checks and Python precompilation, native module build, tests, and installer build. Pull requests run up to the tests. Pushes to `dev`/`main` and manual runs continue on to packaging.
+- **Build outputs:** The staged application folder is written to `dist/OpenPictureStudio/`, and the installer EXE plus `.exe.sha256` checksum are written to `dist/installer/`.
+- **Reusing native module:** Pass `-SkipNativeBuild` if `ops_accel.pyd` in the repository root is already compiled from the matching source.
 
-A version tag runs the same stages, checks that the commit is already in `main` and that the tag matches `APP_VERSION`, then creates a draft Release. The maintainer publishes the final release by hand.
+## CI and Automated Releases
 
-The native build uploads `ops_accel.pyd`, and the tests and packaging download the same artifact. Packaging reuses that module through `build.ps1 -SkipNativeBuild` and prepares Cargo dependency sources for license collection. Downstream jobs pick the artifact by the producer's artifact ID.
+GitHub Actions automatically runs Python linting, bytecode compilation checks, native Rust builds, and the test suite on repository changes. Pushing a release tag builds the Windows installer and publishes matching `.sha256` checksum assets directly from the public workflow.
 
-### Running Tests
+## Related Documentation
 
-For test instructions, see [tests/README.en.md](../tests/README.en.md).
-
-## PySide6 and the Native Module
-
-The base dependencies pin `PySide6_Essentials==6.11.3` and `shiboken6==6.11.3`. Release dependencies follow [requirements-build.lock.txt](../requirements-build.lock.txt), and the Qt binding is PySide6. `build.ps1` always uses `.venv\Scripts\python.exe` in the repository root, and requires all release sources to be committed and the working tree to be clean. Ordinary source runs can happen in a development working tree.
-
-AVX2 is detected at runtime, and release builds keep a portable CPU target. If the native module is missing, a source run can use the Python/NumPy path for the related computation. A full release build requires `ops_accel.pyd` to be built successfully or explicitly reused.
-
-The build script cleans `build/` and `dist/`, so save any outputs you want to keep first. `-SkipNativeBuild` applies only to a native module that has been confirmed to match the candidate source. License collection needs local Cargo dependency sources, which you can prepare by running `cargo fetch --locked`.
-
-Outputs: the program folder `dist/OpenPictureStudio/`, and the EXE and `.exe.sha256` in `dist/installer/`. Before release, complete the manual acceptance checks below and confirm that the native module in the program folder matches this build.
-
-## PySide6 Migration and Release Acceptance
-
-The current source and packaging configuration use PySide6 Essentials and Shiboken 6.11.3, and exclude PyQt5, PyQt6, and PySide2. Before a release, check the following by hand:
-
-1. On a test account, install the previous version and record its version, install folder, and data folder. Back up settings, AI models, `.opsproj` projects, and custom data.
-2. Close all OPS instances and install the candidate over it in the same folder. Check that the app starts, that the old PyQt files are removed according to the install manifest, and that PySide6 and Shiboken load normally.
-3. Open existing projects and check the edit history, model references, and export. Check that the settings and the custom data folder still work.
-4. In Settings, confirm that models and runtimes are still recognized, then open the viewer, RAW, mask, retouching, and assistant interfaces in turn.
-5. Cancel one test installation, then run the full installer of the same version. Handle backups and conflicts as the installer prompts, and check that the app starts after the repair.
-6. On a machine with AVX2 and one without, check startup, color grading, and export. `portable` can verify the portable kernels. Records of real hardware compatibility must come from the matching machines.
-
-During acceptance, record the installer version, SHA256, Windows version, data folder, and results.
+- [Architecture and Native Acceleration](architecture.en.md)
+- [Image Plugins](image-plugins.en.md)
+- [Licensing and Third-Party Components](licensing.en.md)

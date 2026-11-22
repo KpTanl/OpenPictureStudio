@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="460" viewBox="0 0 840 460" role="img" aria-labelledby="title desc">
+  <title id="title">1.33 亿像素大图分条带耗时对比</title>
+  <desc>15360x8640 PNG 样图下，RTX 5060 显卡分条带与 CPU（Rust + AVX2）的交互预览及导出耗时对比，越短越好。</desc>
+  <style>
+    .bg { fill: #ffffff; stroke: #d0d7de; }
+    .divider { stroke: #e5e7eb; }
+    .grid { stroke: #eef2f6; stroke-width: 1; }
+    .axis { stroke: #d0d7de; stroke-width: 1; }
+    .title { fill: #1f2328; font: 700 17px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .subtitle { fill: #59636e; font: 400 12.5px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .section { fill: #1f2328; font: 600 13px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .label { fill: #24292f; font: 500 12.5px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .tick { fill: #6e7781; font: 400 11px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .note { fill: #59636e; font: 400 11.5px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .val-gpu { fill: #1d4ed8; font: 600 11.5px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .val-cpu { fill: #57606a; font: 500 11.5px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    .bar-gpu { fill: #2563eb; }
+    .bar-cpu { fill: #94a3b8; }
+    .badge-bg { fill: #eff6ff; stroke: #bfdbfe; }
+    .badge-fg { fill: #1d4ed8; font: 600 11.5px "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; stroke: #30363d; }
+      .divider { stroke: #21262d; }
+      .grid { stroke: #21262d; }
+      .axis { stroke: #30363d; }
+      .title { fill: #e6edf3; }
+      .subtitle { fill: #8b949e; }
+      .section { fill: #e6edf3; }
+      .label { fill: #c9d1d9; }
+      .tick { fill: #8b949e; }
+      .note { fill: #8b949e; }
+      .val-gpu { fill: #60a5fa; }
+      .val-cpu { fill: #9ca3af; }
+      .bar-gpu { fill: #3b82f6; }
+      .bar-cpu { fill: #64748b; }
+      .badge-bg { fill: #172554; stroke: #1d4ed8; }
+      .badge-fg { fill: #93c5fd; }
+    }
+  </style>
+
+  <rect class="bg" x="0.5" y="0.5" width="839" height="459" rx="12" stroke-width="1"/>
+
+  <!-- 标题与图例 -->
+  <text class="title" x="28" y="38">1.33 亿像素大图分条带耗时对比（越短越好）</text>
+  <text class="subtitle" x="28" y="59">15360×8640 PNG · RTX 5060 显卡分条带对比 CPU（Rust + AVX2）</text>
+
+  <rect class="bar-gpu" x="610" y="27" width="12" height="12" rx="3"/>
+  <text class="label" x="628" y="37">显卡分条带</text>
+  <rect class="bar-cpu" x="722" y="27" width="12" height="12" rx="3"/>
+  <text class="label" x="740" y="37">仅 CPU</text>
+
+  <!-- 上区：交互预览（0–10000 ms，plotX=216，plotW=446，0.0446 px/ms） -->
+  <text class="section" x="28" y="92">交互预览（单位：毫秒 · 尺度 0–10000 ms）</text>
+
+  <line class="axis" x1="216" y1="104" x2="216" y2="236"/>
+  <line class="grid" x1="327.5" y1="104" x2="327.5" y2="236"/>
+  <line class="grid" x1="439" y1="104" x2="439" y2="236"/>
+  <line class="grid" x1="550.5" y1="104" x2="550.5" y2="236"/>
+  <line class="grid" x1="662" y1="104" x2="662" y2="236"/>
+
+  <text class="tick" x="216" y="250" text-anchor="middle">0</text>
+  <text class="tick" x="327.5" y="250" text-anchor="middle">2500 ms</text>
+  <text class="tick" x="439" y="250" text-anchor="middle">5000 ms</text>
+  <text class="tick" x="550.5" y="250" text-anchor="middle">7500 ms</text>
+  <text class="tick" x="662" y="250" text-anchor="middle">10000 ms</text>
+
+  <!-- 组 1：只调色 · 适屏预览 115 vs 3371 -->
+  <text class="label" x="202" y="130" text-anchor="end">只调色 · 适屏预览</text>
+  <rect class="bar-gpu" x="216" y="110" width="5.1" height="12" rx="2.5"/>
+  <text class="val-gpu" x="229.1" y="120">115 ms</text>
+  <rect class="bar-cpu" x="216" y="126" width="150.3" height="12" rx="3"/>
+  <text class="val-cpu" x="374.3" y="136">3371 ms</text>
+  <rect class="badge-bg" x="720" y="112" width="92" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="766" y="128" text-anchor="middle">GPU 快 29×</text>
+
+  <!-- 组 2：只调色 · 100% 查看 42 vs 3051 -->
+  <text class="label" x="202" y="174" text-anchor="end">只调色 · 100% 查看</text>
+  <rect class="bar-gpu" x="216" y="154" width="3.5" height="12" rx="1.75"/>
+  <text class="val-gpu" x="227.5" y="164">42 ms</text>
+  <rect class="bar-cpu" x="216" y="170" width="136.1" height="12" rx="3"/>
+  <text class="val-cpu" x="360.1" y="180">3051 ms</text>
+  <rect class="badge-bg" x="720" y="156" width="92" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="766" y="172" text-anchor="middle">GPU 快 73×</text>
+
+  <!-- 组 3：裁切·调色·双蒙版·套索 · 适屏预览 316 vs 9144 -->
+  <text class="label" x="202" y="218" text-anchor="end">裁切·调色·双蒙版·套索</text>
+  <rect class="bar-gpu" x="216" y="198" width="14.1" height="12" rx="3"/>
+  <text class="val-gpu" x="238.1" y="208">316 ms</text>
+  <rect class="bar-cpu" x="216" y="214" width="407.8" height="12" rx="3"/>
+  <text class="val-cpu" x="631.8" y="224">9144 ms</text>
+  <rect class="badge-bg" x="720" y="200" width="92" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="766" y="216" text-anchor="middle">GPU 快 29×</text>
+
+  <line class="divider" x1="28" y1="266" x2="812" y2="266" stroke-width="1"/>
+
+  <!-- 下区：导出 PNG（0–12 s，plotX=216，plotW=446，37.1667 px/s） -->
+  <text class="section" x="28" y="290">导出 PNG（单位：秒 · 尺度 0–12 s）</text>
+
+  <line class="axis" x1="216" y1="302" x2="216" y2="394"/>
+  <line class="grid" x1="327.5" y1="302" x2="327.5" y2="394"/>
+  <line class="grid" x1="439" y1="302" x2="439" y2="394"/>
+  <line class="grid" x1="550.5" y1="302" x2="550.5" y2="394"/>
+  <line class="grid" x1="662" y1="302" x2="662" y2="394"/>
+
+  <text class="tick" x="216" y="409" text-anchor="middle">0</text>
+  <text class="tick" x="327.5" y="409" text-anchor="middle">3 s</text>
+  <text class="tick" x="439" y="409" text-anchor="middle">6 s</text>
+  <text class="tick" x="550.5" y="409" text-anchor="middle">9 s</text>
+  <text class="tick" x="662" y="409" text-anchor="middle">12 s</text>
+
+  <!-- 组 4：只调色 · 导出 PNG 3.8 vs 6.2 -->
+  <text class="label" x="202" y="328" text-anchor="end">只调色 · 导出 PNG</text>
+  <rect class="bar-gpu" x="216" y="308" width="141.2" height="12" rx="3"/>
+  <text class="val-gpu" x="365.2" y="318">3.8 s</text>
+  <rect class="bar-cpu" x="216" y="324" width="230.4" height="12" rx="3"/>
+  <text class="val-cpu" x="454.4" y="334">6.2 s</text>
+  <rect class="badge-bg" x="720" y="310" width="92" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="766" y="326" text-anchor="middle">GPU 快 1.6×</text>
+
+  <!-- 组 5：裁切·调色·双蒙版·套索 · 导出 PNG 2.7 vs 11.1 -->
+  <text class="label" x="202" y="374" text-anchor="end">裁切·调色·双蒙版·套索</text>
+  <rect class="bar-gpu" x="216" y="354" width="100.4" height="12" rx="3"/>
+  <text class="val-gpu" x="324.4" y="364">2.7 s</text>
+  <rect class="bar-cpu" x="216" y="370" width="412.6" height="12" rx="3"/>
+  <text class="val-cpu" x="636.6" y="380">11.1 s</text>
+  <rect class="badge-bg" x="720" y="356" width="92" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="766" y="372" text-anchor="middle">GPU 快 4.1×</text>
+
+  <!-- 底部注解 -->
+  <text class="note" x="28" y="440">注：裁切输出为 11625×5436（圆角与套索）。另测“只调色 + 2 个蒙版”时 CPU 提示可用内存不足，显卡分条带稳定完成（适屏 184 ms，导出 3.9 s）。</text>
+</svg>

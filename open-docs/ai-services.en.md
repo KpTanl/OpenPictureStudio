@@ -2,95 +2,107 @@
 
 [简体中文](ai-services.md) | [English](ai-services.en.md) | [Français](ai-services.fr.md)
 
-[Back to README](../README.en.md) · [Documentation](README.en.md)
+[Back to Home](../README.en.md) · [Documentation](README.en.md)
 
-## Local AI Tools and the Retouching Assistant
+OpenPictureStudio keeps local AI image tools strictly separate from the online AI retouching assistant. No photos or data leave your computer until you explicitly configure a service and choose what to share.
 
-| Capability | How it works |
+> **Note:** Local AI tools—including super resolution, AI denoise, deblur, cutout, and portrait retouching—run completely offline once their models are downloaded. Only the online **AI Assistant** sends requests to external services you configure.
+
+## Data Boundaries and Privacy
+
+```mermaid
+flowchart LR
+    subgraph L["Local Offline Environment (Stays on Device)"]
+        RAW["Original photos and project files"]
+        MOD["Local AI models and DirectML inference"]
+        KEY["API keys and credentials encrypted via Windows DPAPI"]
+        HIST["Edit history, chat logs, attachments, and styles"]
+    end
+    subgraph G["Sending Controls (Controlled Per Request)"]
+        OPT["Context and photo options: Current image / Original image / Don't send the photo"]
+    end
+    subgraph R["User-Configured External AI Service"]
+        API["Chat / Plan / Adjust / Agent API requests"]
+    end
+    L --> OPT
+    OPT -->|"Prompts, parameter summaries, optional EXIF-stripped JPEG previews"| R
+```
+
+- **Local encrypted storage:** API keys, custom headers, and proxy credentials are encrypted with Windows DPAPI on your machine. Conversations, named styles, and photo preview attachments stay local and are never uploaded automatically.
+- **Metadata-stripped previews:** Whenever photo sharing is enabled, OPS sends freshly re-encoded JPEG previews containing no original EXIF shooting details, camera serial numbers, or location tags.
+- **Independent service billing:** Model tests, chats, and multi-step Agent tasks count toward the usage, quota, and billing rules of your chosen provider. No network calls occur when no service is configured.
+
+## Setup and Connections
+
+### Local AI Tools
+
+| Capability | Where to Configure | Acceleration Notes |
+| --- | --- | --- |
+| Download, import, uninstall, and default models | **Settings → Tools and Models** | Works offline once models are imported or downloaded |
+| General GPU image processing | **Settings → Performance & memory** | Defaults to Prefer GPU once the startup self-check passes |
+| Optional DirectML AI runtime | **Settings → Runtimes** | Takes effect after restart to accelerate compatible GPU model inference |
+
+### Online AI Assistant
+
+1. Open **Settings → AI Services**, click **Add connection**, and enter a name, base URL (service root or full Chat Completions / Responses endpoint), and API key.
+2. Adjust the API protocol, authentication scheme, and any proxy or custom headers under **Connection options**.
+3. Click **Verify & fetch models** (or **Add model manually** if the endpoint returns no list), then enable **Image input**, **Supports tool calling**, streaming, and token/output limits to match the model's real capabilities.
+4. Run a model test to verify connectivity, set a default model, and start using the assistant panel.
+
+| Use Case | Required Model Capability |
 | --- | --- |
-| Local AI tools such as super resolution, denoise, cutout, and portrait retouching | Prepare the models you need in Settings → Tools and Models. Photos are processed on your computer. The optional GPU runtime is managed in Settings → Runtimes |
-| AI retouching assistant | Configure a connection and models in Settings → AI Services. The text, parameters, and photo content you choose are sent to that service, and you get back chat replies, plans, or tool-call results |
+| Text-only photography advice | Any text model (select **Don't send the photo** below the input box) |
+| Visual analysis of photos, references, or A/B candidates | Vision-capable model with **Image input** enabled |
+| Agent-driven edits and workflow tool calls | Function-calling model with **Supports tool calling** enabled |
+| High-resolution region inspection | **Image input** enabled with an appropriate single-image long-edge setting |
 
-Model downloads and service connections are managed separately. Local tools work offline once their models and runtime are ready. The online assistant needs access to the service you chose.
+## Assistant Modes and Sending Rules
 
-## Setting Up a Service Connection
+### Four Collaboration Modes
 
-1. Open Settings → AI Services and click Add connection.
-2. Enter the connection name, the base address given by the service provider, and the API key if one is needed. The base address can be the service root, or a full Chat Completions or Responses endpoint address.
-3. Under Connection options, choose the API protocol and authentication that the service requires. If you need a proxy or extra request headers, fill those in as well.
-4. Click Verify & fetch models, then add models from the returned list. If the service does not return a list, use Add model manually and enter the exact model ID.
-5. Expand Model settings and configure options such as image input, tool calling, streaming, and the output limit, according to what the model actually supports.
-6. Run a model test to confirm the model replies. You can set a frequently used model as the default, then go back to the assistant panel and start using it.
+| Mode | Purpose | Effect on Photo |
+| --- | --- | --- |
+| **Chat** | Discuss composition, lighting, and editing ideas | Read-only conversation |
+| **Plan** | Inspect current state and propose a multi-step plan | Leaves photo unchanged |
+| **Adjust** | Generate and apply color or beauty parameters | Writes directly to edit history (undoable/redoable) |
+| **Agent** | Run multi-step tool workflows and inspect results | Writes applied steps to history; **A/B candidates** apply only when you click **Adopt** |
 
-A model test sends one short test message. API usage, cost, and quota from tests and everyday chats are counted against the service account you chose. A multi-step Agent task can involve several rounds of requests.
+You can attach reference images or confirm named styles and long-term preferences via confirmation cards.
 
-## Choosing Model Capabilities by Use
+### Photo and Context Controls
 
-| Use case | Capability to set up |
+Before sending a prompt, choose a photo source below the input box. The panel header always summarizes what is permitted for the next request:
+
+| Option | Sent Image Content | Max Resolution |
+| --- | --- | --- |
+| **Current image** (default first turn) | Preview of the photo with current adjustments | Up to 1536 px on long edge (never upscaled) |
+| **Original image** | Unadjusted preview from the original image | Up to 2048 px on long edge (never upscaled) |
+| **Don't send the photo** | Omits the current photo, reference images, and tool observation images | — |
+
+When photo sharing is active on an image-capable model, the assistant can also inspect before/after previews and allowed high-detail regions as needed. Text context options let you toggle chat history, current parameters, workflow summaries, locally computed luminance/face descriptions, and saved style preferences; choosing **Don't send the photo** still allows selected text context to be sent.
+
+## Local Data Management and Troubleshooting
+
+### Managing Attachments and Provider Policies
+
+You can delete old chats or clear conversation image attachments at any time without affecting your original photo files, message text, or edit history. Once requests leave your machine, data retention on the server side follows your provider's terms and privacy policy.
+
+### Common Connection Issues
+
+| Symptom | Resolution |
 | --- | --- |
-| Text chat and photography advice | A working text model. If it does not support images, choose "Don't send the photo" |
-| Visual analysis of the current photo, a reference image, or a plan | A model that supports image input, with Image input turned on in Model settings |
-| Agent calling editing tools | A model that supports tool calling, with Tool calling turned on in Model settings |
-| High-resolution local detail | Image input is on, and the image options, such as Effective image long edge, are set to match the model |
+| Connection verification or auth fails | Check base URL format, API protocol, auth method, API key permissions, and proxy config |
+| Provider returns an empty model list | Use **Add model manually** with the exact model ID from your provider |
+| Model does not support images | Pick a multimodal model and enable **Image input**, or switch to **Don't send the photo** |
+| Agent replies only with text | Choose a tool-capable model and enable **Supports tool calling** in model settings |
+| Request timeout or streaming drops | Check network/provider status, increase the timeout limit, or disable streaming |
+| Context exceeds budget | Click **Compact context**, trim included history, or raise the model context budget |
+| Local attachment storage full | Delete unused chats or clear photo attachments, then re-attach needed images |
 
-What a model can do depends on what the service actually supports. Image input, tool calling, and streaming can each be configured separately.
+> **Tip:** When reporting AI service issues on [GitHub Issues](https://github.com/KpTanl/OpenPictureStudio/issues), include the app version, exact error message, and reproduction steps—and remove all API keys, proxy credentials, and personal photos before posting.
 
-## Using the Assistant
+## Related Documentation
 
-| Mode | Suited for |
-| --- | --- |
-| Chat | Talking about photography, the picture, and ideas for processing |
-| Plan | Checking the current photo and its editing state, and discussing a plan, while leaving the photo unchanged |
-| Adjust | Generating and applying color or retouching adjustments that fit your request |
-| Agent | Organizing multi-step tool calls around a goal, processing the photo, and checking the result |
-
-Edits the assistant applies successfully are written to the photo's history. You can undo them, redo them, or keep editing by hand. When you want two options, ask for A/B candidates. Candidates are first shown for preview and comparison, and nothing is written to the current edit until you click Adopt.
-
-You can add a reference image to help describe your goal, and you can ask the assistant to save a named style or a long-term preference. Saving a style or preference needs your confirmation on a confirmation card.
-
-## Photo Sending Options
-
-Before you send a message, you can choose how photos are sent below the input box. The top of the assistant panel shows what may be sent for this request.
-
-| Option | Photo content sent |
-| --- | --- |
-| Current | By default the first message includes a preview of the current photo with your adjustments, with a long edge of up to 1536 pixels |
-| Original | The first message includes the image without edit adjustments, with a long edge of up to 2048 pixels |
-| Don't send the photo | No photo is attached to the request. Reference images and photos returned by tool observations are not sent either |
-
-An image smaller than these sizes is sent at its original size and is not enlarged. Photos are also not sent when Image input is not turned on for the model.
-
-With photo sending on, the assistant can also look at the original image, the image from before it started, and a preview of the current image when needed, as well as high-resolution local detail that the model settings allow. After you add a reference image, whether it is attached depends on the photo sending option and the model's image capability. Every photo sent is a re-encoded JPEG and does not include the original file's shooting information.
-
-## Text, Parameters, and Photo Analysis
-
-Besides photos, the assistant can send the following, depending on the context options:
-
-- The text you type, plus the selected chat history, standing requirements, and the chat summary.
-- The current adjustment parameters, a workflow summary, and relevant tool results from processing tasks.
-- Photo analysis computed on your computer, such as brightness, color cast, and faces. This is sent as text or numbers.
-- The named style you selected, long-term preferences you confirmed, and the relevant analysis of a reference image.
-
-With "Don't send the photo" selected, the text, parameters, and analysis you allowed can still be part of the request. You can adjust the scope of what is sent in the assistant's context options.
-
-## Local Data and Server-Side Data
-
-API keys, extra request headers, and proxy credentials are encrypted with Windows DPAPI and stored on your computer. Chats, photo preview attachments, named styles, and preferences are also stored on your computer. Whatever you select as request context is sent to the service you chose.
-
-You can delete chats you no longer need, or clear the photo attachments of a chat. Clearing attachments keeps the original photos, the messages, and the photo's edit history. If you need to view a photo later, you can attach the current photo again.
-
-How the server stores and uses data depends on the service provider you chose. Check the settings and privacy policy of your service account to choose a service and a sending scope that suit you.
-
-## Common Connection Problems
-
-| Problem | What to do |
-| --- | --- |
-| The connection cannot be verified, or authentication fails | Check the base address, API protocol, authentication, key, and account permissions. If you use a proxy, check the proxy address |
-| The service returns no model list | Add the model manually, using the model ID given by the service provider |
-| A message says the model does not support images | Choose a model that supports images and turn on Image input, or change the photo option to "Don't send the photo" |
-| The Agent can only chat in text | Choose a model that supports tool calling, and turn on Tool calling in Model settings |
-| The request times out or a streaming reply fails | Check the network and the service status. Adjust the request timeouts to what the service supports, or turn off streaming and try again |
-| A message says the context exceeds the budget | Use Compact context, reduce the sending scope, or adjust the context window setting to the model's actual capability |
-| A message says attachment space is low | Delete chats you no longer need or clear photo attachments, then attach the photos you need again |
-
-To report a problem, you can use [GitHub Issues](https://github.com/KpTanl/OpenPictureStudio/issues) to provide the app version, the error message, and the steps to reproduce. Before making attachments public, remove information such as API keys, proxy credentials, and private photos.
+- [Installation and Upgrades](installation.en.md)
+- [System Requirements and Performance](performance.en.md)
+- [Architecture and Native Acceleration](architecture.en.md)

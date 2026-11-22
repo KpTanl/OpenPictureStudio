@@ -2,51 +2,53 @@
 
 [简体中文](installation.md) | [English](installation.en.md) | [Français](installation.fr.md)
 
-[Back to README](../README.en.md)
+[Back to Home](../README.en.md) · [Documentation](README.en.md)
 
-### Download the Windows Installer
+OpenPictureStudio ships a standalone installer for Windows 10/11 (64-bit) with the desktop host and native compute runtime included. No separate Python or Rust installation is required.
 
-1. Open the [latest release](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Under **Assets**, download `OpenPictureStudio-<version>-setup.exe` and the `.exe.sha256` file with the same name.
-2. Verify the installer's SHA256, then double-click the EXE and follow the setup wizard.
-3. Start OpenPictureStudio and open a photo or folder. The installed version needs no separate Python or Rust. AI models are downloaded as needed.
+## Download and Standard Install
+
+1. Open the [latest release](https://github.com/KpTanl/OpenPictureStudio/releases/latest) and download `OpenPictureStudio-<version>-setup.exe` along with its matching `.exe.sha256` file under **Assets**.
+2. Verify the installer's SHA256, double-click the EXE, and choose **简体中文**, **English**, or **Français** in the setup wizard.
+   - **Fresh installation:** Defaults to your Windows display language; lets you choose install scope (current user or all users), installation folder, and desktop shortcut.
+   - **In-place upgrade:** Defaults to your previous setup language and installation directory, while still letting you switch languages; Start menu uninstall shortcuts follow the chosen language.
+3. Launch the app to browse and edit photos right away. Local AI models and the optional DirectML inference runtime can be downloaded on demand in Settings.
 
 <details>
-<summary>How do I verify the SHA256?</summary>
+<summary>How to verify the SHA256 checksum</summary>
 
-Open PowerShell in the download folder and run the commands below. Replace `<version>` in the file names with the actual version:
+Open PowerShell in the download directory and run the commands below, replacing `<version>` with the actual version string:
 
 ```powershell
 Get-FileHash -LiteralPath '.\OpenPictureStudio-<version>-setup.exe' -Algorithm SHA256
 Get-Content -LiteralPath '.\OpenPictureStudio-<version>-setup.exe.sha256'
 ```
 
-The hash shown by the first command should match the 64-character value at the start of the second command's output. The checksum confirms that the downloaded file is complete and belongs to the same release asset. Get the installer and the checksum file from this repository's Release.
+The 64-character hexadecimal hash printed by the first command should match the value at the start of the second command's output. Only download installers and checksums from this repository's Releases page.
 
 </details>
 
-### "Windows protected your PC" on First Run
+## Handling the Windows SmartScreen Prompt
 
-The current Windows installer is not code-signed. The first time you double-click it, Windows SmartScreen may show "Windows protected your PC" and "Unknown publisher".
+> **Note:** The current Windows installer is not code-signed, so the first run may trigger Windows SmartScreen ("Windows protected your PC").
 
-Make sure the file comes from [this repository's Release](https://github.com/KpTanl/OpenPictureStudio/releases/latest) and check the SHA256 for the same version. Then click **"More info" → "Run anyway"** to continue the installation. The example screenshot below has "More info" expanded:
+Once you have verified that the file comes from [this repository's Releases](https://github.com/KpTanl/OpenPictureStudio/releases/latest) and matches its SHA256 checksum, click **"More info" → "Run anyway"** to proceed.
 
 <details>
-<summary>View the Windows first-run prompt</summary>
+<summary>View an example Windows SmartScreen prompt</summary>
 
-<img src="../.github/assets/readme/windows-smartscreen.zh-CN.png" width="480" alt="Windows SmartScreen prompt (Chinese interface), with Run anyway and Don't run buttons at the bottom">
+<img src="../.github/assets/readme/windows-smartscreen.zh-CN.png" width="480" alt="Windows SmartScreen prompt with More info expanded, showing Run anyway and Don't run buttons">
 
-The example installer is version 0.16.0. The file name changes with each release. If your device does not offer "Run anyway", follow the system prompts or your organization's policy.
+The example screenshot shows version 0.16.0; the filename updates with each release. If "Run anyway" is unavailable on your device, follow your system or organization policy.
 
 </details>
 
-### Download and Install with PowerShell
+## Automated Download and Install via PowerShell
 
-Open a regular PowerShell window, expand the command below, and **copy and run the whole block**. The command works with Windows PowerShell 5.1 and PowerShell 7. It downloads the latest stable release from this repository, verifies the SHA256, and opens the setup wizard.
-
-Before upgrading, quit OPS normally. The downloaded files stay in the temporary folder that the command prints, and the installation does not restart your computer automatically. Windows protection and organization policies still apply as usual.
+Run the script below in a regular PowerShell window to fetch the latest release from GitHub Releases, verify its SHA256, and open the setup wizard. It works even if OPS is still running, as the wizard prompts to close running instances before updating files.
 
 <details>
-<summary>Show the PowerShell install command</summary>
+<summary>Expand PowerShell install command (compatible with Windows PowerShell 5.1 and PowerShell 7)</summary>
 
 ```powershell
 & {
@@ -94,23 +96,53 @@ Before upgrading, quit OPS normally. The downloaded files stay in the temporary 
 
 </details>
 
-### Upgrades and Version Checks
+## Upgrading in Place and Repairing
 
-By default, the installed version checks for a stable release automatically, at most once every 24 hours. You can turn this off in Settings → General, or check manually on the About page. The app opens the download page, and you download and install the update yourself. The check includes the app version and the necessary HTTP information, and GitHub can see the IP address and request time.
+New releases install directly over an existing installation without uninstalling first. All settings, custom data directories, AI models, and `.opsproj` projects are preserved.
 
-<details>
-<summary>Upgrading in place, repair, and early test builds</summary>
+```mermaid
+flowchart TD
+    S["Launch installer and choose language"] --> M{"Is OPS already installed?"}
+    M -->|"Fresh install"| F["Choose install scope, folder, and desktop shortcut"]
+    M -->|"In-place upgrade or repair"| R{"Running instances detected?"}
+    R -->|"No"| U["Select update method and confirm path"]
+    R -->|"Yes"| C["Stop at Close page: click Close program and continue"]
+    C --> P["Send graceful close request to main window; user handles save prompts"]
+    P -->|"Main window closed; only plugin processes remain > 15 s"| K["Show End background processes button with confirmation"]
+    P -->|"All instances exited"| U
+    K --> U
+    U -->|"Standard update"| W1["Write only new or changed files for faster upgrades"]
+    U -->|"Repair"| W2["Verify all files and replace missing or modified items"]
+    F --> D["Finish setup and preserve user data"]
+    W1 --> D
+    W2 --> D
+```
 
-Before upgrading, quit every running OpenPictureStudio, then run the new installer over the existing installation. When the installation finishes, close the installer and restart the app. Your existing settings, custom data folder, models, and projects are kept.
+### Closing Running Instances Gracefully
 
-If there is a folder conflict, follow the installer's prompts to back up and move out the conflicting files. If an installation was interrupted or you need a repair, run the full installer of the same version again and follow the prompts to complete the repair.
+When an instance from the target directory is running, the wizard stops on the close page. Clicking **"Close program and continue"** sends a graceful close request to each main window so unsaved edits follow normal save prompts; the installer never force-terminates the main application. Only if the main window has exited and plugin background processes linger for more than 15 seconds does the wizard show an **"End background processes"** button with a confirmation step.
 
-Early test builds may not have an install manifest. If the original program is still there, back up your data and uninstall the old version first. If the original install folder has been deleted or is completely empty, you can simply install again. When the installer blocks the overwrite, it shows the original install folder.
+### Update Modes and Folder Conflicts
 
-</details>
+| Mode | When to Use | Verification & Write Behavior |
+| --- | --- | --- |
+| **Standard update** | Routine upgrades | Skips unchanged files and writes only modified or missing files; prompts if a program file was manually altered |
+| **Repair** | Same-version repairs, interrupted installs, or damaged files | Verifies every file listed in the install manifest and replaces missing, corrupted, or altered files |
+
+> **Early beta builds:** Older beta builds without an install manifest require backing up your data and manually uninstalling first if the original program files are still present. If the old install folder has been deleted or is completely empty, you can install directly. Follow the wizard prompts if a directory conflict is reported.
+
+## Version Update Checks
+
+Installed builds check for new releases automatically at most once every 24 hours. You can disable this in **Settings → General** or check manually in **About**. When an update is found, OPS opens the download page for you to download and install manually. The request sends only the app version and standard HTTP headers to GitHub.
 
 ## UI Components and Licensing
 
-Starting with 0.17.0, the UI components moved from PyQt6 to PySide6. Versions that use PySide6 ship the components they need in the full installer, so upgrade in place with the steps above, with no need to install PySide6, Shiboken, or Qt separately.
+Starting with 0.17.0, the UI layer migrated from PyQt6 to PySide6. All required runtime components are bundled inside the full installer, so upgrading in place works directly without installing PySide6, Shiboken, or Qt separately.
 
-PyQt6 is offered under GPLv3 and a commercial license. PySide6 is offered under open-source licenses such as LGPLv3, with commercial license options. After the move, the project's original code stays under the MIT License, and the UI components, other dependencies, and models follow their own licenses. License notices and corresponding source information ship with the program. See [Licensing and Third-Party Components](licensing.en.md#migrating-from-pyqt6-to-pyside6) for details.
+PyQt6 is offered under GPLv3 and a commercial license, whereas PySide6 provides open-source options such as LGPLv3 alongside commercial licensing. Original OPS source code remains under the MIT License, while third-party UI libraries, dependencies, and models follow their respective licenses with notices and source information included in the distribution.
+
+## Related Documentation
+
+- [Licensing and Third-Party Components](licensing.en.md#migrating-from-pyqt6-to-pyside6)
+- [AI Services and Privacy](ai-services.en.md)
+- [System Requirements and Performance](performance.en.md)

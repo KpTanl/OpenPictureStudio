@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="468" viewBox="0 0 840 468" role="img" aria-labelledby="title desc">
+  <title id="title">26.8 MP Portrait Interactive Latency (Lower is Better)</title>
+  <desc>Frame intervals on a 6554x4096 PNG sample comparing RTX 5060 GPU (wgpu / D3D12) against CPU (Rust + AVX2).</desc>
+  <style>
+    .bg { fill: #ffffff; stroke: #d0d7de; }
+    .divider { stroke: #e5e7eb; }
+    .grid { stroke: #eef2f6; stroke-width: 1; }
+    .axis { stroke: #d0d7de; stroke-width: 1; }
+    .title { fill: #1f2328; font: 700 17px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .subtitle { fill: #59636e; font: 400 12.5px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .section { fill: #1f2328; font: 600 13px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .label { fill: #24292f; font: 500 12.5px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .tick { fill: #6e7781; font: 400 11px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .val-gpu { fill: #1d4ed8; font: 600 11.5px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .val-cpu { fill: #57606a; font: 500 11.5px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .bar-gpu { fill: #2563eb; }
+    .bar-cpu { fill: #94a3b8; }
+    .badge-bg { fill: #eff6ff; stroke: #bfdbfe; }
+    .badge-fg { fill: #1d4ed8; font: 600 11px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    .badge-neutral-bg { fill: #f6f8fa; stroke: #d0d7de; }
+    .badge-neutral-fg { fill: #57606a; font: 500 11px "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; stroke: #30363d; }
+      .divider { stroke: #21262d; }
+      .grid { stroke: #21262d; }
+      .axis { stroke: #30363d; }
+      .title { fill: #e6edf3; }
+      .subtitle { fill: #8b949e; }
+      .section { fill: #e6edf3; }
+      .label { fill: #c9d1d9; }
+      .tick { fill: #8b949e; }
+      .val-gpu { fill: #60a5fa; }
+      .val-cpu { fill: #9ca3af; }
+      .bar-gpu { fill: #3b82f6; }
+      .bar-cpu { fill: #64748b; }
+      .badge-bg { fill: #172554; stroke: #1d4ed8; }
+      .badge-fg { fill: #93c5fd; }
+      .badge-neutral-bg { fill: #161b22; stroke: #30363d; }
+      .badge-neutral-fg { fill: #9ca3af; }
+    }
+  </style>
+
+  <rect class="bg" x="0.5" y="0.5" width="839" height="467" rx="12" stroke-width="1"/>
+
+  <text class="title" x="28" y="38">26.8 MP Portrait Interactive Latency (Lower is Better)</text>
+  <text class="subtitle" x="28" y="59">6554×4096 PNG · RTX 5060 (wgpu / D3D12) vs. CPU (Rust + AVX2)</text>
+
+  <rect class="bar-gpu" x="642" y="27" width="12" height="12" rx="3"/>
+  <text class="label" x="660" y="37">GPU</text>
+  <rect class="bar-cpu" x="720" y="27" width="12" height="12" rx="3"/>
+  <text class="label" x="738" y="37">CPU only</text>
+
+  <!-- Upper section: Auto preview (0-100 ms, plotX=236, plotW=396, 3.96 px/ms) -->
+  <text class="section" x="28" y="94">Auto Preview (screen-resolution rendering · 0–100 ms scale)</text>
+
+  <line class="axis" x1="236" y1="106" x2="236" y2="204"/>
+  <line class="grid" x1="335" y1="106" x2="335" y2="204"/>
+  <line class="grid" x1="434" y1="106" x2="434" y2="204"/>
+  <line class="grid" x1="533" y1="106" x2="533" y2="204"/>
+  <line class="grid" x1="632" y1="106" x2="632" y2="204"/>
+
+  <text class="tick" x="236" y="219" text-anchor="middle">0</text>
+  <text class="tick" x="335" y="219" text-anchor="middle">25 ms</text>
+  <text class="tick" x="434" y="219" text-anchor="middle">50 ms</text>
+  <text class="tick" x="533" y="219" text-anchor="middle">75 ms</text>
+  <text class="tick" x="632" y="219" text-anchor="middle">100 ms</text>
+
+  <text class="label" x="222" y="133" text-anchor="end">Drag exposure</text>
+  <rect class="bar-gpu" x="236" y="113" width="83.2" height="12" rx="3"/>
+  <text class="val-gpu" x="327.2" y="123">21 ms</text>
+  <rect class="bar-cpu" x="236" y="129" width="63.4" height="12" rx="3"/>
+  <text class="val-cpu" x="307.4" y="139">16 ms</text>
+  <rect class="badge-neutral-bg" x="696" y="115" width="116" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-neutral-fg" x="754" y="131" text-anchor="middle">CPU slightly faster</text>
+
+  <text class="label" x="222" y="181" text-anchor="end">Drag smoothing</text>
+  <rect class="bar-gpu" x="236" y="161" width="150.5" height="12" rx="3"/>
+  <text class="val-gpu" x="394.5" y="171">38 ms</text>
+  <rect class="bar-cpu" x="236" y="177" width="352.4" height="12" rx="3"/>
+  <text class="val-cpu" x="596.4" y="187">89 ms</text>
+  <rect class="badge-bg" x="696" y="163" width="116" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="754" y="179" text-anchor="middle">GPU 2.3× faster</text>
+
+  <line class="divider" x1="28" y1="238" x2="812" y2="238" stroke-width="1"/>
+
+  <!-- Lower section: Full-resolution preview (0-2400 ms, plotX=236, plotW=396, 0.165 px/ms) -->
+  <text class="section" x="28" y="263">Full-Resolution Preview (full-image rendering · 0–2400 ms scale)</text>
+
+  <line class="axis" x1="236" y1="275" x2="236" y2="421"/>
+  <line class="grid" x1="335" y1="275" x2="335" y2="421"/>
+  <line class="grid" x1="434" y1="275" x2="434" y2="421"/>
+  <line class="grid" x1="533" y1="275" x2="533" y2="421"/>
+  <line class="grid" x="632" y1="275" x2="632" y2="421"/>
+
+  <text class="tick" x="236" y="436" text-anchor="middle">0</text>
+  <text class="tick" x="335" y="436" text-anchor="middle">600 ms</text>
+  <text class="tick" x="434" y="436" text-anchor="middle">1200 ms</text>
+  <text class="tick" x="533" y="436" text-anchor="middle">1800 ms</text>
+  <text class="tick" x="632" y="436" text-anchor="middle">2400 ms</text>
+
+  <text class="label" x="222" y="301" text-anchor="end">Drag exposure</text>
+  <rect class="bar-gpu" x="236" y="281" width="8.3" height="12" rx="3"/>
+  <text class="val-gpu" x="252.3" y="291">50 ms</text>
+  <rect class="bar-cpu" x="236" y="297" width="57.1" height="12" rx="3"/>
+  <text class="val-cpu" x="301.1" y="307">346 ms</text>
+  <rect class="badge-bg" x="696" y="283" width="116" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="754" y="299" text-anchor="middle">GPU 6.9× faster</text>
+
+  <text class="label" x="222" y="349" text-anchor="end">Exposure (beauty on)</text>
+  <rect class="bar-gpu" x="236" y="329" width="12.0" height="12" rx="3"/>
+  <text class="val-gpu" x="256.0" y="339">73 ms</text>
+  <rect class="bar-cpu" x="236" y="345" width="70.6" height="12" rx="3"/>
+  <text class="val-cpu" x="314.6" y="355">428 ms</text>
+  <rect class="badge-bg" x="696" y="331" width="116" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="754" y="347" text-anchor="middle">GPU 5.9× faster</text>
+
+  <text class="label" x="222" y="397" text-anchor="end">Drag smoothing</text>
+  <rect class="bar-gpu" x="236" y="377" width="22.4" height="12" rx="3"/>
+  <text class="val-gpu" x="266.4" y="387">136 ms</text>
+  <rect class="bar-cpu" x="236" y="393" width="368.6" height="12" rx="3"/>
+  <text class="val-cpu" x="612.6" y="403">2234 ms</text>
+  <rect class="badge-bg" x="696" y="379" width="116" height="24" rx="12" stroke-width="1"/>
+  <text class="badge-fg" x="754" y="395" text-anchor="middle">GPU 16.4× faster</text>
+</svg>

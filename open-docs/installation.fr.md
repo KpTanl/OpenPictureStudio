@@ -2,51 +2,53 @@
 
 [简体中文](installation.md) | [English](installation.en.md) | [Français](installation.fr.md)
 
-[Retour à l’accueil](../README.fr.md)
+[Retour à l’accueil](../README.fr.md) · [Documentation](README.fr.md)
 
-### Télécharger l’installateur Windows
+OpenPictureStudio fournit un installateur autonome pour Windows 10/11 (64 bits) incluant l’application de bureau et l’environnement de calcul natif, sans nécessiter d’installation séparée de Python ou Rust.
 
-1. Ouvrez la [dernière version](https://github.com/KpTanl/OpenPictureStudio/releases/latest). Dans **Assets**, téléchargez `OpenPictureStudio-<version>-setup.exe` et le fichier `.exe.sha256` du même nom.
-2. Vérifiez le SHA256 de l’installateur, double-cliquez sur le fichier EXE et suivez l’assistant d’installation.
-3. Lancez OpenPictureStudio, puis ouvrez une photo ou un dossier. La version installée n’exige ni Python ni Rust ; les modèles IA se téléchargent à la demande.
+## Téléchargement et installation standard
+
+1. Ouvrez la [dernière version](https://github.com/KpTanl/OpenPictureStudio/releases/latest) et téléchargez `OpenPictureStudio-<version>-setup.exe` ainsi que le fichier `.exe.sha256` portant le même nom dans **Assets**.
+2. Vérifiez l’empreinte SHA256, double-cliquez sur l’exécutable puis choisissez **简体中文**, **English** ou **Français** dans l’assistant.
+   - **Première installation :** sélectionne par défaut la langue d’affichage de Windows ; permet de choisir la portée (utilisateur courant ou tous les utilisateurs), le dossier d’installation et le raccourci sur le Bureau.
+   - **Mise à niveau par-dessus :** reprend par défaut la langue et le dossier d’installation précédents tout en permettant de changer de langue ; le raccourci de désinstallation du menu Démarrer suit la langue choisie.
+3. Lancez le programme pour parcourir et retoucher vos photos. Les modèles IA locaux et le moteur d’inférence DirectML facultatif se téléchargent à la demande depuis les paramètres.
 
 <details>
-<summary>Comment vérifier le SHA256 ?</summary>
+<summary>Comment vérifier l’empreinte SHA256</summary>
 
-Dans le dossier de téléchargement, ouvrez PowerShell et exécutez les commandes ci-dessous, en remplaçant `<version>` dans le nom de fichier par la version réelle :
+Ouvrez PowerShell dans le dossier de téléchargement et exécutez les commandes ci-dessous en remplaçant `<version>` par la version réelle :
 
 ```powershell
 Get-FileHash -LiteralPath '.\OpenPictureStudio-<version>-setup.exe' -Algorithm SHA256
 Get-Content -LiteralPath '.\OpenPictureStudio-<version>-setup.exe.sha256'
 ```
 
-Le hachage affiché par la première commande doit être identique à la valeur de 64 caractères au début de la sortie de la seconde. La valeur de contrôle sert à vérifier que le fichier téléchargé est complet et qu’il correspond au même fichier de la version publiée. Récupérez l’installateur et le fichier de contrôle dans les Releases de ce dépôt.
+L’empreinte hexadécimale de 64 caractères renvoyée par la première commande doit correspondre exactement à la valeur en début de sortie de la seconde. Téléchargez toujours l’installateur et le fichier de contrôle depuis les Releases de ce dépôt.
 
 </details>
 
-### Avertissement « Windows a protégé votre ordinateur » au premier lancement
+## Avertissement Windows SmartScreen
 
-L’installateur Windows actuel n’est pas signé numériquement. Au premier double-clic, Windows SmartScreen peut afficher « Windows a protégé votre ordinateur » et « Éditeur : inconnu ».
+> **Remarque :** L’installateur Windows actuel n’est pas signé numériquement ; au premier lancement, Windows SmartScreen peut afficher « Windows a protégé votre ordinateur ».
 
-Une fois que vous avez confirmé que le fichier vient des [Releases de ce dépôt](https://github.com/KpTanl/OpenPictureStudio/releases/latest) et vérifié le SHA256 de la même version, cliquez sur **« Informations complémentaires » → « Exécuter quand même »** pour poursuivre l’installation. La capture d’exemple ci-dessous a déjà déplié « Informations complémentaires » :
+Après avoir vérifié que le fichier provient bien des [Releases de ce dépôt](https://github.com/KpTanl/OpenPictureStudio/releases/latest) et que son SHA256 correspond, cliquez sur **« Informations complémentaires » → « Exécuter quand même »** pour continuer.
 
 <details>
-<summary>Voir l’avertissement Windows du premier lancement</summary>
+<summary>Exemple de fenêtre Windows SmartScreen</summary>
 
-<img src="../.github/assets/readme/windows-smartscreen.zh-CN.png" width="480" alt="Avertissement Windows SmartScreen, avec en bas les boutons Exécuter quand même et Ne pas exécuter">
+<img src="../.github/assets/readme/windows-smartscreen.zh-CN.png" width="480" alt="Fenêtre Windows SmartScreen avec Informations complémentaires déplié, montrant les boutons Exécuter quand même et Ne pas exécuter">
 
-La version d’installateur de l’exemple est la 0.16.0 ; le nom du fichier change avec la version publiée. Si votre appareil ne propose pas « Exécuter quand même », suivez les indications du système ou la politique de votre organisation.
+La capture d’exemple montre la version 0.16.0 ; le nom du fichier change à chaque version. Si votre appareil ne propose pas « Exécuter quand même », suivez les instructions du système ou la politique de votre organisation.
 
 </details>
 
-### Télécharger et installer avec PowerShell
+## Télécharger et installer avec PowerShell
 
-Ouvrez un PowerShell ordinaire, dépliez la commande ci-dessous et **copiez-la entièrement avant de l’exécuter**. La commande fonctionne avec Windows PowerShell 5.1 et PowerShell 7 : elle télécharge la dernière version stable depuis ce dépôt, vérifie le SHA256, puis ouvre directement l’assistant d’installation.
-
-Avant une mise à niveau, quittez OPS normalement. Les fichiers téléchargés restent dans le dossier temporaire indiqué par la commande, et l’installation ne redémarre pas l’ordinateur automatiquement. La protection de Windows et les politiques de l’organisation s’appliquent comme d’habitude.
+Exécutez le script ci-dessous dans une console PowerShell standard pour récupérer la dernière version depuis GitHub Releases, vérifier son SHA256 et lancer l’assistant d’installation. Vous pouvez aussi le lancer pendant qu’OPS est ouvert : l’assistant demandera sa fermeture avant la mise à jour des fichiers.
 
 <details>
-<summary>Déplier la commande d’installation PowerShell</summary>
+<summary>Afficher la commande PowerShell (compatible Windows PowerShell 5.1 et PowerShell 7)</summary>
 
 ```powershell
 & {
@@ -94,23 +96,53 @@ Avant une mise à niveau, quittez OPS normalement. Les fichiers téléchargés r
 
 </details>
 
-### Mises à niveau et recherche de versions
+## Mise à niveau par-dessus et réparation
 
-La version installée recherche une version stable automatiquement, au plus une fois toutes les 24 heures. Vous pouvez désactiver cette recherche dans « Paramètres → Général », ou la lancer à la main dans la page « À propos ». Le programme ouvre la page de téléchargement, et c’est vous qui téléchargez et installez. La requête comprend la version de l’application et les informations HTTP nécessaires ; GitHub voit votre adresse IP et l’heure de la requête.
+Les nouvelles versions s’installent directement par-dessus l’installation existante sans désinstallation préalable. Vos paramètres, dossiers de données personnalisés, modèles IA et projets `.opsproj` sont conservés.
 
-<details>
-<summary>Installation par-dessus, réparation et premières versions de test</summary>
+```mermaid
+flowchart TD
+    S["Lancer l’installateur et choisir la langue"] --> M{"OPS est-il déjà installé ?"}
+    M -->|"Première installation"| F["Choisir portée, dossier cible et raccourci Bureau"]
+    M -->|"Mise à niveau ou réparation"| R{"Instances en cours détectées ?"}
+    R -->|"Non"| U["Choisir le mode et confirmer le dossier"]
+    R -->|"Oui"| C["Page de fermeture : cliquer sur Fermer le programme et continuer"]
+    C --> P["Envoi d’une demande de fermeture normale ; gestion des invites d’enregistrement"]
+    P -->|"Fenêtre principale fermée et plug-ins actifs > 15 s"| K["Bouton Terminer les processus en arrière-plan avec confirmation"]
+    P -->|"Toutes les instances fermées"| U
+    K --> U
+    U -->|"Mise à jour standard"| W1["Écrit uniquement les fichiers ajoutés ou modifiés"]
+    U -->|"Réparation"| W2["Vérifie tous les fichiers et remplace les éléments absents ou altérés"]
+    F --> D["Installation terminée et données utilisateur conservées"]
+    W1 --> D
+    W2 --> D
+```
 
-Avant une mise à niveau, quittez toutes les instances d’OpenPictureStudio en cours, puis lancez le nouvel installateur pour installer par-dessus. Une fois l’installation terminée, fermez l’installateur et relancez le programme. Vos paramètres, vos dossiers de données personnalisés, vos modèles et vos projets sont conservés.
+### Fermeture des instances en cours
 
-En cas de conflit de dossier, suivez les indications de l’installateur : sauvegardez les fichiers en conflit et déplacez-les ailleurs. Si l’installation a été interrompue ou si une réparation est nécessaire, relancez l’installateur complet de la même version et suivez les indications pour terminer la réparation.
+Si une instance issue du dossier cible est active, l’assistant s’arrête sur la page de fermeture. Cliquer sur **« Fermer le programme et continuer »** envoie une demande de fermeture normale à chaque fenêtre principale afin que les retouches non enregistrées suivent les invites habituelles ; l’installateur ne tue jamais de force le programme principal. Ce n’est que si la fenêtre principale est fermée et que des sous-processus de plug-in persistent plus de 15 secondes que le bouton **« Terminer les processus en arrière-plan »** apparaît avec une demande de confirmation.
 
-Les premières versions de test peuvent ne pas avoir de manifeste d’installation. Si l’ancien programme est encore là, sauvegardez d’abord vos données et désinstallez l’ancienne version ; si l’ancien dossier d’installation a été supprimé ou est complètement vide, vous pouvez réinstaller directement. Quand l’installateur refuse d’écraser des fichiers, il affiche l’ancien dossier d’installation.
+### Modes de mise à jour et conflits de dossier
 
-</details>
+| Mode | Cas d’usage | Vérification et écriture |
+| --- | --- | --- |
+| **Mise à jour standard** | Mise à niveau courante | Ignore les fichiers inchangés pour accélérer la mise à jour ; demande confirmation si un fichier du programme a été modifié à la main |
+| **Réparation** | Réparation de même version, installation interrompue ou fichier endommagé | Vérifie chaque fichier du manifeste d’installation et remplace les fichiers manquants, corrompus ou modifiés |
+
+> **Premières versions de test :** Les anciennes versions bêta dépourvues de manifeste d’installation nécessitent de sauvegarder vos données puis de désinstaller manuellement l’ancienne version si le programme est encore présent. Si l’ancien dossier d’installation a été supprimé ou est totalement vide, vous pouvez réinstaller directement. En cas de conflit de dossier, suivez les indications de l’assistant.
+
+## Recherche de mises à jour
+
+La version installée recherche automatiquement les nouvelles versions au plus une fois toutes les 24 heures. Vous pouvez désactiver cette option dans **Paramètres → Général**, ou la lancer manuellement depuis **À propos**. Lorsqu’une version est trouvée, OPS ouvre la page de téléchargement sans jamais installer en arrière-plan. La requête n’envoie à GitHub que la version de l’application et les en-têtes HTTP standards.
 
 ## Composants d’interface et licence
 
-Depuis la version 0.17.0, les composants d’interface sont passés de PyQt6 à PySide6. Les versions qui utilisent PySide6 fournissent les composants nécessaires dans l’installateur complet : il suffit d’installer par-dessus en suivant les étapes ci-dessus, sans installer séparément PySide6, Shiboken ni Qt.
+Depuis la version 0.17.0, l’interface a migré de PyQt6 vers PySide6. Tous les composants d’exécution nécessaires sont fournis dans l’installateur complet : il suffit de mettre à niveau par-dessus sans installer séparément PySide6, Shiboken ni Qt.
 
-PyQt6 est proposé sous GPLv3 et sous licence commerciale ; PySide6 est proposé sous des licences libres comme LGPLv3, avec une option de licence commerciale. Après la migration, le code original du projet reste sous licence MIT, tandis que les composants d’interface, les autres dépendances et les modèles suivent chacun leur propre licence. Les mentions de licence et les informations sur les sources correspondantes sont fournies avec le programme ; voir [Licences et composants tiers](licensing.fr.md#migration-de-pyqt6-vers-pyside6).
+PyQt6 est proposé sous licence GPLv3 ou commerciale, tandis que PySide6 propose notamment la licence libre LGPLv3 ainsi qu’une licence commerciale. Le code original d’OPS reste sous licence MIT, tandis que l’interface, les dépendances et les modèles suivent chacun leurs propres termes avec mentions et sources fournies dans la distribution.
+
+## Documentation associée
+
+- [Licences et composants tiers](licensing.fr.md#migration-de-pyqt6-vers-pyside6)
+- [Services IA et confidentialité](ai-services.fr.md)
+- [Configuration requise et performances](performance.fr.md)

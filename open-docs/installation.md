@@ -2,51 +2,53 @@
 
 [简体中文](installation.md) | [English](installation.en.md) | [Français](installation.fr.md)
 
-[返回首页](../README.md)
+[返回首页](../README.md) · [文档目录](README.md)
 
-### 下载 Windows 安装包
+OpenPictureStudio 提供适用于 Windows 10/11（64 位）的独立安装包，内置桌面端与原生计算运行环境，无需另行配置 Python 或 Rust。
 
-1. 打开 [最新版本](https://github.com/KpTanl/OpenPictureStudio/releases/latest)，在 **Assets** 中下载 `OpenPictureStudio-<版本>-setup.exe` 和同名 `.exe.sha256` 文件。
-2. 核对安装包的 SHA256，双击 EXE，按安装向导完成安装。
-3. 启动 OpenPictureStudio，打开照片或文件夹。安装版无需另装 Python 或 Rust；AI 模型按需下载。
+## 下载与常规安装
+
+1. 前往 [最新发布页](https://github.com/KpTanl/OpenPictureStudio/releases/latest)，在 **Assets** 中下载 `OpenPictureStudio-<版本>-setup.exe` 与同名 `.exe.sha256` 文件。
+2. 核对安装包 SHA256 后双击运行，在安装向导中选择 **简体中文**、**English** 或 **Français**。
+   - **首次安装**：默认匹配 Windows 显示语言；可选择安装范围（当前用户或所有用户）、安装目录及是否创建桌面快捷方式。
+   - **覆盖升级**：默认沿用上次安装语言与安装目录，每次均可重新切换语言；开始菜单卸载快捷方式随所选语言命名。
+3. 启动后即可直接浏览和编辑照片；本地 AI 模型与可选 DirectML 推理运行环境可在软件设置中按需下载。
 
 <details>
-<summary>如何核对 SHA256？</summary>
+<summary>如何核对安装包 SHA256</summary>
 
-在下载目录打开 PowerShell，运行下面的命令，将文件名中的 `<版本>` 换成实际版本：
+在安装包所在目录打开 PowerShell，将 `<版本>` 替换为实际版本号后执行：
 
 ```powershell
 Get-FileHash -LiteralPath '.\OpenPictureStudio-<版本>-setup.exe' -Algorithm SHA256
 Get-Content -LiteralPath '.\OpenPictureStudio-<版本>-setup.exe.sha256'
 ```
 
-第一条命令显示的哈希应与第二条输出开头的 64 位值一致。校验值用于核对下载文件是否完整，并对应同一份发行资产。请从本仓库的 Release 获取安装包与校验文件。
+两条命令输出的 64 位十六进制哈希应完全一致，用于验证安装包完整性并确认来自本仓库发布资产。
 
 </details>
 
-### 首次运行出现“Windows 已保护你的电脑”
+## 处理 Windows SmartScreen 提示
 
-当前 Windows 安装包未作代码签名。首次双击时，Windows SmartScreen 可能显示“Windows 已保护你的电脑”及“发布者未知”。
+> **说明**：当前 Windows 安装包未作代码签名，首次双击可能触发 Windows SmartScreen 提示“Windows 已保护你的电脑”。
 
-确认文件来自 [本仓库的 Release](https://github.com/KpTanl/OpenPictureStudio/releases/latest)，并核对同版本 SHA256 后，点击 **“更多信息” → “仍要运行”**，继续安装。下面的示例截图已展开“更多信息”：
+确认安装包来自[本仓库 Release 页面](https://github.com/KpTanl/OpenPictureStudio/releases/latest)并核对 SHA256 无误后，点击 **“更多信息” → “仍要运行”** 即可继续安装。
 
 <details>
-<summary>查看 Windows 首次运行提示</summary>
+<summary>查看 Windows SmartScreen 操作示例</summary>
 
-<img src="../.github/assets/readme/windows-smartscreen.zh-CN.png" width="480" alt="Windows SmartScreen 提示，底部有仍要运行和不运行按钮">
+<img src="../.github/assets/readme/windows-smartscreen.zh-CN.png" width="480" alt="Windows SmartScreen 提示，展开更多信息后显示仍要运行按钮">
 
-示例安装包版本为 0.16.0；文件名随发行版本变化。设备没有提供“仍要运行”时，请按系统提示或组织策略处理。
+示例截图对应 0.16.0 安装包，实际文件名随版本号更新。若设备受组织策略限制未提供“仍要运行”按钮，请按系统或管理员策略处理。
 
 </details>
 
-### 使用 PowerShell 下载安装
+## 使用 PowerShell 自动下载与安装
 
-打开普通 PowerShell，展开下方命令并**整段复制执行**。命令兼容 Windows PowerShell 5.1 与 PowerShell 7，从本仓库下载最新正式发行包，校验 SHA256 后直接打开安装向导。
-
-升级前请正常退出 OPS。下载文件保留在命令显示的临时目录，安装过程不会自动重启电脑。Windows 防护和组织策略照常生效。
+打开普通 PowerShell 执行下方脚本，自动从 GitHub Releases 获取最新正式包、校验 SHA256 后启动安装向导。软件仍在运行时也可直接执行，向导会在安装前提示退出程序。
 
 <details>
-<summary>展开 PowerShell 安装命令</summary>
+<summary>展开 PowerShell 一键安装命令（兼容 PowerShell 5.1 与 PowerShell 7）</summary>
 
 ```powershell
 & {
@@ -94,23 +96,53 @@ Get-Content -LiteralPath '.\OpenPictureStudio-<版本>-setup.exe.sha256'
 
 </details>
 
-### 升级与版本检查
+## 覆盖升级与安装修复
 
-安装版默认最多每 24 小时自动检查一次正式版，可在“设置 → 常规”关闭，也可在“关于”页手动检查。程序打开下载页，由你下载安装。查询包含应用版本及必要 HTTP 信息，GitHub 可见 IP 和请求时间。
+新版本可直接覆盖旧版本，无需预先卸载。已有用户设置、自定义资料目录、AI 模型与 `.opsproj` 项目均会保留。
 
-<details>
-<summary>覆盖升级、修复与早期测试版</summary>
+```mermaid
+flowchart TD
+    S["启动安装包并选择三语界面"] --> M{"本机是否已安装 OPS？"}
+    M -->|"首次安装"| F["自选安装范围、目标目录与快捷方式"]
+    M -->|"覆盖升级或同版本修复"| R{"检测到运行中的实例？"}
+    R -->|"未运行"| U["选择更新方式并确认路径"]
+    R -->|"仍在运行"| C["停在关闭页：点击关闭程序并继续"]
+    C --> P["向主窗口发送正常关闭请求，允许用户保存编辑"]
+    P -->|"主窗已退且仅插件后台滞留超 15 秒"| K["显示结束后台进程，二次确认后回收"]
+    P -->|"全部实例已退出"| U
+    K --> U
+    U -->|"标准覆盖"| W1["仅写入新增或变化文件，升级更快"]
+    U -->|"查漏安装"| W2["逐文件校验，修复缺失或被修改文件"]
+    F --> D["完成安装并保留用户数据"]
+    W1 --> D
+    W2 --> D
+```
 
-升级前，请先退出所有正在运行的 OpenPictureStudio，再运行新版安装包覆盖升级。安装完成后，关闭安装器并重新启动程序。现有设置、自定义资料目录、模型和项目会保留。
+### 运行中实例的退出机制
 
-遇到目录冲突时，请按安装器提示备份并移出冲突文件。安装中断或需要修复时，重新运行同一版本的完整安装包，按提示完成修复。
+检测到安装目录中有程序正在运行时，向导会停在关闭页面，点击 **“关闭程序并继续”** 后向主窗口发送正常退出请求。未保存的编辑按程序原有提示处理保存；安装器不会强制终止主程序。仅当主窗口已关闭、插件后台进程滞留超过 15 秒时，界面才提供可二次确认的 **“结束后台进程”** 按钮。
 
-早期测试版可能没有安装清单。原程序仍在时，先备份资料并卸载旧版；原安装目录已删除或完全为空时，可直接重新安装。安装器阻止覆盖时会显示原安装目录。
+### 升级模式与目录冲突
 
-</details>
+| 模式 | 适用场景 | 校验与写入行为 |
+| --- | --- | --- |
+| **标准覆盖** | 日常版本升级 | 跳过未变化文件，仅写入变化或缺失文件；发现程序文件被手动修改时先弹窗询问 |
+| **查漏安装** | 同版本修复、上次安装中断或文件受损 | 逐个校验安装清单中的程序文件，替换缺失、损坏或不一致文件 |
+
+> **早期版本说明**：缺乏安装清单的早期测试版在原程序仍在时，需先备份资料并手动卸载旧版；若原安装目录已删除或完全为空，可直接重新安装。遇到目录冲突时按向导提示处理。
+
+## 版本更新检查
+
+安装版默认最多每 24 小时自动检查一次新版本，可在 **“设置 → 常规”** 关闭，或在 **“关于”** 页手动触发检查。检测到新版本后仅打开下载页面由用户自主下载安装，不会后台静默更新。检查请求仅向 GitHub 发送应用版本及必要的 HTTP 头信息。
 
 ## 界面组件与许可
 
-自 0.17.0 起，界面组件由 PyQt6 迁移到 PySide6。采用 PySide6 的版本通过完整安装包提供所需组件，按上述步骤覆盖升级即可，无需单独安装 PySide6、Shiboken 或 Qt。
+自 0.17.0 起，界面组件由 PyQt6 迁移到 PySide6，所需运行库均由完整安装包随附提供，直接覆盖升级即可，无需单独安装 PySide6、Shiboken 或 Qt。
 
-PyQt6 提供 GPLv3 和商业许可；PySide6 提供 LGPLv3 等开源许可及商业许可选项。迁移后，项目原创代码继续采用 MIT 许可，界面组件、其他依赖和模型遵循各自的许可。许可声明与对应源码信息随程序提供，详见[许可证与第三方组件](licensing.md#从-pyqt6-迁移到-pyside6)。
+PyQt6 提供 GPLv3 和商业许可；PySide6 提供 LGPLv3 等开源许可及商业许可选项。项目原创代码继续采用 MIT 许可，第三方界面组件、依赖库与模型分别遵循各自条款，相关声明与源码信息随程序交付。
+
+## 相关文档
+
+- [许可证与第三方组件](licensing.md#从-pyqt6-迁移到-pyside6)
+- [AI 服务与隐私](ai-services.md)
+- [系统要求与性能](performance.md)

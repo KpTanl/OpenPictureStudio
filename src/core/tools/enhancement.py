@@ -52,7 +52,7 @@ def required_models(params):
 
 # 选了模型、模型暂时不在时仍可以接着编辑的步骤：受管模型的实现与它的参数版本
 _GAP_EDITABLE = frozenset({("ai_enhance.neural", 3), ("bg_remove.managed", 3),
-                           ("id_photo.managed", 2)})
+                           ("id_photo.managed", 2), ("beauty.detail", 3)})
 
 
 def model_gaps_editable(workflow, issues):

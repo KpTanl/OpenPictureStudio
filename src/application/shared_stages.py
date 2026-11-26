@@ -1,4 +1,4 @@
-from contextlib import contextmanager
+from contextlib import closing, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from threading import Condition
 from concurrent.futures import CancelledError
@@ -174,6 +174,21 @@ class MemoScope:
         self.domain = ()
         self.retain = True
         self._leases = []
+
+    def can_retain(self, size):
+        resources = getattr(self.store, "resources", None)
+        return resources is None or size <= resources.retention_limit("intermediate")
+
+    def try_reserve(self, size):
+        """节点预约之外再登记一笔工作内存；登记不下时返回 None。"""
+        resources = getattr(self.store, "resources", None)
+        if resources is None:
+            return nullcontext()
+        try:
+            hold = resources.try_working_memory(size)
+        except MemoryError:
+            return None
+        return None if hold is None else closing(hold)
 
     def memo(self, name, key, load):
         if not self.enabled:

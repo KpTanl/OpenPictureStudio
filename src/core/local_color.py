@@ -248,16 +248,69 @@ def _native():
     return engine.ops_accel
 
 
+def _native_available(component_mode):
+    if not engine._HAS_RUST_ACCEL or not hasattr(engine.ops_accel, "render_local_pipeline"):
+        return False
+    if not component_mode:
+        return True
+    return (getattr(engine.ops_accel, "LOCAL_COMPONENT_MASKS", 0) == 1
+            and hasattr(engine.ops_accel, "render_component_pipeline"))
+
+
 def working_memory(source, params, *, threads=1):
     global_params, masks = prepare(params)
     height, width = source.pixels.shape[:2]
     if not masks:
         return 0
-    spatial = global_params.get("sharpness", 1) != 1 or any(global_params.get(key, 0) or any(mask.delta[KEYS.index(key)] for mask in masks)
-                  for key in ("shadows", "highlights", "blacks", "whites", "texture", "clarity", "dehaze"))
     bands = min(max(1, threads), math.ceil(height / BAND_ROWS))
-    return (width * min(height, BAND_ROWS) * 4 * 32 * bands + (height * width * 4 * 24 if spatial else 0)
-            + (height * width * 4 * len(masks) if params.get("process_version") == 4 else 0))
+    band_bytes = width * min(height, BAND_ROWS) * 4 * 32 * bands
+    component_mode = params.get("process_version") == 4
+    if not _native_available(component_mode):
+        spatial = global_params.get("sharpness", 1) != 1 or any(
+            global_params.get(key, 0) or any(mask.delta[KEYS.index(key)] for mask in masks)
+            for key in ("shadows", "highlights", "blacks", "whites", "texture", "clarity", "dehaze"))
+        return band_bytes + (height * width * 4 * 24 if spatial else 0)
+
+    pixels = height * width
+    small = min(width, height)
+    sharpness_active = global_params.get("sharpness", 1) != 1
+
+    def active(key):
+        if key == "texture" and sharpness_active:
+            return True
+        return bool(global_params.get(key, 0) or any(mask.delta[KEYS.index(key)] for mask in masks))
+
+    def lowres_bytes(scale):
+        return max(1, width // scale) * max(1, height // scale) * 32
+
+    has_sh = active("shadows") or active("highlights")
+    has_tone = has_sh or active("blacks") or active("whites")
+    if has_sh:
+        s_tone = int(min(6, max(2, small / 256)))
+        tone_extra = 8 * pixels + lowres_bytes(s_tone)
+    elif has_tone:
+        tone_extra = 4 * pixels
+    else:
+        tone_extra = 0
+
+    has_fine = active("texture") or active("clarity")
+    has_mid = active("clarity")
+    has_coarse = active("dehaze")
+    held = 4 * pixels
+    detail_extra = 0
+    if has_fine:
+        s_f = int(min(4, max(1, small / 512)))
+        detail_extra = max(detail_extra, held + 4 * pixels + lowres_bytes(s_f))
+        held += 4 * pixels
+    if has_mid:
+        s_m = int(min(6, max(2, small / 200)))
+        detail_extra = max(detail_extra, held + 4 * pixels + lowres_bytes(s_m))
+        held += 4 * pixels
+    if has_coarse:
+        s_c = int(min(12, max(4, small / 128)))
+        detail_extra = max(detail_extra, held + 4 * pixels + lowres_bytes(s_c))
+
+    return 12 * pixels + max(tone_extra, detail_extra) + band_bytes
 
 
 def render(source, params, *, backend="native", threads=1, reference_size=None,

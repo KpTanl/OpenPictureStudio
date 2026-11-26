@@ -435,6 +435,10 @@ class ImageResourcePool:
                 "preview": (policy.preview_cache_bytes, policy.preview_cache_items),
                 "intermediate": (min(2 * 1024 ** 3, policy.memory_bytes // 3), 48)}
 
+    def retention_limit(self, category):
+        with self._lock:
+            return self._limits[category][0]
+
     def _costs(self):
         sizes = dict.fromkeys(self._limits, 0)
         counts = dict.fromkeys(self._limits, 0)

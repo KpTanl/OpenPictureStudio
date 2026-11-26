@@ -25,16 +25,16 @@ const BAND_ROWS: usize = 64;
 type EncodedMask = (String, u8, Vec<f32>, Vec<f32>);
 type ImagePair<'py> = (Bound<'py, PyArray3<f32>>, Option<Bound<'py, PyArray3<f32>>>);
 
-struct Mask {
+struct Mask<'a> {
     kind: u8,
     geometry: Vec<f32>,
     delta: [f32; 13],
     cosine: f32,
     sine: f32,
-    raster: Vec<f32>,
+    raster: &'a [f32],
 }
 
-impl Mask {
+impl Mask<'_> {
     fn weight(&self, x: f32, y: f32) -> f32 {
         let g = &self.geometry;
         let value = if self.kind == 0 {
@@ -59,9 +59,9 @@ impl Mask {
     }
 }
 
-struct Fields {
+struct Fields<'a> {
     globals: [f32; 13],
-    masks: Vec<Mask>,
+    masks: Vec<Mask<'a>>,
     width: usize,
     height: usize,
     reference: (f32, f32),
@@ -73,7 +73,7 @@ struct FieldScratch {
     weights: Vec<f32>,
 }
 
-impl Fields {
+impl Fields<'_> {
     fn active(&self, keys: &[usize]) -> bool {
         keys.iter().any(|&key| self.globals[key] != if key == 3 || key == 12 { 1. } else { 0. }
             || self.masks.iter().any(|mask| mask.delta[key] != 0.))
@@ -258,20 +258,49 @@ fn self_guided(luma: &[f32], width: usize, height: usize, radius: usize, eps: f3
     let s = subsample.max(1);
     let (sw, sh) = ((width / s).max(1), (height / s).max(1));
     let r = if s == 1 { radius } else { (radius / s).max(1) };
-    let small = resize_bilinear_1channel(luma, width, height, sw, sh);
-    let mean = box_filter_2d(&small, sw, sh, r);
-    let square = kernels::products(&small, &small);
-    let correlation = box_filter_2d(&square, sw, sh, r);
+    let (ma, mb) = {
+        let small_owned;
+        let small = if sw == width && sh == height {
+            luma
+        } else {
+            small_owned = resize_bilinear_1channel(luma, width, height, sw, sh);
+            &small_owned
+        };
+        let mean = box_filter_2d(small, sw, sh, r);
+        let square = kernels::products(small, small);
+        let correlation = box_filter_2d(&square, sw, sh, r);
+        check(cancelled)?;
+        let (a, b) = kernels::coefficient_fields(&mean, &mean, &correlation, &correlation, eps);
+        rayon::join(|| box_filter_2d(&a, sw, sh, r), || box_filter_2d(&b, sw, sh, r))
+    };
     check(cancelled)?;
-    let (a, b) = kernels::coefficient_fields(&mean, &mean, &correlation, &correlation, eps);
-    let (ma, mb) = rayon::join(|| box_filter_2d(&a, sw, sh, r), || box_filter_2d(&b, sw, sh, r));
-    check(cancelled)?;
-    let (ma, mb) = rayon::join(|| resize_bilinear_1channel(&ma, sw, sh, width, height),
-                              || resize_bilinear_1channel(&mb, sw, sh, width, height));
-    Ok(kernels::combine(luma, &ma, &mb))
+    if sw == width && sh == height {
+        return Ok(kernels::combine(luma, &ma, &mb));
+    }
+    let mut out = vec![0.0f32; width * height];
+    let in_w_f = sw as f32;
+    let in_h_f = sh as f32;
+    let scale = in_w_f / width as f32;
+    let height_f = height as f32;
+    out.par_chunks_exact_mut(width)
+        .enumerate()
+        .for_each_init(
+            || (vec![0.0f32; width], vec![0.0f32; width]),
+            |(row_a, row_b), (y_out, row)| {
+                let ys = (y_out as f32 + 0.5) * (in_h_f / height_f) - 0.5;
+                let ys_clamped = ys.clamp(0.0, in_h_f - 1.0);
+                let y0 = ys_clamped.floor() as usize;
+                let y1 = (y0 + 1).min(sh - 1);
+                let wy = ys_clamped - y0 as f32;
+                kernels::resize_row(&ma[y0 * sw..(y0 + 1) * sw], &ma[y1 * sw..(y1 + 1) * sw], scale, wy, row_a);
+                kernels::resize_row(&mb[y0 * sw..(y0 + 1) * sw], &mb[y1 * sw..(y1 + 1) * sw], scale, wy, row_b);
+                kernels::output(&luma[y_out * width..(y_out + 1) * width], row_a, row_b, row);
+            },
+        );
+    Ok(out)
 }
 
-fn tone(buffer: &mut [f32], fields: &Fields, cancelled: &Cancellation) -> PyResult<()> {
+fn tone(buffer: &mut [f32], fields: &Fields<'_>, cancelled: &Cancellation) -> PyResult<()> {
     if !fields.active(&[4, 5, 6, 7]) { return Ok(()); }
     check(cancelled)?;
     let luma: Vec<f32> = buffer.par_chunks_exact(3).map(|p| calc_rec709_luma(p[0], p[1], p[2])).collect();
@@ -310,7 +339,7 @@ struct PreparedDetails<'a> {
     coarse: Option<&'a [f32]>,
 }
 
-fn details(buffer: &mut [f32], fields: &Fields, cancelled: &Cancellation,
+fn details(buffer: &mut [f32], fields: &Fields<'_>, cancelled: &Cancellation,
            prepared: Option<&PreparedDetails>) -> PyResult<()> {
     if !fields.active(&[8, 9, 10]) { return Ok(()); }
     let calculated;
@@ -418,7 +447,7 @@ fn render_internal<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>, par
     let (height, width) = (shape[0], shape[1]);
     let input = pixels.as_slice()?;
     let mut raster_by_id = std::collections::HashMap::new();
-    if let Some(rasters) = rasters {
+    if let Some(rasters) = &rasters {
         if rasters.len() != masks.len() {
             return Err(pyo3::exceptions::PyValueError::new_err("invalid mask count"));
         }
@@ -433,7 +462,7 @@ fn render_internal<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>, par
             if values.iter().any(|v| !v.is_finite() || *v < 0. || *v > 1.) {
                 return Err(pyo3::exceptions::PyValueError::new_err("invalid mask weights"));
             }
-            raster_by_id.insert(mask.0.clone(), values.to_vec());
+            raster_by_id.insert(mask.0.clone(), values);
         }
     }
     let mut globals = [0.; 13];
@@ -445,7 +474,7 @@ fn render_internal<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>, par
     let sharpness = number(params, "sharpness", 1.)?;
     if sharpness != 1. { globals[8] += ((sharpness - 1.) * 250.).round(); }
     masks.sort_by(|a, b| a.0.cmp(&b.0));
-    let masks: Vec<Mask> = masks.into_iter().map(|(identity, kind, mut geometry, delta)| {
+    let masks: Vec<Mask<'_>> = masks.into_iter().map(|(identity, kind, mut geometry, delta)| {
         if kind > 2 || geometry.len() != if kind == 0 { 4 } else if kind == 1 { 7 } else { 0 } || delta.len() != 13
             || (kind == 2 && !raster_by_id.contains_key(&identity)) {
             return Err(pyo3::exceptions::PyValueError::new_err("invalid mask"));
@@ -458,7 +487,7 @@ fn render_internal<'py>(py: Python<'py>, pixels: PyReadonlyArray3<'py, f32>, par
             geometry[3] *= reference.1 as f32;
         }
         let delta: [f32; 13] = delta.try_into().unwrap();
-        Ok(Mask { kind, geometry, delta, cosine: angle.cos(), sine: angle.sin(), raster: raster_by_id.remove(&identity).unwrap_or_default() })
+        Ok(Mask { kind, geometry, delta, cosine: angle.cos(), sine: angle.sin(), raster: raster_by_id.remove(&identity).unwrap_or(&[]) })
     }).collect::<PyResult<_>>()?;
     let fields = Fields { globals, masks, width, height, reference: (reference.0 as f32, reference.1 as f32) };
     let encoded_stages: Vec<(Vec<f32>, Vec<f32>, f32, f32)> = params.get_item("look_stages")?.map(|v| v.extract()).unwrap_or(Ok(Vec::new()))?;

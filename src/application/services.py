@@ -413,7 +413,7 @@ def _compute_histogram(image: Image.Image) -> dict | None:
     try:
         from ..core.color_adjuster import ColorAdjuster
 
-        return ColorAdjuster(engine="pro").compute_histogram(image)
+        return ColorAdjuster.compute_histogram(image)
     except Exception:
         logger.exception("Failed to compute histogram")
         return None

@@ -10,7 +10,8 @@ from PySide6.QtWidgets import QApplication
 from src.ui.widgets.collapsible_card import CollapsibleCard
 from src.ui.widgets.color_mixer_widget import ColorMixerWidget
 from src.core.color_adjuster import ColorAdjuster
-from src.core.photo_engine import RenderSource
+from src.core.photo_engine import RenderSource, apply_chain_v2
+from src.core.tools.color import ui_to_engine
 
 
 @pytest.fixture(scope="session")
@@ -82,24 +83,21 @@ def test_histogram_accuracy_and_speed():
 
 
 def test_color_mixer_apply():
-    """测试 ColorAdjuster 正确应用 color_mixer 与 masks。"""
-    adj = ColorAdjuster()
+    """测试引擎正确应用 color_mixer 与 ui_to_engine 参数转换。"""
     img = Image.new("RGB", (32, 32), (220, 50, 50))  # 红色块
     params = {
         "color_mixer": {
             "red": {"hue": 100, "sat": 0, "lum": 0}
         }
     }
-    out = adj.apply_chain(img, params)
+    out = apply_chain_v2(img, params)
     orig_px = img.getpixel((16, 16))
     out_px = out.getpixel((16, 16))
     assert out_px != orig_px
     # 色相顺时针偏向橙黄色（绿色分量提升，红色下降）
     assert out_px[1] > orig_px[1]
 
-    # 测试 ui_to_engine_params
-    ui_dict = {"contrast_amt": 10, "color_mixer": params["color_mixer"]}
-    eng_dict = adj.ui_to_engine_params(ui_dict)
+    eng_dict = ui_to_engine({"contrast_amt": 10, "color_mixer": params["color_mixer"]})
     assert eng_dict["color_mixer"] == params["color_mixer"]
 
 

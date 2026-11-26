@@ -1,7 +1,7 @@
-"""引擎选择与入口 A 集成验收。
+"""引擎集成验收。
 
 覆盖 load_render_pil 的引擎分支、apply_chain_v2 的 meta 透传与 base
-curve 门控、A/B 安全（classic 逐位不变、meta 对 classic 无副作用）。
+curve 门控。
 
 RAW 经 DCP 的真路径由 test_dcp_color_science（无 RAW 时 skip）覆盖；此处用
 非 RAW 图隔离验证引擎选择/解码契约与门控，不依赖 rawpy。
@@ -12,7 +12,6 @@ import pytest
 from dataclasses import replace
 from PIL import Image
 
-from src.core.color_adjuster import ColorAdjuster
 from src.core.looks import look_stages
 from src.core.raw_loader import load_image
 from src.core.photo_engine import (
@@ -80,7 +79,7 @@ def test_apply_chain_v2_meta_none_unchanged_from_before(png_path):
 # --------------------------------------------------- ColorAdjuster apply_chain meta 透传
 def test_color_adjuster_apply_chain_accepts_meta(png_path):
     img = Image.open(png_path).convert("RGB")
-    out = ColorAdjuster().apply_chain(
+    out = apply_chain_v2(
         img, {"exposure": 0.2, "shadows": 20},
         meta=RenderMeta(color_pipeline="dcp:X", dcp_has_tone_curve=True, source_format="raw"),
     )

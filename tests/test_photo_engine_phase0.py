@@ -3,7 +3,6 @@
 覆盖：
   - sRGB 编解码往返 ≤1 LSB
   - 入口 A 空管线往返 ≤1 LSB（零调整）+ alpha 逐位保真
-  - engine 选择器：classic 默认、pro 直通、非法值回退
   - box blur 对拍 naive、guided/fast guided filter 数值性质
   - RenderSource 字段与预留默认值
 """
@@ -12,7 +11,6 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from src.core.color_adjuster import ColorAdjuster
 from src.core.photo_engine import (
     RenderSource,
     apply_chain_v2,
@@ -75,18 +73,6 @@ def test_entry_a_alpha_is_bit_exact():
     a_in = np.asarray(img.split()[3])
     a_out = np.asarray(out.split()[3])
     np.testing.assert_array_equal(a_in, a_out)  # alpha 不经 gamma，须逐位相同
-
-
-# ------------------------------------------------------------- engine 选择器
-def test_engine_selector_defaults():
-    assert ColorAdjuster().engine == "pro"
-    assert ColorAdjuster("pro").engine == "pro"
-
-
-def test_pro_engine_empty_params_is_passthrough():
-    img = _rand_img("RGB")
-    res = ColorAdjuster().apply_chain(img, {})
-    assert np.abs(np.asarray(img, np.int16) - np.asarray(res, np.int16)).max() <= 1
 
 
 # ------------------------------------------------- box blur 与 guided filter

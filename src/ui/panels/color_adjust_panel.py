@@ -732,7 +732,7 @@ class ColorAdjustPanel(BaseToolPanel):
         current = copy.deepcopy(self._params)
         version = self.PARAMETER_CONTRACT.version
         def analyze(snapshot):
-            auto_params = ColorAdjuster(engine="pro").analyze_auto_params(snapshot)
+            auto_params = ColorAdjuster().analyze_auto_params(snapshot)
             ui = preserve_color_identity(self._from_engine_params(auto_params), current)
             ui = adapt_auto_params_for_ui(ui, snapshot, source_format)
             ui["curves"] = None

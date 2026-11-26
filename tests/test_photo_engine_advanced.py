@@ -191,7 +191,7 @@ def test_render_pipeline_with_color_mixer_and_mask():
 def test_brightness_and_sharpness_effects():
     """验证 brightness 与 sharpness 在 Pro 引擎下有效改变像素且不被 is_color_neutral 忽略。"""
     from PIL import Image
-    from src.core.color_adjuster import ColorAdjuster
+    from src.core.photo_engine import apply_chain_v2
     from src.core.tools.color import is_color_neutral
 
     assert not is_color_neutral({"brightness": 2.0})
@@ -199,7 +199,7 @@ def test_brightness_and_sharpness_effects():
 
     # 1. 亮度测试
     img = Image.new("RGB", (30, 30), (100, 100, 100))
-    out_b = ColorAdjuster(engine="pro").apply_chain(img, {"brightness": 2.0})
+    out_b = apply_chain_v2(img, {"brightness": 2.0})
     diff_b = np.abs(np.array(out_b, dtype=int) - np.array(img, dtype=int)).max()
     assert diff_b > 20, f"Brightness adjustment failed, max diff={diff_b}"
 
@@ -207,7 +207,7 @@ def test_brightness_and_sharpness_effects():
     rng = np.random.default_rng(42)
     noise_arr = rng.integers(50, 200, (60, 60, 3), dtype=np.uint8)
     noise_img = Image.fromarray(noise_arr, "RGB")
-    out_s = ColorAdjuster(engine="pro").apply_chain(noise_img, {"sharpness": 1.5})
+    out_s = apply_chain_v2(noise_img, {"sharpness": 1.5})
     diff_s = np.abs(np.array(out_s, dtype=int) - np.array(noise_img, dtype=int)).max()
     assert diff_s > 10, f"Sharpness adjustment failed, max diff={diff_s}"
 

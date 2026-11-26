@@ -107,9 +107,8 @@ def test_auto_enhance_no_name_error():
     """验证自动增强直方图计算正常运行，不出现 ImageChops NameError。"""
     adj = ColorAdjuster()
     img = Image.new("RGB", (128, 128), (100, 120, 140))
-    res = adj.auto_enhance(img)
-    assert isinstance(res, Image.Image)
-    assert res.size == img.size
+    res = adj.analyze_auto_params(img)
+    assert isinstance(res, dict)
 
 
 def test_src_from_pil_multi_format_protection():

@@ -1346,11 +1346,8 @@ def _gamut_compress(d: np.ndarray) -> np.ndarray:
 #     guide（= joint upsampling；重 full-res box-filter GF 调用
 #     数 = 0）。
 #
-# 偏移/羽化常数（45/255 峰值、16/255 暗部混合膝点、各尺度半径/eps）为 classic
-# 既有值平移的**起点**；渲染链一变，Auto/pro 常数须对 LR 截图重标。
-# Phase 4 客观基建：把这些散落字面量集中进 ProCalib 单一表（算法码不再出现
-# 裸感知字面量），Phase 4 主观标定只动该表、classic 在 color_adjuster.py
-# 物理隔离不受影响（A/B 锚 = 不同文件 + 不同符号 + 数值上等价回放）。
+# 偏移/羽化常数（45/255 峰值、16/255 暗部混合膝点、各尺度半径/eps）集中保存在
+# ProCalib 单一表中（算法码不再出现裸感知字面量），Auto/pro 常数须按主观标定调整。
 # ---------------------------------------------------------------------------
 
 
@@ -1374,17 +1371,11 @@ class _KernelSpec:
 
 @dataclass(frozen=True)
 class ProCalib:
-    """Phase 4 可标定常数集中表（渲染链一变，表内常数须重新标定）。
-
-    当前值 = classic 体感平移**起点/锚**（color_adjuster._build_zone_lut /
-    _apply_lut_rgb 同值）。Phase 4 在本表内对 LR 截图逐张重标，**算法码不再
-    出现裸感知字面量**；classic 在 color_adjuster.py 完全不受本表影响（A/B 锚，
-    新旧常数物理隔离 = 不同文件 + 不同符号）。本轮仅集中化，数值未动 ⇒ pro
-    输出逐位不变（Phase 2/3 sign-off 保持，回归测试钉死）。
+    """可标定常数集中表（渲染链调整后可在本表内统一重标，算法码不出现裸感知字面量）。
 
     有意排除（保留为算法内字面量，**非本表标定面**）：
       - 局部 tone base eps 0.04²：guided filter 的固定设定，与渲染链标定**解耦**，永不重标。
-      - 固定 zone 边界 128/80/175（_Z_*）：classic _build_zone_lut 语义分区；
+      - 固定 zone 边界 128/80/175（_Z_*）：语义分区；
         adaptive pivot 仅经 localtone_adaptive 显式门控进入，默认不改现路。
       - filmic 肩 knee/s、数值防爆 eps（1e-3/255、1e-8 等）：spec/数值，非感知。
     """

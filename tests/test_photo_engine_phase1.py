@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from src.core.color_adjuster import ColorAdjuster
 from src.core.photo_engine import (
     RenderPipeline,
     _gamut_compress,
@@ -48,10 +47,9 @@ def test_is_neutral_predicate():
     assert not is_color_neutral({"curves": {"rgb": [(0, 0), (128, 140), (255, 255)]}})
 
 
-def test_pro_engine_via_apply_chain_neutral_is_passthrough(monkeypatch):
-    monkeypatch.setenv("OPS_ENGINE", "pro")
+def test_pro_engine_via_apply_chain_neutral_is_passthrough():
     img = _img()
-    out = ColorAdjuster().apply_chain(img, {"contrast": 1.0, "exposure": 0})
+    out = apply_chain_v2(img, {"contrast": 1.0, "exposure": 0})
     assert np.abs(np.asarray(img, np.int16) - np.asarray(out, np.int16)).max() <= 1
 
 

@@ -14,13 +14,19 @@ def _rotated_pixels(source, angle):
     pixels, alpha = source.pixels, source.alpha
     coverage = np.ones(pixels.shape[:2], dtype=np.float32) if alpha is None else alpha
     def rotate(channel):
-        return np.asarray(Image.fromarray(channel).rotate(
-            angle, resample=Image.Resampling.BICUBIC, expand=True), dtype=np.float32)
-    premultiplied = pixels * coverage[..., None]
-    alpha = np.clip(rotate(coverage), 0, 1)
-    pixels = np.stack([rotate(premultiplied[..., i]) for i in range(3)], axis=-1)
-    pixels = np.divide(pixels, alpha[..., None], out=np.zeros_like(pixels), where=alpha[..., None] > 1e-8)
-    return pixels, alpha
+        with Image.fromarray(channel) as image, image.rotate(
+            angle, resample=Image.Resampling.BICUBIC, expand=True
+        ) as rotated:
+            return np.array(rotated, dtype=np.float32)
+    rotated_alpha = rotate(coverage)
+    np.clip(rotated_alpha, 0, 1, out=rotated_alpha)
+    out = np.empty((*rotated_alpha.shape, 3), dtype=np.float32)
+    for i in range(3):
+        out[..., i] = rotate(pixels[..., i] * coverage)
+    valid = rotated_alpha > 1e-8
+    np.divide(out, rotated_alpha[..., None], out=out, where=valid[..., None])
+    out[~valid] = 0
+    return out, rotated_alpha
 
 
 def validate_crop(params):
@@ -138,6 +144,23 @@ def rotated_size(size, angle):
             math.ceil((height + span_y) / 2) - math.floor((height - span_y) / 2))
 
 
+def crop_working_memory(source, params, *, threads=1):
+    if CROP_PARAMETERS.is_neutral(params, 2):
+        return 0
+    height, width = source.pixels.shape[:2]
+    pixels = width * height
+    angle = params["rotation_angle"]
+    if angle:
+        out_width, out_height = rotated_size((width, height), angle)
+        if max(out_width, out_height) > 32768:
+            return 0
+        rotated = out_width * out_height
+        input_bytes = (12 if source.alpha is None else 8) * pixels
+        return max(input_bytes + 24 * rotated, 32 * rotated)
+    left, top, right, bottom = crop_box(params["crop_rect"], (width, height))
+    return (right - left) * (bottom - top) * (12 if source.alpha is None else 16)
+
+
 def execute_crop(source, params, *, sampling=None):
     params = checked(CROP_PARAMETERS, params)
     if CROP_PARAMETERS.is_neutral(params, 2):
@@ -147,7 +170,7 @@ def execute_crop(source, params, *, sampling=None):
     angle = params["rotation_angle"]
     if angle:
         output_size = rotated_size((pixels.shape[1], pixels.shape[0]), angle)
-        if output_size[0] * output_size[1] > 100_000_000:
+        if max(output_size) > 32768:
             raise ValueError("error.export.size")
         pixels, alpha = memo("crop.rotation", angle, lambda: _rotated_pixels(source, angle), image=True)
         if sampling is not None and sampling.active:

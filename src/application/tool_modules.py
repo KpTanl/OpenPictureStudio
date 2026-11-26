@@ -8,7 +8,8 @@ from ..core.contracts.tools import ImageCapabilities, ToolDescriptor
 from ..core.contracts.tool_resources import ModelRequirement, RequiredResource, ResourceFeature
 from ..core.tools.catalog import ToolDefinition
 from ..core.tools.color import COLOR_PARAMETERS, LEGACY_COLOR_PARAMETERS
-from ..core.tools.geometry import CROP_PARAMETERS, SHAPE_PARAMETERS, LASSO_PARAMETERS, execute_crop, execute_shape, execute_lasso
+from ..core.tools.geometry import (CROP_PARAMETERS, SHAPE_PARAMETERS, LASSO_PARAMETERS,
+                                     crop_working_memory, execute_crop, execute_shape, execute_lasso)
 from ..core.tools.id_photo import (ID_PHOTO_RESOURCE_FEATURES, MANAGED_ID_PHOTO_PARAMETERS,
                                   id_photo_required_resources)
 from ..core.nodes.color_adjust_node import execute as execute_color
@@ -48,6 +49,7 @@ MODULES = {
                                sampling_behavior="capture", uses_sampling=True,
                                output_size=lambda params, size: size, region_input=color_input, execute_region=color_region),
     "crop": ToolModule(CROP_PARAMETERS, execute_crop, ImageCapabilities(alpha="transform", geometry="resize"),
+                       working_memory=crop_working_memory,
                        sampling_behavior="transport", uses_sampling=True,
                        output_size=crop_size, region_input=crop_input, execute_region=preserve),
     "shape_crop": ToolModule(SHAPE_PARAMETERS, execute_shape, ImageCapabilities(alpha="transform", geometry="resize"),

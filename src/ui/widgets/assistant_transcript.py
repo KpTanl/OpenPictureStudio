@@ -716,10 +716,6 @@ class AssistantTranscript(QScrollArea):
         return (widget.detail_text(message_id) if isinstance(widget, AssistantRunCard)
                 else widget.detail_text() if widget else "")
 
-    def change_cards(self):
-        return tuple(widget.card for widget in self._widgets.values()
-                     if isinstance(widget, AssistantRunCard) or widget.card.rows())
-
     def _older(self):
         self._limit += 80
         self.set_messages(self._conversation, self._messages, self._tr)

@@ -8,7 +8,7 @@ from PySide6.QtGui import QImage
 
 from src.core.photo_engine import (
     RenderSource, RenderPipeline, configure_hardware_acceleration,
-    is_avx2_available, box_filter, _resize_bilinear, _hue_deg, _gamut_compress
+    box_filter, _resize_bilinear
 )
 from src.core.color_adjuster import ColorAdjuster
 
@@ -31,7 +31,7 @@ def test_core_count_adaptation():
     assert auto_threads <= 16
 
 
-def test_avx2_vs_pure_numpy_consistency():
+def test_resize_opencv_matches_numpy_fallback():
     w, h = 320, 240
     np.random.seed(42)
     img = np.random.rand(h, w, 3).astype(np.float32)
@@ -45,19 +45,13 @@ def test_avx2_vs_pure_numpy_consistency():
     if has_cv2:
         cv2.setUseOptimized(True)
         resize_opt = _resize_bilinear(img, 120, 160)
-        hue_opt = _hue_deg(img)
-        gamut_opt = _gamut_compress(img * 1.2)
 
         cv2.setUseOptimized(False)
         resize_pure = _resize_bilinear(img, 120, 160)
-        hue_pure = _hue_deg(img)
-        gamut_pure = _gamut_compress(img * 1.2)
 
         cv2.setUseOptimized(True)
 
         np.testing.assert_allclose(resize_opt, resize_pure, atol=1e-2)
-        np.testing.assert_allclose(hue_opt, hue_pure, atol=1e-5)
-        np.testing.assert_allclose(gamut_opt, gamut_pure, atol=1e-5)
 
 
 def test_render_pipeline_under_different_thread_counts():

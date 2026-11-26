@@ -1,7 +1,7 @@
 from .result_types import CoreError, CoreResult, ErrorCode
 
 __all__ = ["CoreAPI", "CoreError", "CoreResult", "ErrorCode", "CommitPolicy", "CommitResult",
-           "ExportRequest", "ExportResult", "ImageEngineAdapter", "LegacyEngineAdapter",
+           "ExportRequest", "ExportResult", "ImageEngineAdapter",
            "PreviewResult", "ProjectSession"]
 
 

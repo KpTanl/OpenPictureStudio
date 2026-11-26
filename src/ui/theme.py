@@ -136,11 +136,6 @@ class ThemeManager(QObject):
         if app is not None and app.property("ops.theme"):
             app.setStyleSheet(get_theme_qss(self.current_theme(), canvas_background=name))
 
-    @property
-    def available_themes(self) -> list[str]:
-        """所有已注册主题名（来自 ``THEMES`` registry）。"""
-        return list(THEMES.keys())
-
     def current_theme(self) -> str:
         """返回当前实际生效的主题名称（system 会解析为已注册主题）。"""
         if self._current == self.THEME_SYSTEM:
@@ -173,11 +168,6 @@ class ThemeManager(QObject):
             except AttributeError:
                 pass
         return self.THEME_DARK
-
-
-def build_dark_theme(extra_qss: str = "") -> str:
-    """向后兼容：直接返回 Dark Theme QSS，可选追加额外样式。"""
-    return get_dark_qss(extra_qss)
 
 
 # =============================================================================

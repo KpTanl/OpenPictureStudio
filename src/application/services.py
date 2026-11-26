@@ -34,12 +34,9 @@ from ..core.contracts.gpu import GpuExecutionError, cpu_recovery, recover_cpu, d
 from ..core.mixer_sampling import MixerSampling, MixerSamplingRequest
 from ..core.output_formats import output_format, validate_quality
 from ..core.photo_engine import (
-    RenderMeta,
     RenderSource as EngineRenderSource,
-    apply_chain_v2,
     display_rgba8,
     resize_display_rgba8,
-    load_render_pil,
     load_render_source,
     render_source,
     save_render_source,
@@ -280,15 +277,6 @@ class ImageEngineAdapter:
     ) -> EngineRenderSource:
         return render_source(source, params, threads=threads, cancelled=cancelled, sampling=sampling)
 
-    def render_pil(
-        self,
-        image: Image.Image,
-        params: dict[str, Any],
-        *,
-        meta: RenderMeta | None = None,
-    ) -> Image.Image:
-        return apply_chain_v2(image, params, meta=meta)
-
     def source_to_pil(self, source: EngineRenderSource, *, parallelism=1) -> Image.Image:
         return _pil_from(source, parallelism=parallelism)
 
@@ -328,54 +316,6 @@ class ImageEngineAdapter:
             note=engine_source.note,
             is_raw=is_raw,
         )
-
-
-class LegacyEngineAdapter:
-    """Compatibility shim so legacy Dialogs can keep calling the old logic.
-
-    It re-exposes the historical module-level functions and the engine's pixel
-    ``RenderSource`` under one object. New code should use ``ImageEngineAdapter``
-    and the Core API instead.
-    """
-
-    RenderSource = EngineRenderSource
-
-    def load_render_source(
-        self, path: str, *, for_preview: bool = False, threads: int = 1
-    ) -> EngineRenderSource:
-        return load_render_source(path, for_preview=for_preview, threads=threads)
-
-    def load_render_pil(
-        self, path: str, *, engine: str = "pro", for_preview: bool = False
-    ) -> tuple[Image.Image, RenderMeta]:
-        return load_render_pil(path, engine=engine, for_preview=for_preview)
-
-    def apply_chain_v2(
-        self,
-        image: Image.Image,
-        params: dict[str, Any],
-        copy_if_unchanged: bool = True,
-        *,
-        meta: RenderMeta | None = None,
-    ) -> Image.Image:
-        return apply_chain_v2(image, params, copy_if_unchanged=copy_if_unchanged, meta=meta)
-
-    def render_source(
-        self, source: EngineRenderSource, params: dict[str, Any], *, threads=None,
-        cancelled=lambda: False,
-    ) -> EngineRenderSource:
-        return render_source(source, params, threads=threads, cancelled=cancelled)
-
-    def save_render_source(
-        self,
-        source: EngineRenderSource,
-        target_path: str,
-        *,
-        ext: str | None = None,
-        quality: int = 95,
-        threads: int = 1,
-    ) -> None:
-        save_render_source(source, target_path, ext=ext, quality=quality, threads=threads)
 
 
 # ---------------------------------------------------------------------------

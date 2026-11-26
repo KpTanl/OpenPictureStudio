@@ -81,13 +81,8 @@ _RENDER_BACKENDS_REPORTED = set()
 
 
 # ---------------------------------------------------------------------------
-# 硬件多核（4/8/16核）与 AVX2 指令集自适应加速层
+# 硬件多核（4/8/16核）与自适应线程配置
 # ---------------------------------------------------------------------------
-
-def is_avx2_available() -> bool:
-    """返回 Rust 模块检测到的 CPU AVX2 支持状态。"""
-    return _HAS_RUST_ACCEL and bool(getattr(ops_accel, "_AVX2_AVAILABLE", False))
-
 
 def configure_hardware_acceleration(thread_count: int | None = None) -> int:
     """根据 4/8/16 核心硬件拓扑动态配置 OpenCV 与计算线程数。"""

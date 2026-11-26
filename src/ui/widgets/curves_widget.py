@@ -84,12 +84,6 @@ class CurvesWidget(QWidget):
             self._hover_idx = -1
             self.update()
 
-    def reset_channel(self, channel: str | None = None) -> None:
-        ch = channel or self._active_channel
-        self._points[ch] = [(0, 0), (255, 255)]
-        self.update()
-        self.curves_changed.emit()
-
     def reset_all(self) -> None:
         for ch in self._points:
             self._points[ch] = [(0, 0), (255, 255)]

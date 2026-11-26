@@ -1631,7 +1631,6 @@
   "assistant.task.reason.completed": "Adjustment complete",
   "assistant.task.reason.satisfied": "AI considers the goal met",
   "assistant.task.reason.no_changes": "No further effective changes; current result kept",
-  "assistant.task.reason.repeated": "Parameter states repeated; current result kept",
   "assistant.task.reason.max_rounds": "Reached the limit of {rounds} rounds",
   "assistant.task.reason.time_limit": "Reached the time limit of {seconds} seconds",
   "assistant.task.reason.stopped": "Adjustment stopped",

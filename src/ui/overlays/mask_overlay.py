@@ -31,7 +31,7 @@ class MaskOverlay(ViewerOverlay):
         super().__init__(parent)
         self._masks, self._selected = [], None
         self._reference_size = (1, 1)
-        self._enabled, self._visible = False, True
+        self._enabled = False
         self._creation = None
         self._drag = None
         self._candidate = None
@@ -81,12 +81,6 @@ class MaskOverlay(ViewerOverlay):
         else:
             self._masks = copy.deepcopy(masks or [])
         self._selected, self._reference_size, self._enabled = selected, reference_size, enabled
-        self.update_view()
-
-    def set_visible(self, visible):
-        self._visible = visible
-        if not visible:
-            self.cancel_interaction()
         self.update_view()
 
     def set_range(self, image=None, hold=None):
@@ -251,7 +245,7 @@ class MaskOverlay(ViewerOverlay):
         return None, None
 
     def handle_mouse_press(self, event, image_rect):
-        if not self._enabled or not self._visible or event.button() != Qt.MouseButton.LeftButton:
+        if not self._enabled or event.button() != Qt.MouseButton.LeftButton:
             return False
         if getattr(self._viewer, "space_pan_active", False):
             return False
@@ -414,7 +408,7 @@ class MaskOverlay(ViewerOverlay):
         self.gesture_finished.emit(result)
         self.drag_finished.emit()
         # 画笔松手后仍在涂抹，下一笔接着进同一块区域；渐变画完一个就结束
-        if self._creation is not None and (not brush or not self._enabled or not self._visible):
+        if self._creation is not None and (not brush or not self._enabled):
             self._creation = None
             self._paint_target, self._hover = None, None
             if self._viewer is not None:
@@ -435,7 +429,7 @@ class MaskOverlay(ViewerOverlay):
         return False
 
     def paint(self, painter, image_rect):
-        if not self._visible or not self._enabled:
+        if not self._enabled:
             return
         if self._range_image is not None:
             painter.drawImage(QRectF(image_rect), self._range_image)

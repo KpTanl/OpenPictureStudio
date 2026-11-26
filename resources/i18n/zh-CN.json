@@ -1631,7 +1631,6 @@
   "assistant.task.reason.completed": "调整已完成",
   "assistant.task.reason.satisfied": "AI 认为已符合要求",
   "assistant.task.reason.no_changes": "没有新的有效改动，已保留当前效果",
-  "assistant.task.reason.repeated": "参数开始重复，已停止并保留当前效果",
   "assistant.task.reason.max_rounds": "已到 {rounds} 轮上限",
   "assistant.task.reason.time_limit": "已到本次时长上限（{seconds} 秒）",
   "assistant.task.reason.stopped": "调整已停止",

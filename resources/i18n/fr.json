@@ -1631,7 +1631,6 @@
   "assistant.task.reason.completed": "Réglage terminé",
   "assistant.task.reason.satisfied": "L’IA estime l’objectif atteint",
   "assistant.task.reason.no_changes": "Aucune modification supplémentaire utile ; résultat conservé",
-  "assistant.task.reason.repeated": "Les paramètres se répètent ; résultat conservé",
   "assistant.task.reason.max_rounds": "Limite de {rounds} tours atteinte",
   "assistant.task.reason.time_limit": "Limite de {seconds} secondes atteinte",
   "assistant.task.reason.stopped": "Réglage arrêté",

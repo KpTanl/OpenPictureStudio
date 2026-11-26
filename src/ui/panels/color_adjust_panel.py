@@ -73,7 +73,6 @@ class ColorAdjustPanel(BaseToolPanel):
     TOOL_ADAPTER = ColorAdjustAdapter()
     sampling_requested = Signal(bool)
     sampling_picked = Signal(float, float)
-    sampled_preview_ready = Signal(object)
     mask_mode_changed = Signal(bool)
     mask_ui_changed = Signal()
     mask_create_requested = Signal(object)
@@ -645,23 +644,6 @@ class ColorAdjustPanel(BaseToolPanel):
         if self._sampling_state != "closed":
             self.sampling_requested.emit(False)
             self.set_sampling_state("closed")
-
-    def prepare_sampling(self, epoch):
-        self._preview_timer.stop()
-        self.cancel_preview()
-        self.cancel_background()
-        if self.source_bundle is None or self.parameters_pending:
-            self.cancel_sampling()
-            return
-        service = self._ensure_render_service()
-        identity, sources = self.source_bundle.identity, self._image_source_service
-        params = self.tool_adapter.ui_to_workflow(self.parameters)
-        def failed(error):
-            self.cancel_sampling()
-            self._processing_error(error)
-        self.submit_background(None, lambda image, cancelled: service.render_sampled(
-            identity, self.TOOL_ID, params, source_service=sources, epoch=epoch,
-            is_cancelled=cancelled), self.sampled_preview_ready.emit, failed, cancellable=True)
 
     def update_preview(self):
         self.cancel_sampling()

@@ -1054,9 +1054,6 @@ class AIAssistantPanel(QWidget, ThemedI18nMixin):
     def messages(self):
         return tuple((message["role"], message["text"]) for message in self._state.get("messages", ()))
 
-    def candidate_cards(self):
-        return self.transcript.change_cards()
-
     def candidate_outcomes(self):
         return tuple(message["action"]["outcome"] for message in self._state.get("messages", ()) if message.get("action"))
 

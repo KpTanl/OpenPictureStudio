@@ -30,9 +30,6 @@ class StudioRenderService:
         result = self._render(session, display=False, **options)
         return None if result is None else result.image
 
-    def render_sampled(self, session, sampling_request, **options):
-        return self._render(session, display=True, sampling_request=sampling_request, **options)
-
     def render_preview(self, session, *, cached_preview=None, **options):
         if cached_preview is not None and not session.read_only:
             result = self._cached_preview(session, *cached_preview, **options)

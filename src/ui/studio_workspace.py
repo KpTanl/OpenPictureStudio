@@ -3811,7 +3811,7 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             if (apply and result.error.code == "UNSUPPORTED_FORMAT"
                     and result.error.message_key == "error.export.alpha_format"):
                 path = self._apply_service.resolve_target(
-                    ApplyTarget.SAVE_AS, old_path, default_ext=".png", has_alpha=True)
+                    ApplyTarget.SAVE_AS, old_path, default_ext=".png")
                 state = self.core.get_session(sid)
                 if (task_id != self._output_generation or self.session is None
                         or self.session.core_id != sid or self._current_path != old_path

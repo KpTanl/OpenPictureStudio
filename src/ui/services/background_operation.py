@@ -79,15 +79,6 @@ def start_background(operation, finished, *, cancellation=None):
     return cancellation
 
 
-def save_image_background(parent, service, image, path, *, quality=95, overwrite=True):
-    snapshot = image.copy()
-    try:
-        return run_background(parent, lambda cancellation: service.save(
-            snapshot, path, quality=quality, overwrite=overwrite, cancellation=cancellation))
-    finally:
-        snapshot.close()
-
-
 def batch_message(result):
     from ...i18n.translation_service import tr
     text = tr("export.batch_result", "Saved: {success}; failed: {failed}; cancelled: {cancelled}",

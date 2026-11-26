@@ -1,8 +1,8 @@
-"""Apply/save workflow shared by OPS and OPS.
+"""Apply/save target resolution shared by workspaces.
 
-Owns the "where do I write the rendered result?" decision and the atomic file
-write, so both workspaces reuse one implementation instead of reaching into the
-main window.
+Owns the "where do I write the rendered result?" prompt and target path
+resolution so workspaces reuse one implementation instead of reaching into
+the main window.
 """
 
 from __future__ import annotations
@@ -10,7 +10,6 @@ from __future__ import annotations
 import os
 from typing import Callable, Optional
 
-from PIL import Image
 from PySide6.QtWidgets import QFileDialog, QWidget
 
 from ..dialogs.apply_target_dialog import ApplyTarget, ask_apply_target
@@ -29,43 +28,11 @@ class ApplyService:
     def ask_target(self) -> ApplyTarget:
         return ask_apply_target(self._parent, self._tr)
 
-    # ---- helpers ----
-    @staticmethod
-    def has_alpha(image: Image.Image) -> bool:
-        return image.mode in ("RGBA", "LA") or (
-            image.mode == "P" and "transparency" in image.info
-        )
-
-    @classmethod
-    def default_ext(cls, image: Image.Image, old_path: str) -> str:
-        ext = os.path.splitext(old_path)[1].lower()
-        if cls.has_alpha(image):
-            return ".png"
-        return ext if ext in IMAGE_EXTS else ".png"
-
-    def save_image_to_path(self, image: Image.Image, path: str, quality: int = 95) -> None:
-        from .background_operation import save_image_background
-        save_image_background(self._parent, self.output_service, image, path, quality=quality)
-
-    # ---- main entry ----
-    def resolve_and_save(
-        self, image: Image.Image, target: ApplyTarget, old_path: str
-    ) -> Optional[str]:
-        """Write ``image`` per the chosen target; return the final path or None."""
-        default_ext = self.default_ext(image, old_path)
-        final_path = self.resolve_target(target, old_path, default_ext=default_ext,
-                                         has_alpha=self.has_alpha(image))
-        if final_path is not None:
-            self.save_image_to_path(image, final_path)
-        return final_path
-
-    def resolve_target(self, target, old_path, *, default_ext=".png", has_alpha=False):
+    def resolve_target(self, target, old_path, *, default_ext=".png"):
         old_ext = os.path.splitext(old_path)[1].lower()
         if target == ApplyTarget.CANCEL:
             return None
-        if target == ApplyTarget.OVERWRITE and (
-            old_ext not in IMAGE_EXTS or (has_alpha and old_ext in (".jpg", ".jpeg", ".bmp"))
-        ):
+        if target == ApplyTarget.OVERWRITE and old_ext not in IMAGE_EXTS:
             target = ApplyTarget.SAVE_AS
 
         if target == ApplyTarget.OVERWRITE:

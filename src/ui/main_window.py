@@ -62,8 +62,7 @@ from ..application.result_types import CoreOperationError, CoreResult, ErrorCode
 from ..application.studio_preview_cache import CanvasPreviewState, StudioPreviewCache
 from ..application.draft_persistence import DraftPersistenceService
 from .services.draft_persistence_runner import DraftPersistenceRunner
-from .panels import BaseToolPanel
-from .panels.registry import create_tool_panel, resolve_tool_id
+from .panels.registry import resolve_tool_id
 from .studio_action_state import StudioActionState
 
 logger = logging.getLogger(__name__)
@@ -387,13 +386,6 @@ class MainWindow(BaseWindow):
         self.destroyed.connect(self._photo_browser.shutdown)
         self.tool_sidebar = None
         self._active_tool_id: str | None = None
-        self._tool_panels: dict[str, BaseToolPanel] = {}
-        self._tool_sampling_epoch = 0
-        from .services.studio_preview_runner import SamplingResources
-        self._tool_sampling_resources = SamplingResources()
-        self.destroyed.connect(self._tool_sampling_resources.close)
-        self._tool_sampling_panel = None
-        self.viewer.presentation_changed.connect(self._on_tool_presentation_changed)
 
         self.scroll_area = None
         self.top_bar = None
@@ -1324,63 +1316,6 @@ class MainWindow(BaseWindow):
         """打开/切换右侧套索抠图侧栏。"""
         self.toggle_tool("lasso")
 
-    # ------------------------------------------------------------------
-    # Tool Sidebar Lifecycle Management
-    # ------------------------------------------------------------------
-    def activate_tool(self, tool_id: str) -> None:
-        """激活并展开右侧工具参数面板。"""
-        if self.studio_workspace is None:
-            self._pending_studio_tool_id = tool_id
-            self._on_workspace_index_changed(1)
-            return
-        tool_id = resolve_tool_id(tool_id)
-        available = self.studio_workspace.core.tools.check_enabled(tool_id)
-        if not available.success:
-            self.show_toast(self._tr(available.error.message_key), 5000)
-            return
-        if not self.manager.current_path:
-            self.show_toast(self._tr("status.open_image_first", "Please open an image first"))
-            return
-
-        if self._active_tool_id == tool_id:
-            return
-
-        # 若此前有其它工具处于激活态，先清理前一个（保留暂存）
-        if self._active_tool_id is not None:
-            self.deactivate_tool(discard_stash=False)
-
-        # 准备或获取面板实例
-        panel = self._tool_panels.get(tool_id)
-        if panel is None:
-            panel = self._create_tool_panel(tool_id)
-            if panel is None:
-                logger.error("Unknown tool id: %s", tool_id)
-                return
-            self._tool_panels[tool_id] = panel
-            self.tool_sidebar.register_panel(tool_id, panel)
-            panel.preview_ready.connect(self._on_tool_preview_ready)
-            if hasattr(panel, "sampling_requested"):
-                panel.sampling_requested.connect(lambda active, pnl=panel: self._on_tool_sampling_requested(pnl, active))
-                panel.sampling_picked.connect(lambda x, y, pnl=panel: self._on_tool_sampling_picked(pnl, x, y))
-                panel.sampled_preview_ready.connect(self._on_tool_sampled_preview)
-            panel.request_status.connect(lambda text: self.show_toast(text, 5000))
-            panel.model_manager_requested.connect(self._show_model_settings)
-        else:
-            panel.set_image_path(self.manager.current_path, force=True)
-
-        self.tool_sidebar.switch_to_panel(tool_id)
-        has_stash = self._edit_state_store.has_tool_stash(self.manager.current_path, tool_id)
-        self.tool_sidebar.set_stash_banner_visible(has_stash)
-
-        # 空间交互工具（B类）自动挂载画布覆盖层
-        if hasattr(panel, "overlay") and panel.overlay:
-            self.viewer.install_overlay(panel.overlay)
-        else:
-            self.viewer.uninstall_overlay()
-
-        self._active_tool_id = tool_id
-        self.tool_sidebar.show()
-
     def prewarm_studio(self) -> None:
         self._prewarm_requested = True
         self._prewarm_timer.start(0)
@@ -1537,9 +1472,6 @@ class MainWindow(BaseWindow):
         studio_thumbs.building_changed.connect(self._foreground_preparation_changed)
         studio_thumbs.listing_ready.connect(self._on_thumbnail_listing_ready)
         studio_thumbs.apply_rating_filter(self.manager.get_rating_filter())
-        self.tool_sidebar.close_requested.connect(self._on_tool_close_requested)
-        self.tool_sidebar.reset_requested.connect(self._on_tool_reset_requested)
-        self.tool_sidebar.discard_stash_requested.connect(self._on_tool_discard_stash_requested)
         studio.applied.connect(self._on_studio_applied)
         studio.back_requested.connect(self._on_studio_back_requested)
 
@@ -2145,17 +2077,11 @@ class MainWindow(BaseWindow):
         self._active_tool_id = self.studio_workspace.active_tool_id
         self._sync_canvas_toolbar()
 
-    def deactivate_tool(self, discard_stash: bool = False) -> None:
+    def deactivate_tool(self) -> None:
         """收起工具侧栏，退出编辑状态并返回看图。"""
-        self._end_tool_sampling()
-        curr_tool = self._active_tool_id
         panel = self.tool_sidebar.get_current_panel()
-        if discard_stash and panel:
-            panel.reset()
         if panel:
             panel.cleanup()
-        if discard_stash and self.manager.current_path and curr_tool:
-            self._edit_state_store.discard(self.manager.current_path, curr_tool)
 
         self.viewer.uninstall_overlay()
         if self.manager.current_path:
@@ -2173,129 +2099,9 @@ class MainWindow(BaseWindow):
         else:
             self.switch_to_studio(tool_id)
 
-    def _create_tool_panel(self, tool_id: str) -> BaseToolPanel | None:
-        return create_tool_panel(
-            tool_id,
-            self.manager.current_path,
-            parent=self.tool_sidebar,
-            edit_state_store=self._edit_state_store,
-            services=self._panel_services,
-        )
-
-    @Slot(QImage)
-    def _on_tool_preview_ready(self, qimage: QImage) -> None:
-        if not self._active_tool_id:
-            return
-        sender_panel = self.sender()
-        curr_panel = self.tool_sidebar.get_current_panel()
-        if sender_panel is not None and sender_panel is not curr_panel:
-            return
-        if hasattr(sender_panel, "image_path") and sender_panel.image_path != self.manager.current_path:
-            return
-        self.viewer.set_preview_image(qimage, preserve_zoom=True)
-
-    def _end_tool_sampling(self):
-        self._tool_sampling_epoch += 1
-        self.viewer.set_sampling(None)
-        handle, self._tool_sampling_resources.sampling = self._tool_sampling_resources.sampling, None
-        if handle is not None:
-            handle.close()
-        panel, self._tool_sampling_panel = self._tool_sampling_panel, None
-        if panel is not None:
-            panel.cancel_background()
-            panel.set_sampling_state("closed")
-
-    def _on_tool_presentation_changed(self, sampling):
-        if sampling is None or sampling is not self._tool_sampling_resources.sampling:
-            self._end_tool_sampling()
-
-    def _on_tool_sampling_requested(self, panel, active):
-        self._end_tool_sampling()
-        if not active:
-            return
-        if (panel is not self.tool_sidebar.get_current_panel() or panel.source_bundle is None
-                or panel.image_path != self.manager.current_path or panel.parameters_pending
-                or self._is_studio_active()):
-            panel.set_sampling_state("closed")
-            return
-        self._tool_sampling_panel = panel
-        panel.set_sampling_state("preparing")
-        panel.prepare_sampling(self._tool_sampling_epoch)
-
-    @Slot(object)
-    def _on_tool_sampled_preview(self, packet):
-        panel = self.sender()
-        if (panel is not self._tool_sampling_panel or panel is not self.tool_sidebar.get_current_panel()
-                or panel.image_path != self.manager.current_path or self._is_studio_active()
-                or packet.sampling is None or packet.sampling.request.epoch != self._tool_sampling_epoch):
-            return
-        sampling = packet.sampling
-        if packet.display is None or sampling.size != packet.display.size:
-            self._end_tool_sampling()
-            self.show_toast(self._tr("color_adjust.mixer.failed"), 5000)
-            return
-        if not self._panel_services["render_service"].is_current(sampling.tool_generation):
-            self._end_tool_sampling()
-            self.show_toast(self._tr("color_adjust.mixer.unavailable"), 5000)
-            return
-        if not self._image_sources.matches_file(sampling.source_identity):
-            self._end_tool_sampling()
-            self.show_toast(self._tr("error.source.changed"), 5000)
-            return
-        frame = packet.display
-        width, height = frame.size
-        image = QImage(frame.rgba, width, height, width * 4, QImage.Format.Format_RGBA8888).copy()
-        self._tool_sampling_resources.sampling = packet.take_sampling()
-        self.viewer.set_preview_image(image, preserve_zoom=True, sampling=self._tool_sampling_resources.sampling)
-        panel.set_sampling_state("ready")
-
-    def _on_tool_sampling_picked(self, panel, x, y):
-        handle = self._tool_sampling_resources.sampling
-        if handle is None or panel is not self._tool_sampling_panel:
-            return
-        source_current = self._image_sources.matches_file(handle.source_identity)
-        if (source_current and panel.image_path == self.manager.current_path
-                and handle.request.epoch == self._tool_sampling_epoch
-                and self._panel_services["render_service"].is_current(handle.tool_generation)
-                and panel.source_bundle is not None and handle.source_identity == panel.source_bundle.identity):
-            channel = handle.channel_at(x, y)
-            if channel is not None:
-                panel.select_sampling_channel(channel)
-        self._end_tool_sampling()
-        if not source_current:
-            self.show_toast(self._tr("error.source.changed"), 5000)
-
     def _is_studio_active(self) -> bool:
         """True when the Studio workspace owns the shared tool sidebar."""
         return getattr(self, "_current_workspace_index", 0) == 1 and self.studio_workspace is not None
-
-    @Slot()
-    def _on_tool_close_requested(self) -> None:
-        if self._is_studio_active():
-            return  # Studio collapses its own sidebar.
-        self.deactivate_tool(discard_stash=False)
-
-    @Slot()
-    def _on_tool_reset_requested(self) -> None:
-        if self._is_studio_active():
-            return  # Studio handles reset.
-        panel = self.tool_sidebar.get_current_panel()
-        if panel:
-            panel.reset()
-        if self._active_tool_id and self.manager.current_path:
-            self._edit_state_store.discard(self.manager.current_path, self._active_tool_id)
-            self.tool_sidebar.set_stash_banner_visible(False)
-
-    @Slot()
-    def _on_tool_discard_stash_requested(self) -> None:
-        if self._is_studio_active():
-            return  # Studio handles its own drafts.
-        panel = self.tool_sidebar.get_current_panel()
-        if panel:
-            panel.reset()
-        if self._active_tool_id and self.manager.current_path:
-            self._edit_state_store.discard(self.manager.current_path, self._active_tool_id)
-            self.tool_sidebar.set_stash_banner_visible(False)
 
     @Slot()
     def _open_color_adjust(self):
@@ -2482,7 +2288,7 @@ class MainWindow(BaseWindow):
             self._active_tool_id = self.studio_workspace.active_tool_id
         elif (self._active_tool_id is not None
                 and not self.studio_workspace.core.tools.check_enabled(self._active_tool_id).success):
-            self.deactivate_tool(discard_stash=False)
+            self.deactivate_tool()
         self._update_menu_actions()
 
     def request_restart(self):
@@ -3070,7 +2876,7 @@ class MainWindow(BaseWindow):
                 event.accept()
                 return
             if getattr(self, "_active_tool_id", None):
-                self.deactivate_tool(discard_stash=False)
+                self.deactivate_tool()
                 event.accept()
                 return
 

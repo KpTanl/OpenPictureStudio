@@ -1151,66 +1151,65 @@ class StudioWorkspace(QWidget, ThemedI18nMixin):
             if panel is None:
                 self._toast(self._tr("error.tool.missing"), 5000)
                 return
-            if panel is not None:
-                self._tool_panels[tool_id] = panel
-                self.tool_sidebar.register_panel(tool_id, panel)
-                panel.params_changed.connect(lambda params, tid=tool_id: self._on_panel_params_changed(tid, params))
-                panel.request_status.connect(lambda text, tid=tool_id: self._on_panel_status(tid, text))
-                panel.preparation_changed.connect(lambda pending: self._update_actions_state())
-                panel.edit_group_started.connect(lambda pnl=panel: self._on_edit_group_started(pnl))
-                panel.edit_group_finished.connect(lambda pnl=panel: self._on_edit_group_finished(pnl))
-                if hasattr(panel, "result_view"):
-                    panel.result_view.requested.connect(
-                        lambda viewing, pnl=panel: self._on_result_view_requested(pnl, viewing))
-                if hasattr(panel, "sampling_requested"):
-                    panel.sampling_requested.connect(lambda active, pnl=panel: self._on_sampling_requested(pnl, active))
-                    panel.sampling_picked.connect(lambda x, y, pnl=panel: self._on_sampling_picked(pnl, x, y))
-                if hasattr(panel, "mask_mode_changed"):
-                    panel.mask_mode_changed.connect(lambda _mode, pnl=panel: self._on_mask_mode(pnl))
-                    panel.mask_ui_changed.connect(lambda pnl=panel: self._save_mask_ui(pnl))
-                    panel.mask_create_requested.connect(lambda kind, pnl=panel: self._on_mask_create(pnl, kind))
-                    panel.mask_upgrade_requested.connect(lambda pnl=panel: self._upgrade_masks(pnl))
-                    panel.mask_gesture_started.connect(lambda mask, pnl=panel: self._begin_mask_gesture(pnl, mask))
-                    panel.mask_gesture_changed.connect(lambda mask, pnl=panel: self._change_mask_gesture(pnl, mask))
-                    panel.mask_gesture_finished.connect(lambda mask, pnl=panel: self._finish_mask_gesture(pnl, mask))
-                    panel.mask_gesture_cancelled.connect(self._cancel_mask_gesture)
-                    panel.mask_tool_started.connect(lambda kind, op, pnl=panel: self._show_mask_tool(pnl, kind, op))
-                    panel.mask_tool_finished.connect(self._hide_mask_tool)
-                    panel.mask_generation_cancel_requested.connect(self._cancel_mask_generation)
-                if hasattr(panel, "availability_changed"):
-                    panel.availability_changed.connect(self._update_actions_state)
-
-        if panel is not None:
-            self.tool_sidebar.setVisible(self.right_stack.currentWidget() is self.tool_sidebar)
-            self.tool_sidebar.show_panel(tool_id)
-            # 换了面板：这一栏最窄能到多少随之变化
-            self._apply_sidebar_widths()
-            self._restoring = True
-            try:
-                panel.set_source_identity(self.core.source_identity(self.session.core_id))
-                panel.set_source_preview(spec)
-                if tool_id == "color_adjust":
-                    self._configure_color_panel(panel)
-                panel.set_image_path(self._current_path, force=(
-                    not created and (force_reload or self._panel_sessions.get(tool_id) is not self.session)
-                ))
-                self._panel_sessions[tool_id] = self.session
-                panel.restore_params(self._params_for_tool(tool_id))
-                if tool_id == "beauty":
-                    self._configure_beauty_panel(panel)
-                if hasattr(panel, "restore_mask_ui"):
-                    panel.restore_mask_ui(self._mask_ui_states.get(self._mask_state_key(), (False, None, False)))
-            finally:
-                self._restoring = False
+            self._tool_panels[tool_id] = panel
+            self.tool_sidebar.register_panel(tool_id, panel)
+            panel.params_changed.connect(lambda params, tid=tool_id: self._on_panel_params_changed(tid, params))
+            panel.request_status.connect(lambda text, tid=tool_id: self._on_panel_status(tid, text))
+            panel.preparation_changed.connect(lambda pending: self._update_actions_state())
+            panel.availability_changed.connect(self._update_actions_state)
+            panel.edit_group_started.connect(lambda pnl=panel: self._on_edit_group_started(pnl))
+            panel.edit_group_finished.connect(lambda pnl=panel: self._on_edit_group_finished(pnl))
             if hasattr(panel, "result_view"):
-                panel.result_view.set_viewing(False)
+                panel.result_view.requested.connect(
+                    lambda viewing, pnl=panel: self._on_result_view_requested(pnl, viewing))
+            if tool_id == "color_adjust":
+                self._connect_color_panel(panel)
 
+        self.tool_sidebar.setVisible(self.right_stack.currentWidget() is self.tool_sidebar)
+        self.tool_sidebar.show_panel(tool_id)
+        # 换了面板：这一栏最窄能到多少随之变化
+        self._apply_sidebar_widths()
+        self._restoring = True
+        try:
+            panel.set_source_identity(self.core.source_identity(self.session.core_id))
+            panel.set_source_preview(spec)
+            if tool_id == "color_adjust":
+                self._configure_color_panel(panel)
+            panel.set_image_path(self._current_path, force=(
+                not created and (force_reload or self._panel_sessions.get(tool_id) is not self.session)
+            ))
+            self._panel_sessions[tool_id] = self.session
+            panel.restore_params(self._params_for_tool(tool_id))
             if tool_id == "beauty":
-                # 预热会登记美颜的实现，工具代次随之变化：放在本次渲染入队之前
-                self._warm_beauty(panel.parameters)
-            self._schedule_pipeline_render()
-            self._bind_overlay(panel)
-            self._update_actions_state()
+                self._configure_beauty_panel(panel)
+            if tool_id == "color_adjust":
+                panel.restore_mask_ui(self._mask_ui_states.get(self._mask_state_key(), (False, None, False)))
+        finally:
+            self._restoring = False
+        if hasattr(panel, "result_view"):
+            panel.result_view.set_viewing(False)
+
+        if tool_id == "beauty":
+            # 预热会登记美颜的实现，工具代次随之变化：放在本次渲染入队之前
+            self._warm_beauty(panel.parameters)
+        self._schedule_pipeline_render()
+        self._bind_overlay(panel)
+        self._update_actions_state()
+
+    def _connect_color_panel(self, panel) -> None:
+        panel.sampling_requested.connect(lambda active, pnl=panel: self._on_sampling_requested(pnl, active))
+        panel.sampling_picked.connect(lambda x, y, pnl=panel: self._on_sampling_picked(pnl, x, y))
+        panel.mask_mode_changed.connect(lambda _mode, pnl=panel: self._on_mask_mode(pnl))
+        panel.mask_ui_changed.connect(lambda pnl=panel: self._save_mask_ui(pnl))
+        panel.mask_create_requested.connect(lambda kind, pnl=panel: self._on_mask_create(pnl, kind))
+        panel.mask_upgrade_requested.connect(lambda pnl=panel: self._upgrade_masks(pnl))
+        panel.mask_gesture_started.connect(lambda mask, pnl=panel: self._begin_mask_gesture(pnl, mask))
+        panel.mask_gesture_changed.connect(lambda mask, pnl=panel: self._change_mask_gesture(pnl, mask))
+        panel.mask_gesture_finished.connect(lambda mask, pnl=panel: self._finish_mask_gesture(pnl, mask))
+        panel.mask_gesture_cancelled.connect(self._cancel_mask_gesture)
+        panel.mask_tool_started.connect(lambda kind, op, pnl=panel: self._show_mask_tool(pnl, kind, op))
+        panel.mask_tool_finished.connect(self._hide_mask_tool)
+        panel.mask_generation_cancel_requested.connect(self._cancel_mask_generation)
 
     def _bind_overlay(self, panel) -> None:
         """画布工具在调整时把框或轮廓挂到画布上；看结果、不在“调整”页或没有覆盖层的工具则取下。"""

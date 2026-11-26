@@ -48,6 +48,7 @@ class BaseToolPanel(QWidget, ThemedI18nMixin):
     request_status = Signal(str)
     params_changed = Signal(object)
     preparation_changed = Signal(bool)
+    availability_changed = Signal()
     edit_group_started = Signal()
     edit_group_finished = Signal()
     # 面板里的模型选择请求打开模型管理页：能力、当前所选模型的标识

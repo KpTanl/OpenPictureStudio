@@ -45,7 +45,6 @@ class AIEnhancePanel(BaseToolPanel):
     MANUAL_PREVIEW = True
     preview_requested = Signal()
     cancel_requested = Signal()
-    availability_changed = Signal()
 
     def __init__(self, image_path, parent=None, edit_state_store=None, **services):
         from ...application.panel_render_service import PanelRenderService

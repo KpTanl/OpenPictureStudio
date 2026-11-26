@@ -10,7 +10,6 @@ import logging
 from typing import Optional
 
 from PIL import Image
-from PySide6.QtCore import Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QWidget
 
@@ -486,7 +485,6 @@ class _IDPhotoControls(BaseToolPanel):
 class IDPhotoPanel(ManagedModelPanelMixin, _IDPhotoControls):
     """证件照（参数版本 2）：带抠图模型的选择，模型能不能用取自工具资源投影。"""
 
-    availability_changed = Signal()
     MODEL_CAPABILITY = "segmentation"
     RESOURCE_FEATURES = ID_PHOTO_RESOURCE_FEATURES
     MODEL_FEATURE = "ai"

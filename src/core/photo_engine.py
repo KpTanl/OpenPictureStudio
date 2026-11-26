@@ -77,6 +77,7 @@ except ImportError:
 
 
 _RENDER_BACKENDS_REPORTED = set()
+_RENDER_FALLBACKS_REPORTED = set()
 
 
 
@@ -1819,7 +1820,7 @@ def _check_render_cancelled(cancelled):
         raise CancelledError()
 
 
-def _apply_masks(d: np.ndarray, masks: list[dict] | None, base_src: RenderSource,
+def _apply_masks(d: np.ndarray, masks: list[dict] | None,
                  process_version: int = 1, *, threads=None, cancelled=lambda: False) -> np.ndarray:
     """局部蒙版管线：依次对各蒙版区域进行局部曝光/高光/阴影/色温/饱和度调整与 Alpha 混合。"""
     if not masks:
@@ -1987,26 +1988,26 @@ class RenderPipeline:
         # ── 1. 高性能 Rust 多核加速路径 (Rayon + 零拷贝) ──
         if backend == "rust":
             x_out, mixer_input = None, None
+            rust_params = dict(params)
+            rust_params["process_version"] = process_version
+            rust_params["look_stages"] = [
+                (list(stage.tone_lut), list(stage.hue_sat), stage.tone_strength, stage.sat_strength)
+                for stage in stages]
+
+            # 预处理 Curves LUT
+            curves = params.get("curves")
+            if curves and isinstance(curves, dict):
+                curves_lut = {}
+                for k in ("rgb", "r", "g", "b"):
+                    pts = curves.get(k)
+                    if pts and pts != _IDENTITY_CURVE:
+                        curves_lut[k] = _fritsch_carlson_lut(pts).tolist()
+                if curves_lut:
+                    rust_params["curves_lut"] = curves_lut
+
+            # 确保输入是 C-contiguous float32
+            pix_in = np.ascontiguousarray(src.pixels, dtype=np.float32)
             try:
-                rust_params = dict(params)
-                rust_params["process_version"] = process_version
-                rust_params["look_stages"] = [
-                    (list(stage.tone_lut), list(stage.hue_sat), stage.tone_strength, stage.sat_strength)
-                    for stage in stages]
-
-                # 预处理 Curves LUT
-                curves = params.get("curves")
-                if curves and isinstance(curves, dict):
-                    curves_lut = {}
-                    for k in ("rgb", "r", "g", "b"):
-                        pts = curves.get(k)
-                        if pts and pts != _IDENTITY_CURVE:
-                            curves_lut[k] = _fritsch_carlson_lut(pts).tolist()
-                    if curves_lut:
-                        rust_params["curves_lut"] = curves_lut
-
-                # 确保输入是 C-contiguous float32
-                pix_in = np.ascontiguousarray(src.pixels, dtype=np.float32)
                 if sampling is None:
                     from .color_memo import render_incremental
                     x_out = render_incremental(pix_in, rust_params, ops_accel, threads, cancelled)
@@ -2017,12 +2018,23 @@ class RenderPipeline:
                         x_out, mixer_input = capture_native(pix_in, rust_params, threads=threads)
                         sampling.capture(mixer_input, src.alpha, "rust")
                         del mixer_input
+            except (CancelledError, MemoryError):
+                raise
+            except Exception as exc:
+                x_out, mixer_input = None, None
+                if sampling is not None:
+                    sampling.close()
+                fallback_key = (process_version, type(exc).__name__)
+                if fallback_key not in _RENDER_FALLBACKS_REPORTED:
+                    _RENDER_FALLBACKS_REPORTED.add(fallback_key)
+                    logger.warning("Rust 多核加速渲染失败，平滑回退到 Python 引擎: %s", exc)
+            else:
                 _check_render_cancelled(cancelled)
 
                 # 局部蒙版后处理（如果启用）
                 if has_enabled_masks:
                     d = np.clip(linear_to_srgb(x_out), 0.0, 1.0)
-                    d = _apply_masks(d, masks, src, process_version, threads=threads, cancelled=cancelled)
+                    d = _apply_masks(d, masks, process_version, threads=threads, cancelled=cancelled)
                     _check_render_cancelled(cancelled)
                     x_out = srgb_to_linear(d)
 
@@ -2030,13 +2042,6 @@ class RenderPipeline:
                 logger.debug("调色计算 backend=rust size=%sx%s duration_ms=%.1f",
                              src.pixels.shape[1], src.pixels.shape[0], (monotonic() - started) * 1000)
                 return replace(src, pixels=x_out)
-            except (CancelledError, MemoryError):
-                raise
-            except Exception as exc:
-                x_out, mixer_input = None, None
-                if sampling is not None:
-                    sampling.close()
-                logger.warning("Rust 多核加速渲染失败，平滑回退到 Python 引擎: %s", exc)
 
         # ── 2. Python 纯算法回退兜底路径 ──
         x = src.pixels
@@ -2068,7 +2073,7 @@ class RenderPipeline:
         d = _gamut_compress(d)
         if has_enabled_masks:
             d = np.clip(d, 0.0, 1.0)
-            d = _apply_masks(d, masks, src, process_version,
+            d = _apply_masks(d, masks, process_version,
                              threads=threads, cancelled=cancelled)
             _check_render_cancelled(cancelled)
         x = srgb_to_linear(d)

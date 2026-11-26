@@ -9,7 +9,6 @@ from src.core.photo_engine import (
     RenderPipeline,
     _color_mixer,
     _compute_mask_array,
-    _apply_masks,
     _REC709_LUMA,
     save_render_source,
 )

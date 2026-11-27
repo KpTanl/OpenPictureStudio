@@ -18,7 +18,6 @@ from resources.styles.theme_variables import (
     get_theme_qss,
     get_dark_qss,
     get_light_qss,
-    get_theme_tokens_by_name,
 )
 from src.ui.dwm_helper import apply_title_bar_colors
 

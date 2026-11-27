@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import os
 import pytest
 from PIL import Image
 
-from PySide6.QtCore import Qt, QPointF
-from PySide6.QtGui import QKeyEvent, QMouseEvent
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QApplication, QGroupBox, QWidget, QHBoxLayout
 
 from src.ui.widgets.apple_choice import AppleCheckBox, AppleRadioButton

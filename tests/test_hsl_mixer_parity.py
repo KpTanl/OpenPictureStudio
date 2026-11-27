@@ -1,6 +1,5 @@
 """标准 HSL 色彩混合器与调色缺陷修复单元测试。"""
 
-import os
 import numpy as np
 import pytest
 from PIL import Image
@@ -13,11 +12,9 @@ from src.core.photo_engine import (
     _color_mixer,
     _src_from_pil,
     srgb_to_linear,
-    linear_to_srgb,
     RenderPipeline,
     RenderSource,
     _COLOR_MIXER_CENTERS,
-    _COLOR_MIXER_WIDTHS,
 )
 from src.core.color_adjuster import ColorAdjuster
 

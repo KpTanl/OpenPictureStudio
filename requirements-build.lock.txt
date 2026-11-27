@@ -15,7 +15,6 @@ colorama==0.4.6
 contourpy==1.3.3
 cycler==0.12.1
 Deprecated==1.3.1
-flake8==7.3.0
 flatbuffers==25.12.19
 fonttools==4.63.0
 h11==0.16.0
@@ -33,7 +32,6 @@ librt==0.16.0
 llvmlite==0.47.0
 lxml==6.1.0
 matplotlib==3.10.9
-mccabe==0.7.0
 mediapipe==0.10.35
 mypy==2.4.0
 mypy_extensions==1.1.0
@@ -51,9 +49,7 @@ platformdirs==4.9.6
 pluggy==1.6.0
 pooch==1.9.0
 protobuf==7.34.1
-pycodestyle==2.14.0
 pycparser==3.0
-pyflakes==3.4.0
 Pygments==2.20.0
 pyinstaller==6.20.0
 pyinstaller-hooks-contrib==2026.5
@@ -71,6 +67,7 @@ referencing==0.37.0
 rembg==2.0.75
 requests==2.34.2
 rpds-py==0.30.0
+ruff==0.17.6
 scikit-image==0.26.0
 scipy==1.17.1
 setuptools==84.2.1

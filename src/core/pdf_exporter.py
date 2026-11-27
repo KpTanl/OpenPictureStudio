@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import logging
 
@@ -12,12 +13,7 @@ class PDFExporter:
     负责将图片导出为 PDF 的核心逻辑，优化了内存释放。
     """
     def __init__(self):
-        self.use_img2pdf = False
-        try:
-            import img2pdf
-            self.use_img2pdf = True
-        except ImportError:
-            pass
+        self.use_img2pdf = importlib.util.find_spec("img2pdf") is not None
 
     def export(self, input_paths: list[str], output_path: str) -> bool:
         """

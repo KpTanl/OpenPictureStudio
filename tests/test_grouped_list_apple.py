@@ -1,7 +1,5 @@
 """Apple HIG 风格 GroupedOptionCard、WallpaperDialog 与 QRadioButton 主题样式专项测试。"""
 
-import os
-import tempfile
 import pytest
 from PIL import Image
 from PySide6.QtCore import Qt, QPoint, QPointF
@@ -11,7 +9,6 @@ from PySide6.QtWidgets import QApplication
 from resources.styles.theme_variables import (
     get_theme_qss,
     get_theme_tokens_by_name,
-    THEMES,
 )
 from src.ui.widgets.grouped_list import GroupedOptionCard, GroupedOptionRow
 from src.ui.dialogs.wallpaper_dialog import WallpaperDialog
@@ -40,7 +37,6 @@ def test_radio_button_theme_qss_color_inside():
         qss = get_theme_qss(theme_name)
         tokens = get_theme_tokens_by_name(theme_name)
         primary = tokens["accent"]
-        widget_bg = tokens["page"]
 
         # 断言不再包含 5px 粗边框
         assert "border: 5px solid" not in qss

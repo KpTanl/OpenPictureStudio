@@ -25,7 +25,6 @@ from src.core.photo_engine import (
     apply_chain_v2,
     fast_guided_filter,
     linear_to_srgb,
-    srgb_to_linear,
     _src_from_pil,
 )
 from src.core.tools.color import is_color_neutral
@@ -171,7 +170,6 @@ def test_shadow_lift_preserves_microcontrast_not_flattened():
     区间 shadows 提亮暗部细节；绝对黑锚定由
     test_shadows_lift_anchors_absolute_black / *_on_ramp 覆盖。
     """
-    rng = np.random.default_rng(5)
     h, w = 96, 96
     yy = np.linspace(0.04, 0.30, h, dtype=np.float32)[:, None]      # 暗部平滑基底
     fine = (0.025 * np.sin(np.arange(w) * 0.9)).astype(np.float32)  # 高频微对比（周期≈7px）

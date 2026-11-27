@@ -1,9 +1,7 @@
 """Apple HIG 规范化解耦组件体系全量综合测试套件。"""
 
-import os
 import pytest
-from PIL import Image
-from PySide6.QtCore import Qt, QPoint, QPointF
+from PySide6.QtCore import Qt, QPointF
 from PySide6.QtGui import QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import QApplication, QStackedWidget
 
@@ -12,16 +10,13 @@ from src.ui.widgets import (
     AppleButton,
     ApplePrimaryButton,
     AppleCompactButton,
-    AppleDestructiveButton,
     AppleGhostButton,
     AppleSegmentedControl,
     AppleSlider,
     AppleDropDown,
-    AppleMenu,
 )
 from src.ui.dialogs.settings_dialog import SettingsDialog
 from src.ui.dialogs.compress_dialog import ImageProcessingDialog
-from src.ui.theme import ThemeManager, set_theme_manager
 
 
 @pytest.fixture(scope="session")

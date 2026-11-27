@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication, QToolBar, QToolButton
+from PySide6.QtWidgets import QApplication
 
 from resources.styles.theme_variables import (
     DARK,
@@ -12,7 +12,6 @@ from resources.styles.theme_variables import (
     _build_qss,
     get_theme_qss,
 )
-from src.ui.main_window import MainWindow
 
 
 @pytest.fixture(scope="session")

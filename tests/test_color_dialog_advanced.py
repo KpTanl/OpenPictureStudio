@@ -1,7 +1,5 @@
 """折叠卡片、混色器控件与直方图测试。"""
 
-import os
-import tempfile
 import numpy as np
 import pytest
 from PIL import Image
@@ -10,7 +8,7 @@ from PySide6.QtWidgets import QApplication
 from src.ui.widgets.collapsible_card import CollapsibleCard
 from src.ui.widgets.color_mixer_widget import ColorMixerWidget
 from src.core.color_adjuster import ColorAdjuster
-from src.core.photo_engine import RenderSource, apply_chain_v2
+from src.core.photo_engine import apply_chain_v2
 from src.core.tools.color import ui_to_engine
 
 

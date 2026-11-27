@@ -5,7 +5,6 @@
 """
 
 import numpy as np
-import pytest
 from PIL import Image
 
 from src.core.photo_engine import (
@@ -13,7 +12,6 @@ from src.core.photo_engine import (
     _gamut_compress,
     apply_chain_v2,
     linear_to_srgb,
-    srgb_to_linear,
     _src_from_pil,
 )
 from src.core.tools.color import is_color_neutral
@@ -85,7 +83,7 @@ def test_contrast_sigmoid_keeps_endpoints_and_increases_spread():
 # ----------------------------------------------------------------- 曲线
 def test_curve_identity_is_noop():
     img = _img()
-    out = _render(img, {"curves": {"rgb": [(0, 0), (255, 255)]}})
+    _render(img, {"curves": {"rgb": [(0, 0), (255, 255)]}})
     assert is_color_neutral({"curves": {"rgb": [(0, 0), (255, 255)]}}) is False  # 非空 dict 仍进管线
     a = np.asarray(apply_chain_v2(img, {"curves": {"rgb": [(0, 0), (255, 255)]}}), np.int16)
     assert np.abs(a - np.asarray(img, np.int16)).max() <= 1

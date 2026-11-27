@@ -1,16 +1,12 @@
 #lib concurrency tests
-import time
 import numpy as np
 import pytest
-from PIL import Image
 from PySide6.QtCore import QCoreApplication
-from PySide6.QtGui import QImage
 
 from src.core.photo_engine import (
     RenderSource, RenderPipeline, configure_hardware_acceleration,
-    box_filter, _resize_bilinear
+    _resize_bilinear
 )
-from src.core.color_adjuster import ColorAdjuster
 
 
 @pytest.fixture(scope="session")

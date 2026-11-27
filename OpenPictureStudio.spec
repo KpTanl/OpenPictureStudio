@@ -50,7 +50,7 @@ excludes = [
     "tkinter",
     "pytest",
     "black",
-    "flake8",
+    "ruff",
     "mypy",
     "PyQt5",
     "PyQt6",

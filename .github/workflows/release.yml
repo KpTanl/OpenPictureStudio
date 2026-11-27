@@ -43,7 +43,7 @@ jobs:
       - name: Check build environment
         run: .venv\Scripts\python.exe -B tools/check_build_env.py
       - name: Check Python code
-        run: .venv\Scripts\python.exe -m flake8 src resources tests tools main.py conftest.py --select=F821,F822,F823
+        run: .venv\Scripts\python.exe -m ruff check --select F,E9 src resources tests tools main.py conftest.py
       - name: Compile Python modules
         run: .venv\Scripts\python.exe -X pycache_prefix=.pytest-tmp/pycache -m compileall -q src resources tests tools main.py conftest.py
 

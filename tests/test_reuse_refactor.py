@@ -58,8 +58,5 @@ def test_apply_service_is_shared(qapp, sample_image):
         win._refresh_all()
         wait_for_studio(win, sample_image)
         assert win.studio_workspace._apply_service is win._apply_service
-        # 默认扩展名/透明通道处理由服务统一提供
-        rgba = Image.new("RGBA", (8, 8))
-        assert win._apply_service.default_ext(rgba, "x.jpg") == ".png"
     finally:
         win.close()

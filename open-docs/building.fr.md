@@ -32,7 +32,7 @@ En exécution depuis les sources sans module natif compilé, les calculs bascule
 
 ## Compilation du module d’accélération natif
 
-`ops_accel.pyd` est facultatif depuis les sources et requis pour l’installateur officiel. La compilation nécessite la **chaîne d’outils Rust**, **MSVC C++ Build Tools** et le **Windows SDK** ; le compilateur DXC statique activé par défaut exige également le composant **« C++ ATL pour x64/x86 »** (la première compilation télécharge et vérifie l’archive statique DXC figée) :
+`ops_accel.pyd` est facultatif depuis les sources et requis pour l’installateur officiel. La compilation nécessite la **chaîne d’outils Rust 1.95.0** (figée dans `native/ops_accel/rust-toolchain.toml` et sélectionnée automatiquement par `rustup`), **MSVC C++ Build Tools** et le **Windows SDK** ; le compilateur DXC statique activé par défaut exige également le composant **« C++ ATL pour x64/x86 »** (la première compilation télécharge et vérifie l’archive statique DXC figée) :
 
 ```powershell
 cd native\ops_accel
@@ -64,7 +64,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 
 ## Intégration continue et builds automatisés
 
-GitHub Actions exécute automatiquement l’analyse Python, la vérification de compilation, la compilation native Rust et la suite de tests lors des mises à jour du dépôt. L’envoi d’une étiquette de version produit directement l’installateur Windows et son fichier de contrôle `.sha256` via le workflow public.
+GitHub Actions exécute en parallèle les vérifications Python (`ruff`, `compileall`, `pytest`) et Rust (`clippy`, `cargo test`) ainsi que la compilation du module natif. L’envoi d’une étiquette de version produit l’installateur Windows et son fichier `.sha256` via le workflow public, puis crée une version brouillon (Draft Release) en attente de publication.
 
 ## Documentation associée
 

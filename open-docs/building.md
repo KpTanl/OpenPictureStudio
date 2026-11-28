@@ -32,7 +32,7 @@ python main.py
 
 ## 构建原生加速模块
 
-`ops_accel.pyd` 为可选原生模块（完整发行构建必需）。编译需要 **Rust 工具链**、**MSVC C++ Build Tools** 与 **Windows SDK**；默认启用的静态 DXC 着色器编译器还要求安装 **“C++ ATL for x64/x86”** 组件（首次编译会自动下载并校验固定版本的 DXC 静态库）：
+`ops_accel.pyd` 为可选原生模块（完整发行构建必需）。编译需要 **Rust 1.95.0 工具链**（由 `native/ops_accel/rust-toolchain.toml` 固定，`rustup` 自动匹配）、**MSVC C++ Build Tools** 与 **Windows SDK**；默认启用的静态 DXC 着色器编译器还要求安装 **“C++ ATL for x64/x86”** 组件（首次编译会自动下载并校验固定版本的 DXC 静态库）：
 
 ```powershell
 cd native\ops_accel
@@ -64,7 +64,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 
 ## CI 与自动构建
 
-仓库通过 GitHub Actions 自动执行代码检查、原生模块编译与完整测试；推送版本标签时，自动构建 Windows 正式安装包并生成 `.sha256` 校验文件，所有发行资产均由公开工作流直接产出。
+仓库通过 GitHub Actions 并行执行 Python（`ruff`、`compileall`、`pytest`）与 Rust（`clippy`、`cargo test`）检查及原生模块编译；推送版本标签时，自动构建 Windows 正式安装包与 `.sha256` 校验文件并创建草稿发行版（Draft Release）待确认发布，所有发行资产均由公开工作流直接产出。
 
 ## 相关文档
 

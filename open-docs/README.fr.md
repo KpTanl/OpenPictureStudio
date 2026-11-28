@@ -34,7 +34,7 @@ flowchart LR
 
 | Document | Public et cas d’usage | Contenu principal |
 | --- | --- | --- |
-| [Développement et compilation](building.fr.md) | Exécuter depuis les sources, compiler Rust et empaqueter | Dépendances par couche, compilation du module natif, empaquetage Inno Setup et CI |
+| [Développement et compilation](building.fr.md) | Exécuter depuis les sources, compiler Rust et empaqueter | Dépendances par couche, compilation du module natif, empaquetage Inno Setup et flux CI/publication |
 | [Plug-ins d’image](image-plugins.fr.md) | Intégrer des algorithmes externes par plug-ins de confiance | Protocole `image/1`, transfert NPY float32, données auxiliaires en lecture seule, zones et exemples |
 
 ## Feuille de route et licences

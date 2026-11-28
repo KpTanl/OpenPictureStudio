@@ -30,7 +30,7 @@ In **Automatic** preview mode, canvas rendering scales to physical display pixel
 | 8 GB Dedicated GPU | 5.8–6.4 GiB | ~65 MP | ~32–35 MP | Supports 133 MP+ |
 | 12 GB+ Dedicated GPU | ≥ 8.6 GiB | ≥ 96 MP | ≥ 48–51 MP | Supports 133 MP+ |
 
-- 16-bit PNGs and camera RAW files require roughly twice the per-pixel memory of 8-bit images, halving full-frame limits accordingly; the per-side hardware limit is 32768 px.
+- 16-bit PNGs and camera RAW files require roughly twice the per-pixel memory of 8-bit images, halving full-frame limits accordingly; the per-side limit is 32768 px.
 - When full-size processing exceeds single-card full-frame limits, workflows composed of strip-capable tools (color grading, shadows/highlights/texture/clarity/dehaze, local masks, crop & rotation, shapes/lasso, portrait beauty, and qualified classic denoise) automatically switch to GPU strips.
 - Workflows containing non-strip nodes (AI denoise, AI enhancement, cutout, ID photo, or plugins) fall back seamlessly to the complete CPU path when full-frame VRAM is exceeded.
 
@@ -46,7 +46,7 @@ By default, OPS caps memory usage at **90%** of physical RAM while always reserv
 
 ## Measured Benchmarks
 
-Test system: Intel Core i5-12600KF, 32 GB RAM, NVIDIA GeForce RTX 5060 (8 GB), Windows 11, worker threads pinned to 6 P-cores (12 threads), measured in November 2026 comparing GPU (`wgpu / D3D12`) against CPU (`Rust + AVX2`). Actual timings vary by hardware, system load, and image contents.
+Test system: Intel Core i5-12600KF, 32 GB RAM, NVIDIA GeForce RTX 5060 (8 GB), Windows 11, worker threads pinned to 6 P-cores (12 threads), measured in November 2026 on 0.17.0 comparing GPU (`wgpu / D3D12`) against CPU (`Rust + AVX2`). Actual timings vary by hardware, system load, and image contents.
 
 ### 26.8 MP Portrait Interactive Responsiveness
 
@@ -74,7 +74,7 @@ On systems without a dedicated GPU or when set to **CPU only**, white balance, e
 | **Preview memory & GPU VRAM cache** | Preview RAM cache: 64 MiB default (up to 1024 MiB); VRAM cache: Automatic, Off, or Custom MiB | **Settings → Performance & memory** |
 | **Install size & optional assets** | App bundle ~0.55 GiB; all 6 optional local AI models ~435 MiB installed; DirectML runtime ~67 MiB | **Settings → Tools and Models / Runtimes** |
 
-With default disk caches completely full, total disk usage is roughly **3.6 GiB**. Group adjustments and batch export queues process one photo at a time and release temporary buffers immediately after each item.
+With default disk caches completely full, total disk usage is roughly **3.6 GiB**. Group adjustments and batch export queues process one photo at a time and release temporary buffers immediately after each item. At startup, the app disables Windows background power throttling so batch exports stay at full speed even when the window is minimized or in the background.
 
 ## Related Documentation
 

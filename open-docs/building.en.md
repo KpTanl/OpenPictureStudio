@@ -32,7 +32,7 @@ When running from source without the compiled native module, image processing au
 
 ## Building the Native Acceleration Module
 
-`ops_accel.pyd` is optional when running from source and required for release installers. Building requires the **Rust toolchain**, **MSVC C++ Build Tools**, and the **Windows SDK**. Default static DXC shader compilation also requires the **"C++ ATL for x64/x86"** component (the first build downloads and verifies a pinned DXC static archive):
+`ops_accel.pyd` is optional when running from source and required for release installers. Building requires the **Rust 1.95.0 toolchain** (pinned by `native/ops_accel/rust-toolchain.toml` and matched automatically by `rustup`), **MSVC C++ Build Tools**, and the **Windows SDK**. Default static DXC shader compilation also requires the **"C++ ATL for x64/x86"** component (the first build downloads and verifies a pinned DXC static archive):
 
 ```powershell
 cd native\ops_accel
@@ -64,7 +64,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 
 ## CI and Automated Releases
 
-GitHub Actions automatically runs Python linting, bytecode compilation checks, native Rust builds, and the test suite on repository changes. Pushing a release tag builds the Windows installer and publishes matching `.sha256` checksum assets directly from the public workflow.
+GitHub Actions runs Python (`ruff`, `compileall`, `pytest`) and Rust (`clippy`, `cargo test`) checks alongside native module builds in parallel. Pushing a release tag builds the Windows installer and matching `.sha256` checksum assets from the public workflow and creates a Draft Release awaiting confirmation.
 
 ## Related Documentation
 

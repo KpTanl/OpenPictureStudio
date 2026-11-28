@@ -30,7 +30,7 @@ En mode d’aperçu **Automatique**, le canevas s’adapte aux pixels physiques 
 | GPU dédié 8 Go | 5,8–6,4 GiB | ~65 Mpx | ~32–35 Mpx | Prend en charge 133 Mpx et plus |
 | GPU dédié 12 Go et plus | ≥ 8,6 GiB | ≥ 96 Mpx | ≥ 48–51 Mpx | Prend en charge 133 Mpx et plus |
 
-- Les PNG 16 bits et les RAW d’appareil photo occupent environ le double par pixel par rapport au 8 bits, divisant de moitié les limites sur image entière ; la limite matérielle par côté est de 32768 px.
+- Les PNG 16 bits et les RAW d’appareil photo occupent environ le double par pixel par rapport au 8 bits, divisant de moitié les limites sur image entière ; la limite par côté est de 32768 px.
 - Au-delà du budget sur image entière, les flux composés d’outils compatibles avec le découpage (couleur, ombres/hautes lumières/texture/clarté/voile, masques locaux, recadrage et rotation, formes/lasso, beauté et débruitage classique qualifié) basculent automatiquement sur les bandes GPU.
 - En présence de nœuds non pris en charge par bandes (débruitage IA, amélioration IA, détourage, photo d’identité ou plug-in), l’exécution complète bascule automatiquement sur le chemin CPU.
 
@@ -46,7 +46,7 @@ Par défaut, OPS plafonne l’usage mémoire à **90 %** de la RAM physique tout
 
 ## Mesures de performances réelles
 
-Plateforme de test : Intel Core i5-12600KF, 32 Go RAM, NVIDIA GeForce RTX 5060 (8 Go), Windows 11, threads limités à 6 cœurs P (12 threads), mesures de novembre 2026 comparant le GPU (`wgpu / D3D12`) au CPU (`Rust + AVX2`). Les durées réelles varient selon le matériel, la charge système et le contenu de l’image.
+Plateforme de test : Intel Core i5-12600KF, 32 Go RAM, NVIDIA GeForce RTX 5060 (8 Go), Windows 11, threads limités à 6 cœurs P (12 threads), mesures de novembre 2026 sur la version 0.17.0 comparant le GPU (`wgpu / D3D12`) au CPU (`Rust + AVX2`). Les durées réelles varient selon le matériel, la charge système et le contenu de l’image.
 
 ### Réactivité interactive sur un portrait de 26,8 Mpx
 
@@ -74,7 +74,7 @@ Sans GPU dédié ou en mode **CPU uniquement**, balance des blancs, exposition, 
 | **Mémoire d’aperçu et cache VRAM GPU** | Cache RAM aperçu : 64 MiB par défaut (jusqu’à 1024 MiB) ; cache VRAM : Automatique, Désactivé ou MiB personnalisés | **Paramètres → Performances et mémoire** |
 | **Espace programme et ressources facultatives** | Programme ~0,55 GiB ; 6 modèles IA locaux ~435 MiB installés ; moteur DirectML ~67 MiB | **Paramètres → Outils et modèles / Moteurs d’exécution** |
 
-Avec les caches disque par défaut remplis, l’occupation totale avoisine **3,6 GiB**. Les traitements groupés et files d’export traitent les photos séquentiellement et libèrent les tampons temporaires après chaque image.
+Avec les caches disque par défaut remplis, l’occupation totale avoisine **3,6 GiB**. Les traitements groupés et files d’export traitent les photos séquentiellement et libèrent les tampons temporaires après chaque image. Au démarrage, l’application désactive la limitation d’énergie en arrière-plan de Windows afin que les exports par lots gardent leur pleine vitesse même lorsque la fenêtre est réduite ou en arrière-plan.
 
 ## Documentation associée
 

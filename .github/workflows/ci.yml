@@ -37,7 +37,7 @@ jobs:
 
   native:
     name: Native build
-    needs: check
+    if: github.repository == 'KpTanl/OpenPictureStudio'
     runs-on: windows-latest
     timeout-minutes: 30
     outputs:
@@ -59,12 +59,6 @@ jobs:
           cargo build --release --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item target/release/ops_accel.dll ../../ops_accel.pyd
-      - name: Check native code
-        working-directory: native/ops_accel
-        run: cargo clippy --all-targets --locked -- -D warnings
-      - name: Test native code
-        working-directory: native/ops_accel
-        run: cargo test --locked
       - name: Upload native module
         id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -74,9 +68,32 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  native-check:
+    name: Native checks
+    if: github.repository == 'KpTanl/OpenPictureStudio'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-build
+      - name: Cache Rust dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/ops_accel/target
+          key: cargo-check-${{ runner.os }}-${{ hashFiles('native/ops_accel/Cargo.lock', 'native/ops_accel/rust-toolchain.toml') }}
+      - name: Check native code
+        working-directory: native/ops_accel
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Test native code
+        working-directory: native/ops_accel
+        run: cargo test --locked
+
   test:
     name: Tests
-    needs: native
+    needs: [check, native]
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -111,7 +128,7 @@ jobs:
   package:
     name: Package and checksums
     if: github.event_name != 'pull_request'
-    needs: [native, test]
+    needs: [check, native]
     runs-on: windows-latest
     timeout-minutes: 45
     outputs:

@@ -1,4 +1,4 @@
-"""检测本机 CPU、内存与显卡，供资源预算与运行环境建议使用；并向系统登记本进程的常驻内存下限。仅依赖标准库。"""
+"""检测本机 CPU、内存与显卡，供资源预算与运行环境建议使用；并向系统登记本进程的常驻内存下限与调度方式。仅依赖标准库。"""
 from __future__ import annotations
 
 import ctypes
@@ -146,6 +146,31 @@ def set_working_set_minimum(size):
     except (OSError, AttributeError):
         logger.warning("常驻内存下限登记失败 size=%s", size, exc_info=True)
     return False
+
+
+_PROCESS_POWER_THROTTLING, _THROTTLING_EXECUTION_SPEED = 4, 1
+
+
+class _PowerThrottlingState(ctypes.Structure):
+    _fields_ = [("Version", ctypes.c_uint32), ("ControlMask", ctypes.c_uint32), ("StateMask", ctypes.c_uint32)]
+
+
+def disable_power_throttling():
+    """窗口最小化或在后台时，本进程仍按前台程序的调度计算，不被系统放到效率模式降速。"""
+    if sys.platform != "win32":
+        return
+    try:
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.GetCurrentProcess.argtypes = []
+        kernel.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel.SetProcessInformation.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
+        kernel.SetProcessInformation.restype = ctypes.c_int
+        state = _PowerThrottlingState(1, _THROTTLING_EXECUTION_SPEED, 0)
+        if not kernel.SetProcessInformation(kernel.GetCurrentProcess(), _PROCESS_POWER_THROTTLING,
+                                            ctypes.byref(state), ctypes.sizeof(state)):
+            logger.debug("关闭后台降速被拒绝 error=%s", ctypes.get_last_error())
+    except (OSError, AttributeError):
+        logger.debug("关闭后台降速失败", exc_info=True)
 
 
 def _method(pointer, index, *argtypes):

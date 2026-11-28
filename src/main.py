@@ -43,6 +43,8 @@ def main():
     QImageReader.setAllocationLimit(0)
     
     logger = configure_logging(APP_NAME)
+    from .application.system_profile import disable_power_throttling
+    disable_power_throttling()
     from PySide6.QtCore import QThreadPool
     from resources.styles.theme_variables import THREAD_POOL_MAX_THREADS
     logger.info("计算资源策略 capacity=%s slots=%s interactive_threads=%s operator_threads=%s thumbnail_slots=%s",

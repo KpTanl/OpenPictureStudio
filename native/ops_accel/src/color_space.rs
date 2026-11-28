@@ -19,9 +19,9 @@ static LIN_TO_SRGB_LUT: OnceLock<[f32; LUT_SIZE]> = OnceLock::new();
 pub fn get_srgb_to_lin_lut() -> &'static [f32; LUT_SIZE] {
     SRGB_TO_LIN_LUT.get_or_init(|| {
         let mut lut = [0.0f32; LUT_SIZE];
-        for i in 0..LUT_SIZE {
+        for (i, slot) in lut.iter_mut().enumerate() {
             let c = (i as f32) / (LUT_SIZE - 1) as f32;
-            lut[i] = if c <= SRGB_EOTF_THRESHOLD {
+            *slot = if c <= SRGB_EOTF_THRESHOLD {
                 c / 12.92
             } else {
                 ((c + 0.055) / 1.055).powf(2.4)
@@ -34,9 +34,9 @@ pub fn get_srgb_to_lin_lut() -> &'static [f32; LUT_SIZE] {
 pub fn get_lin_to_srgb_lut() -> &'static [f32; LUT_SIZE] {
     LIN_TO_SRGB_LUT.get_or_init(|| {
         let mut lut = [0.0f32; LUT_SIZE];
-        for i in 0..LUT_SIZE {
+        for (i, slot) in lut.iter_mut().enumerate() {
             let c = (i as f32) / (LUT_SIZE - 1) as f32;
-            lut[i] = if c <= SRGB_OETF_THRESHOLD {
+            *slot = if c <= SRGB_OETF_THRESHOLD {
                 c * 12.92
             } else {
                 1.055 * c.powf(1.0 / 2.4) - 0.055
@@ -95,15 +95,14 @@ pub fn calc_hue_deg(r: f32, g: f32, b: f32) -> f32 {
         return 0.0;
     }
 
-    let h = if (mx - r).abs() < 1e-12 {
+    if (mx - r).abs() < 1e-12 {
         let val = 60.0 * ((g - b) / diff) + 360.0;
         if val >= 360.0 { val - 360.0 } else { val }
     } else if (mx - g).abs() < 1e-12 {
         60.0 * ((b - r) / diff) + 120.0
     } else {
         60.0 * ((r - g) / diff) + 240.0
-    };
-    h
+    }
 }
 
 pub fn srgb_to_linear_buffer(buffer: &mut [f32], lut: &[f32; LUT_SIZE]) {

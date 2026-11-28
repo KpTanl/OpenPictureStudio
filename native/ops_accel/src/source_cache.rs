@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use crate::{cancellation::Cancellation, thread_pools};
 
 pub(crate) fn validate_blocks(data: &[u8], blocks: &[u32], expected: usize) -> PyResult<usize> {
-    if blocks.is_empty() || blocks.len() % 4 != 0 || blocks.len() / 4 > 16384 || expected == 0 || expected > 1 << 30 {
+    if blocks.is_empty() || !blocks.len().is_multiple_of(4) || blocks.len() / 4 > 16384 || expected == 0 || expected > 1 << 30 {
         return Err(pyo3::exceptions::PyValueError::new_err("Invalid source block index"));
     }
     let block_size = blocks[3] as usize;
@@ -25,10 +25,12 @@ pub(crate) fn validate_blocks(data: &[u8], blocks: &[u32], expected: usize) -> P
     Ok(block_size)
 }
 
+type CompressedBlocks<'py> = (Bound<'py, PyArray1<u8>>, Bound<'py, PyArray2<u32>>);
+
 #[pyfunction]
 #[pyo3(signature = (data, block_size=262144, threads=None, cancelled=None))]
 pub fn source_compress_blocks<'py>(py: Python<'py>, data: PyReadonlyArray1<'_, u8>, block_size: usize,
-    threads: Option<usize>, cancelled: Option<Py<PyAny>>) -> PyResult<(Bound<'py, PyArray1<u8>>, Bound<'py, PyArray2<u32>>)> {
+    threads: Option<usize>, cancelled: Option<Py<PyAny>>) -> PyResult<CompressedBlocks<'py>> {
     let source = data.as_slice()?;
     if source.is_empty() || source.len() > 1 << 30 || !(1..=1 << 20).contains(&block_size)
         || source.len().div_ceil(block_size) > 16384 {

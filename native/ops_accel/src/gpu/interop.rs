@@ -1,6 +1,6 @@
 use super::*;
 use std::{ffi::c_void, mem::ManuallyDrop};
-use windows::{core::{Interface, GUID, HRESULT, PCSTR, PCWSTR, w}, Win32::{
+use windows::{core::{Interface, GUID, HRESULT, PCWSTR, s, w}, Win32::{
     AI::MachineLearning::DirectML::*, Foundation::{FreeLibrary, HMODULE},
     Graphics::Direct3D12::*, System::LibraryLoader::{LoadLibraryExW, GetProcAddress, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, LOAD_LIBRARY_SEARCH_SYSTEM32},
 }};
@@ -71,7 +71,7 @@ impl State {
             Library(LoadLibraryExW(w!("DirectML.dll"), None, LOAD_LIBRARY_SEARCH_SYSTEM32)
                 .map_err(|reason| error("interop_library", reason))?)
         };
-        let create = GetProcAddress(_library.0, PCSTR(b"DMLCreateDevice\0".as_ptr()))
+        let create = GetProcAddress(_library.0, s!("DMLCreateDevice"))
             .ok_or_else(|| error("interop_library", "DMLCreateDevice is unavailable"))?;
         let create: unsafe extern "system" fn(*mut c_void, DML_CREATE_DEVICE_FLAGS, *const GUID, *mut *mut c_void) -> HRESULT = std::mem::transmute(create);
         let hal = self.device.as_hal::<wgpu::hal::api::Dx12>().ok_or_else(|| error("interop_backend", "D3D12 is required"))?;

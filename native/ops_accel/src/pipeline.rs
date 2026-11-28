@@ -131,7 +131,7 @@ pub fn render_pipeline_stages(
                 finish(band);
             }
         };
-        if let Some(sample) = mixer_input.as_deref_mut() {
+        if let Some(sample) = mixer_input {
             buffer.par_chunks_mut(band_size).zip(sample.par_chunks_mut(band_size))
                 .for_each(|(band, captured)| apply_middle(band, Some(captured)));
         } else {

@@ -552,7 +552,7 @@ pub fn detail_effects_cached(buffer: &mut [f32], width: usize, height: usize, tx
         *p = (*p).clamp(0.0, 1.0);
     });
 
-    apply_equal_gain(buffer, &l_orig, &lp);
+    apply_equal_gain(buffer, l_orig, &lp);
 
     if dz > 0 {
         let sat_boost = 1.0 + 0.10 * (dz as f32) / 100.0;

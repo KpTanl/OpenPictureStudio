@@ -18,14 +18,14 @@ fn table() -> &'static DisplayTable {
     TABLE.get_or_init(|| {
         let mut thresholds = [f32::INFINITY; 257];
         thresholds[0] = f32::NEG_INFINITY;
-        for level in 1..256 {
+        for (level, threshold) in thresholds.iter_mut().enumerate().take(256).skip(1) {
             let encoded = (level as f64 - 0.5) / 255.0;
             let linear = if encoded <= 0.04045 {
                 encoded / 12.92
             } else {
                 ((encoded + 0.055) / 1.055).powf(2.4)
             };
-            thresholds[level] = linear as f32;
+            *threshold = linear as f32;
         }
         let mut base = [0u8; CELLS];
         let mut base_avx2 = [0i32; CELLS];
@@ -44,7 +44,7 @@ fn table() -> &'static DisplayTable {
 
 #[inline(always)]
 fn quantize(table: &DisplayTable, value: f32) -> u8 {
-    if !(value > 0.0) {
+    if value.is_nan() || value <= 0.0 {
         return 0;
     }
     if value >= 1.0 {

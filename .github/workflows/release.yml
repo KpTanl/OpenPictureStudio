@@ -64,7 +64,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             native/ops_accel/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('native/ops_accel/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('native/ops_accel/Cargo.lock', 'native/ops_accel/rust-toolchain.toml') }}
       - name: Build native module
         working-directory: native/ops_accel
         run: |
@@ -137,7 +137,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             native/ops_accel/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('native/ops_accel/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('native/ops_accel/Cargo.lock', 'native/ops_accel/rust-toolchain.toml') }}
       - name: Prepare Rust license sources
         working-directory: native/ops_accel
         run: cargo fetch --locked --target x86_64-pc-windows-msvc

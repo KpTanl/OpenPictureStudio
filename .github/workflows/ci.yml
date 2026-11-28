@@ -52,13 +52,16 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             native/ops_accel/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('native/ops_accel/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('native/ops_accel/Cargo.lock', 'native/ops_accel/rust-toolchain.toml') }}
       - name: Build native module
         working-directory: native/ops_accel
         run: |
           cargo build --release --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item target/release/ops_accel.dll ../../ops_accel.pyd
+      - name: Check native code
+        working-directory: native/ops_accel
+        run: cargo clippy --all-targets --locked -- -D warnings
       - name: Upload native module
         id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -126,7 +129,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             native/ops_accel/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('native/ops_accel/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('native/ops_accel/Cargo.lock', 'native/ops_accel/rust-toolchain.toml') }}
       - name: Prepare Rust license sources
         working-directory: native/ops_accel
         run: cargo fetch --locked --target x86_64-pc-windows-msvc

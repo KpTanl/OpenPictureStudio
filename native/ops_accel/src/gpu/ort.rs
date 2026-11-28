@@ -1,6 +1,6 @@
 use super::*;
 use std::ffi::{c_void,CStr};
-use windows::{core::{Interface,GUID,HRESULT,PCSTR,PCWSTR},Win32::{
+use windows::{core::{Interface,GUID,HRESULT,PCWSTR,s},Win32::{
     AI::MachineLearning::DirectML::{IDMLDevice,DML_CREATE_DEVICE_FLAG_NONE,DML_CREATE_DEVICE_FLAGS},
     Foundation::{HMODULE,FreeLibrary},Graphics::Direct3D12::ID3D12Resource,
     System::LibraryLoader::{LoadLibraryExW,GetProcAddress,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,LOAD_LIBRARY_SEARCH_SYSTEM32},
@@ -101,9 +101,9 @@ impl GpuDevice {
         let session=py.allow_threads(|| unsafe {
             let mut io=self.state.io.lock().unwrap(); self.state.flush(&mut io,None)?;
             let runtime=Library::load(runtime_path)?; let directml=Library::load(directml_path)?;
-            let get_base=GetProcAddress(runtime.handle(),PCSTR(b"OrtGetApiBase\0".as_ptr())).ok_or_else(||error("model_runtime","OrtGetApiBase is unavailable"))?;
+            let get_base=GetProcAddress(runtime.handle(),s!("OrtGetApiBase")).ok_or_else(||error("model_runtime","OrtGetApiBase is unavailable"))?;
             let get_base:unsafe extern "system" fn()->*const c_void=std::mem::transmute(get_base);
-            let create=GetProcAddress(directml.handle(),PCSTR(b"DMLCreateDevice\0".as_ptr())).ok_or_else(||error("model_runtime","DMLCreateDevice is unavailable"))?;
+            let create=GetProcAddress(directml.handle(),s!("DMLCreateDevice")).ok_or_else(||error("model_runtime","DMLCreateDevice is unavailable"))?;
             let create:unsafe extern "system" fn(*mut c_void,DML_CREATE_DEVICE_FLAGS,*const GUID,*mut *mut c_void)->HRESULT=std::mem::transmute(create);
             let hal=self.state.device.as_hal::<wgpu::hal::api::Dx12>().ok_or_else(||error("model_runtime","D3D12 is required"))?;
             let raw=hal.raw_device().clone(); drop(hal);

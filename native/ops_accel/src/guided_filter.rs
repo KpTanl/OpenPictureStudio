@@ -12,13 +12,13 @@ fn box_filter_horizontal(src: &[f32], dst: &mut [f32], width: usize, r: usize) {
             let mut sum: f64 = 0.0;
             let c0 = 0.max(-r_i) as usize;
             let c1 = (r_i + 1).min(w_i) as usize;
-            for x in c0..c1 {
-                sum += src_row[x] as f64;
+            for &value in &src_row[c0..c1] {
+                sum += value as f64;
             }
             let area = (c1 - c0) as f64;
             dst_row[0] = (sum / area) as f32;
 
-            for x in 1..width {
+            for (x, out) in dst_row.iter_mut().enumerate().skip(1) {
                 let x_i = x as isize;
                 let add_idx = x_i + r_i;
                 let rem_idx = x_i - r_i - 1;
@@ -33,7 +33,7 @@ fn box_filter_horizontal(src: &[f32], dst: &mut [f32], width: usize, r: usize) {
                 let cur_c0 = 0.max(x_i - r_i) as usize;
                 let cur_c1 = (x_i + r_i + 1).min(w_i) as usize;
                 let cur_area = (cur_c1 - cur_c0) as f64;
-                dst_row[x] = (sum / cur_area) as f32;
+                *out = (sum / cur_area) as f32;
             }
         });
 }
@@ -45,7 +45,7 @@ fn box_filter_vertical(src: &[f32], dst: &mut [f32], width: usize, height: usize
 
     // 按列块并行（比如每块 64 列），块内维护每一列的滑动窗口和
     let block_size = 64;
-    let num_blocks = (width + block_size - 1) / block_size;
+    let num_blocks = width.div_ceil(block_size);
 
     (0..num_blocks).into_par_iter().for_each(|b| {
         let col_start = b * block_size;

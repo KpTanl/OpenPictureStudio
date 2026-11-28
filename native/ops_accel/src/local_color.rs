@@ -37,7 +37,7 @@ struct Mask<'a> {
 impl Mask<'_> {
     fn weight(&self, x: f32, y: f32) -> f32 {
         let g = &self.geometry;
-        let value = if self.kind == 0 {
+        if self.kind == 0 {
             let (x0, y0) = (g[0], g[1]);
             let (dx, dy) = (g[2] - x0, g[3] - y0);
             let t = (((x - x0) * dx + (y - y0) * dy) / (dx * dx + dy * dy)).clamp(0., 1.);
@@ -54,8 +54,7 @@ impl Mask<'_> {
                 1. - t * t * (3. - 2. * t)
             };
             if g[6] != 0. { 1. - value } else { value }
-        };
-        value
+        }
     }
 }
 

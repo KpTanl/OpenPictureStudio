@@ -85,12 +85,14 @@ fn error(code: &str, message: impl ToString) -> PyErr {
 }
 
 fn instance(compiler: wgpu::Dx12Compiler) -> wgpu::Instance {
-    let mut options = wgpu::InstanceDescriptor::default();
-    options.backends = wgpu::Backends::DX12;
-    options.backend_options.dx12.shader_compiler = compiler;
-    options.memory_budget_thresholds = wgpu::MemoryBudgetThresholds {
-        for_resource_creation: Some(90), for_device_loss: Some(98),
+    let mut options = wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::DX12,
+        memory_budget_thresholds: wgpu::MemoryBudgetThresholds {
+            for_resource_creation: Some(90), for_device_loss: Some(98),
+        },
+        ..Default::default()
     };
+    options.backend_options.dx12.shader_compiler = compiler;
     wgpu::Instance::new(&options)
 }
 

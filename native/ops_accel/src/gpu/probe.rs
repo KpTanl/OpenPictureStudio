@@ -1,6 +1,8 @@
 use super::*;
 use rayon::prelude::*;
 
+type CpuReference = (Vec<u8>, Vec<f32>);
+
 struct Case {
     width: usize,
     height: usize,
@@ -74,7 +76,7 @@ impl Case {
         state.mapped(io, &staging, size, None)
     }
 
-    fn cpu(&self, threads: usize) -> PyResult<(Vec<u8>, Vec<f32>)> {
+    fn cpu(&self, threads: usize) -> PyResult<CpuReference> {
         crate::thread_pools::install(Some(threads), || {
             let filtered = crate::guided_filter::fast_guided_filter(&self.guide, &self.guide, self.width, self.height, 10, 0.0016, 1);
             let image = crate::image_view::ImageView { width: self.width, height: self.height, rgb: &self.rgb, alpha: None, patches: Vec::new() };
@@ -93,7 +95,7 @@ impl Case {
 impl State {
     pub(super) fn qualify(self: &Arc<Self>, threads: usize, admission: Option<&Py<PyAny>>) -> PyResult<(u8, f64, f64, f64)> {
         let mut io = self.io.lock().unwrap();
-        let run_cpu = |case: &Case| -> PyResult<((Vec<u8>, Vec<f32>), f64)> {
+        let run_cpu = |case: &Case| -> PyResult<(CpuReference, f64)> {
             let context = admission.map(|factory| Python::with_gil(|py| {
                 let context = factory.call0(py)?;
                 let allocation = context.call_method0(py, "__enter__")?;

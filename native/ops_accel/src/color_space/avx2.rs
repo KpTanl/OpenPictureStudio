@@ -33,9 +33,9 @@ pub(super) unsafe fn transfer(buffer: &mut [f32], lut: &[f32; LUT_SIZE], inverse
             if high != 0 {
                 let mut values = [0.0f32; 8];
                 _mm256_storeu_ps(values.as_mut_ptr(), value);
-                for lane in 0..8 {
+                for (lane, &input) in values.iter().enumerate() {
                     if high & (1 << lane) != 0 {
-                        *ptr.add(lane) = ((values[lane] + 0.055) / 1.055).powf(2.4);
+                        *ptr.add(lane) = ((input + 0.055) / 1.055).powf(2.4);
                     }
                 }
             }

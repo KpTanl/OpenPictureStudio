@@ -23,7 +23,7 @@ impl State {
                 if pool.total() + size as u64 > pool.limit { return Err(error("memory_pressure", "Integer upload staging exceeds budget")); }
                 pool.transient = size as u64;
             }
-            let upload = (|| {
+            let upload = {
                 let whole = data.len() / 4 * 4;
                 if whole != 0 { self.queue.write_buffer(input.buffer.as_ref().unwrap(), 0, &data[..whole]); }
                 if whole < data.len() {
@@ -32,7 +32,7 @@ impl State {
                     self.queue.write_buffer(input.buffer.as_ref().unwrap(), whole as u64, &tail);
                 }
                 self.wait(self.queue.submit([]), clone_cancel())
-            })();
+            };
             self.pool.lock().unwrap().transient = 0;
             upload?;
             self.uploaded.fetch_add(size as u64, Ordering::Relaxed);

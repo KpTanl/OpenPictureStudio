@@ -32,7 +32,7 @@ impl State {
             || args[0] as usize + width > image.width || args[1] as usize + height > image.height) {
             return Err(error("target_limit", "Invalid regional remap bounds"));
         }
-        if mode == 7 && args.len() != 0 && (args.len() != 8
+        if mode == 7 && !args.is_empty() && (args.len() != 8
             || args.iter().any(|v| !v.is_finite() || *v < 0.0 || v.fract() != 0.0)
             || args[2] <= 0.0 || args[3] <= 0.0 || args[6] <= 0.0 || args[7] <= 0.0
             || args[0] as usize + image.width > args[2] as usize

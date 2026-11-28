@@ -21,11 +21,11 @@ impl State {
             if pool.total() + staging > pool.limit { return Err(error("memory_pressure", "Source block staging exceeds budget")); }
             pool.transient = staging;
         }
-        let upload = (|| {
+        let upload = {
             self.queue.write_buffer(packed.buffer.as_ref().unwrap(), 0, data);
             self.queue.write_buffer(index.buffer.as_ref().unwrap(), 0, bytemuck::cast_slice(blocks));
             self.wait(self.queue.submit([]), clone_cancel())
-        })();
+        };
         self.pool.lock().unwrap().transient = 0;
         upload?;
         self.uploaded.fetch_add((data.len() + blocks.len() * 4) as u64, Ordering::Relaxed);

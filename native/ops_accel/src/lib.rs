@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments, clippy::useless_conversion)]
+
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict};
 use numpy::{PyArray1, PyArray3, PyReadonlyArray2, PyReadonlyArray3, PyUntypedArrayMethods, PyArrayMethods};
@@ -114,10 +116,13 @@ fn render_pipeline_fast_with_mixer_input<'py>(
     pixels: PyReadonlyArray3<'py, f32>,
     params: &Bound<'_, PyDict>,
     threads: Option<usize>,
-) -> PyResult<(Bound<'py, PyArray3<f32>>, Bound<'py, PyArray3<f32>>)> {
+) -> PyResult<RenderWithSample<'py>> {
     let (output, sample) = render_pipeline_internal(py, pixels, params, threads, true, false)?;
     Ok((output, sample.expect("mixer input capture was requested")))
 }
+
+type RenderWithSample<'py> = (Bound<'py, PyArray3<f32>>, Bound<'py, PyArray3<f32>>);
+type RenderOutput<'py> = (Bound<'py, PyArray3<f32>>, Option<Bound<'py, PyArray3<f32>>>);
 
 fn render_pipeline_internal<'py>(
     py: Python<'py>,
@@ -126,7 +131,7 @@ fn render_pipeline_internal<'py>(
     threads: Option<usize>,
     capture: bool,
     prefix_only: bool,
-) -> PyResult<(Bound<'py, PyArray3<f32>>, Option<Bound<'py, PyArray3<f32>>>)> {
+) -> PyResult<RenderOutput<'py>> {
     let shape = pixels.shape();
     if shape.len() != 3 || shape[2] != 3 {
         return Err(pyo3::exceptions::PyValueError::new_err(

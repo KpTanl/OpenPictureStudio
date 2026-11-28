@@ -4,11 +4,15 @@
 
 [Back to Home](../README.en.md) · [Documentation](README.en.md)
 
-OpenPictureStudio brings professional image processing and AI collaboration together into an open image creation platform directed by creators and extensible by developers.
+OpenPictureStudio aims to be an open image creation platform shared by humans and AI agents.
 
 ## Product Vision
 
-Professional creators need predictable color, tonal precision, non-destructive history, and consistent delivery; everyday users want an approachable path from an initial idea to a finished photo; developers and AI agents need clear, composable, inspectable tool contracts. OPS evolves around a unified image and project model where human aesthetic judgment, native algorithms, and AI execution work together on the same asset.
+Coding AI agents have advanced quickly because software development provides structured code environments, open tool interfaces, and shared operation history, so agents can call tools directly to get work done. Image creation needs the same foundation shared by humans and agents.
+
+OPS is building that foundation. Both humans and AI participate in creation: you can edit manually or direct AI, and AI can suggest improvements or apply edits directly. Both use the same professional tools, recording changes into a single unified history. Professional creators get controllable color, tonal precision, and consistent delivery; everyday users can turn ideas into concrete images; developers and AI agents get clear, composable, inspectable tool interfaces. All of this is built on the same image and project model.
+
+Every step on the roadmap expands what humans and agents can create together.
 
 ## Current Baseline
 
@@ -23,44 +27,47 @@ OPS delivers a complete Windows desktop application (see individual [Release Not
 
 ```mermaid
 flowchart LR
-    S1["Stage 1 · AI Collaboration"] --> S2["Stage 2 · Automated Workflows"]
-    S2 --> S3["Stage 3 · All-Round Creation"]
-    S3 --> S4["Stage 4 · Open Plugin Ecosystem"]
+    S1["Stage 1 · Agent as Creative Partner"] --> S2["Stage 2 · An AI Studio for Everyone"]
+    S2 --> S3["Stage 3 · Layers, Compositing, and Generative AI"]
+    S3 --> S4["Stage 4 · Open Extension Ecosystem"]
 ```
 
-### Stage 1: Deepen AI Creative Collaboration
+### Stage 1: Agent as Creative Partner
 
-Connect the assistant more closely with image content, editing context, and creative intent:
+AI agents become a deeper part of OPS. They understand the image, your goals, and your style, suggest improvements, pick the right tools, and make finer edits. External AI agents can also call OPS's professional tools directly.
 
-- **Cross-tool execution:** Expand tool coverage across culling, global grading, local masks, portrait retouching, and export.
-- **Context & personal style:** Improve reference-image color/tone analysis and reusable named styles and preferences.
-- **Controllable edits:** Refine multi-step planning, local refinement, and A/B candidate review with full undo/redo support.
+- **External agent interface:** Expose invocation contracts for photo loading, processing, previewing, project saving, and export. External agents can execute tasks headlessly in the background or connect to a running OPS instance to edit alongside you on screen.
+- **Cross-tool collaboration:** Expand the tools available to the assistant across culling, global grading, local masks, portrait retouching, and export.
+- **Style memory:** Improve color and tone analysis for reference images and build reusable named styles and long-term preferences.
+- **Controllable edits:** Multi-step planning, local refinement, and A/B candidate comparison. Every edit can be reviewed, applied, or undone.
 
-### Stage 2: Build Automated Workflows
+### Stage 2: An AI Studio for Everyone
 
-Turn successful manual adjustments into composable, reusable, schedulable workflows:
+Set the look and guidelines you want, and AI agents edit an entire shoot for you.
 
-- **Flow orchestration:** Configurable node graphs, parameter reuse, conditional execution, multi-input steps, and reusable subflows.
-- **Group delivery & background jobs:** Smart batch application across photo groups with pause, cancel, and retry controls.
-- **External agent interface:** Expose loading, processing, previewing, project saving, and export contracts so external AI agents can orchestrate tasks headlessly.
+- **Full-shoot processing:** Automatically cull by shoot group, unify the baseline look, and refine photo by photo. Shots the agent is unsure about are left for you to decide.
+- **Workflow orchestration:** Save a satisfying retouch as a reusable flow with configurable nodes, parameter reuse, conditional branching, multi-input steps, and reusable subflows.
+- **Background jobs:** Run large batch jobs in the background with progress tracking, pause, cancel, and retry controls.
+- **Embeddable processing core:** A standalone image processing core decoupled from the desktop UI, ready to embed directly into other applications, scripts, or automation pipelines.
 
-### Stage 3: Broaden All-Round Image Creation
+### Stage 3: Layers, Compositing, and Generative AI
 
-Combine parametric photo editing, pixel compositing, and generative AI in a single project format:
+Add layers, compositing, and generative AI on top of today's photo editing, so more complex work fits in one project. Original captures stay clearly separate from AI-generated content.
 
-| Editing Paradigm | Direction |
+| New Capability | Direction |
 | --- | --- |
-| **Non-destructive adjustments** | Continue refining RAW color science, local masks, and high-precision parametric pipelines |
-| **Layers & pixel editing** | Add layers, advanced selections, compositing, and direct pixel brushwork backed by unified history and `.opsproj` |
-| **Generative editing** | Integrate image generation, inpainting, and localized synthesis alongside standard grading tools |
+| **Layers & pixel-level editing** | Layers, advanced selections, multi-image compositing, and direct pixel brushwork integrated into unified history and `.opsproj` |
+| **Generative AI editing** | Image generation, inpainting, and content rewriting limited to chosen layers and regions, and used together with color grading and mask tools |
+| **Creation provenance** | Record whether each step came from capture, adjustment, or generation and who approved it. A finished work can show which parts were actually photographed |
 
-### Stage 4: Build an Open Extension Ecosystem
+### Stage 4: Open Extension Ecosystem
 
-Advance the **Everything is Plugin** architecture for sustainable third-party extensibility:
+Built around **Everything is Plugin**. People can build their own tools, and AI agents can help create new ones. You can use your own tools and tools others share, and the ecosystem keeps growing.
 
-- **Public API & plugin SDK:** Stabilize tool contracts, parameter schemas, resource management, and runtime documentation.
-- **Sandboxing & permissions:** Strengthen plugin isolation, explicit permission boundaries, resource quotas, and version compatibility.
-- **Community sharing:** Support distributing third-party algorithms, model adapters, named styles, and workflow templates.
+- **Public API & plugin SDK:** Stabilize tool contracts, parameter declarations, resource management, and runtime interfaces with complete documentation and examples.
+- **Isolation & permissions:** Run plugins in isolated environments with clear permission boundaries, resource quotas, and cross-version compatibility policies.
+- **On-demand tool creation:** When existing tools fall short, agents can write new plugins against the tool contract, execute them in isolation, and record results into history for your review. Useful tools can be shared.
+- **Tool & workflow sharing:** Share third-party algorithms, model adapters, personal styles, and workflow templates.
 
 ## Continuous Engineering Tracks
 

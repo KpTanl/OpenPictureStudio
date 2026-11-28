@@ -4,11 +4,15 @@
 
 [Retour à l’accueil](../README.fr.md) · [Documentation](README.fr.md)
 
-OpenPictureStudio réunit traitement d’image professionnel et collaboration IA au sein d’une plateforme ouverte, maîtrisée par les créateurs et extensible par les développeurs.
+OpenPictureStudio ambitionne de devenir une plateforme ouverte de création d’images partagée par les humains et les agents IA.
 
 ## Vision du produit
 
-Les créateurs professionnels exigent des couleurs prévisibles, une précision tonale, un historique non destructif et des livrables cohérents ; le grand public cherche un passage simple de l’idée initiale à l’image aboutie ; les développeurs et agents IA demandent des contrats d’outils clairs, composables et vérifiables. OPS évolue autour d’un modèle d’image et de projet unifié où le jugement créatif humain, les algorithmes natifs et l’exécution IA collaborent sur la même œuvre.
+Les agents IA de programmation progressent vite parce que le développement dispose d’environnements structurés, d’interfaces d’outils ouvertes et d’un historique partagé permettant aux agents d’appeler directement des outils pour mener leurs tâches à bien. La création d’images a besoin du même socle partagé entre humains et agents.
+
+OPS construit ce socle. Humains et IA participent ensemble à la création : vous pouvez retoucher manuellement ou guider l’IA ; l’IA peut proposer des améliorations ou appliquer directement les réglages. Tous deux utilisent les mêmes outils professionnels et inscrivent leurs modifications dans un historique unique. Les créateurs professionnels obtiennent couleurs maîtrisées, précision tonale et livrables cohérents ; le grand public transforme ses idées en images concrètes ; les développeurs et agents IA disposent d’interfaces claires, composables et vérifiables. Tout cela repose sur un même modèle d’image et de projet.
+
+Chaque étape de la feuille de route élargit ce que les humains et les agents peuvent accomplir ensemble.
 
 ## Socle actuel
 
@@ -23,44 +27,47 @@ OPS fournit une application de bureau Windows complète (le détail par version 
 
 ```mermaid
 flowchart LR
-    S1["Étape 1 · Collaboration IA"] --> S2["Étape 2 · Flux automatisés"]
-    S2 --> S3["Étape 3 · Création complète"]
-    S3 --> S4["Étape 4 · Écosystème ouvert"]
+    S1["Étape 1 · L’agent comme partenaire créatif"] --> S2["Étape 2 · Un studio IA pour chacun"]
+    S2 --> S3["Étape 3 · Calques, composition et IA générative"]
+    S3 --> S4["Étape 4 · Écosystème d’extensions ouvert"]
 ```
 
-### Étape 1 : Approfondir la collaboration créative avec l’IA
+### Étape 1 : L’agent comme partenaire créatif
 
-Relier plus étroitement l’assistant au contenu de l’image, à l’état d’édition et à l’intention du créateur :
+Les agents IA s’intègrent plus profondément à OPS : ils comprennent l’image, vos besoins et votre style, proposent des pistes, choisissent les outils adaptés et réalisent des retouches plus fines. Les agents IA externes peuvent aussi appeler directement les outils professionnels d’OPS.
 
-- **Couverture transversale :** étendre l’assistant au tri, à la colorimétrie globale, aux masques locaux, au portrait et à l’export.
-- **Contexte et style personnel :** enrichir l’analyse de couleur et de contraste d’images de référence et mémoriser styles nommés et préférences.
-- **Exécution maîtrisée :** affiner la planification en plusieurs étapes, les retouches ciblées et la comparaison A/B entièrement annulable.
+- **Interface pour agents externes :** ouvrir les interfaces d’appel pour le chargement, le traitement, l’aperçu, l’enregistrement de projet et l’export. Les agents externes peuvent exécuter leurs tâches en arrière-plan sans interface graphique ou se connecter à une instance OPS en cours d’exécution pour retoucher avec vous à l’écran.
+- **Collaboration transversale :** élargir les outils accessibles à l’assistant sur le tri, la colorimétrie globale, les masques locaux, le portrait et l’export.
+- **Mémoire de style :** analyser plus finement la couleur et les contrastes d’images de référence, et capitaliser sur des styles nommés et préférences durables.
+- **Modifications maîtrisées :** planification en plusieurs étapes, retouches ciblées et comparaison de variantes A/B ; chaque modification peut être examinée, adoptée ou annulée.
 
-### Étape 2 : Mettre en place des flux de travail automatisés
+### Étape 2 : Un studio IA pour chacun
 
-Transformer une méthode de retouche réussie en un enchaînement composable, réutilisable et planifiable :
+Il vous suffit de définir le style souhaité et vos consignes : l’agent IA traite automatiquement toute une série de photos.
 
-- **Orchestration de flux :** graphes de nœuds configurables, réutilisation de paramètres, exécution conditionnelle, entrées multiples et sous-flux réutilisables.
-- **Traitement par lots et tâches de fond :** application intelligente par groupes de photos avec mise en pause, annulation et relance.
-- **Interface pour agents externes :** ouvrir chargement, traitement, aperçu, enregistrement de projet et export afin que des agents IA externes orchestrent des tâches sans interface graphique.
+- **Traitement de séries complètes :** trier automatiquement par groupe de prise de vue, harmoniser le rendu de base et affiner image par image, tout en vous soumettant les clichés incertains.
+- **Orchestration de flux :** enregistrer une retouche réussie en flux réutilisable avec nœuds configurables, réutilisation de paramètres, branchements conditionnels, entrées multiples et sous-flux réutilisables.
+- **Tâches en arrière-plan :** exécuter les traitements de masse en arrière-plan avec suivi d’avancement, mise en pause, annulation et relance.
+- **Cœur de traitement intégrable :** cœur de traitement d’image autonome découplé de l’interface de bureau, prêt à être intégré directement dans d’autres applications, scripts ou pipelines automatisés.
 
-### Étape 3 : Élargir à la création d’images complète
+### Étape 3 : Calques, composition et IA générative
 
-Unifier retouche paramétrique, composition de pixels et création générative au sein d’un même projet :
+Ajouter calques, composition et IA générative au-dessus des outils de retouche existants, pour réaliser des créations plus complexes dans un même projet. La prise de vue d’origine reste clairement distincte du contenu généré par IA.
 
-| Mode de retouche | Orientation |
+| Nouvelle capacité | Orientation |
 | --- | --- |
-| **Retouche non destructive** | Poursuivre l’amélioration de la science couleur RAW, des masques locaux et de la précision paramétrique |
-| **Calques et pixels** | Introduire calques, sélections avancées, composition et édition directe au pixel reliés à l’historique `.opsproj` |
-| **Retouche générative** | Intégrer génération d’images, retouche localisée et synthèse en continuité avec les outils couleur |
+| **Calques et retouche au pixel** | Calques, sélections avancées, composition multi-images et retouche directe au pixel intégrés à l’historique unifié et au format `.opsproj` |
+| **Retouche générative IA** | Génération d’images, remplissage localisé et réécriture de contenu cantonnés aux calques et zones désignés, utilisables avec les outils couleur et masques |
+| **Traçabilité de création** | Enregistrer pour chaque étape s’il s’agit de prise de vue, de réglage ou de génération et qui l’a validée, afin d’attester les éléments réellement photographiés |
 
-### Étape 4 : Construire un écosystème d’extensions ouvert
+### Étape 4 : Écosystème d’extensions ouvert
 
-Déployer l’architecture **Everything is Plugin** pour une extensibilité durable :
+Autour du principe **Everything is Plugin**, chacun peut développer ses propres outils et les agents IA peuvent aider à en créer de nouveaux. Vous utilisez vos propres outils comme ceux partagés par d’autres, et l’écosystème continue de s’étendre.
 
-- **API publique et SDK :** stabiliser contrats d’outils, schémas de paramètres, gestion des ressources et documentation développeur.
-- **Isolation et permissions :** renforcer le cloisonnement des plug-ins, les limites d’accès, les quotas et la compatibilité inter-versions.
-- **Partage communautaire :** faciliter la diffusion d’algorithmes tiers, d’adaptateurs de modèles, de styles et de modèles de flux.
+- **API publique et SDK de plug-ins :** stabiliser contrats d’outils, déclarations de paramètres, gestion des ressources et interfaces d’exécution avec documentation complète et exemples.
+- **Isolation et gouvernance des permissions :** exécuter les plug-ins dans un environnement isolé doté de limites de droits claires, de quotas de ressources et de règles de compatibilité inter-versions.
+- **Création d’outils à la demande :** lorsque les outils existants ne suffisent plus, l’agent peut écrire un nouveau plug-in conforme au contrat, l’exécuter en environnement isolé et inscrire le résultat dans l’historique pour validation ; les outils utiles peuvent être partagés.
+- **Partage d’outils et de savoir-faire :** diffuser algorithmes tiers, adaptateurs de modèles, styles personnels et modèles de flux.
 
 ## Chantiers d’ingénierie continus
 

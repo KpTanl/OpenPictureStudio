@@ -15,7 +15,7 @@
 
 **Begin with light. Give every inspiration a chance to become a finished work.**
 
-OpenPictureStudio (OPS) is an open-source AI image creation platform built on professional image processing. It connects the reality a camera records with the picture in the creator's mind. RAW color grading, local masks, non-destructive editing, an AI retouching assistant, and batch processing come together in one creative workflow, growing toward automated workflows, generative editing, and an open plugin ecosystem.
+OpenPictureStudio (OPS) is an open-source AI image creation platform built on professional image processing. It connects the reality a camera records with the picture in the creator's mind. RAW color grading, local masks, non-destructive editing, an AI retouching assistant, and batch processing come together in one creative workflow, growing toward AI agent collaboration, automated shoot processing, layers and compositing, generative creation, and an open plugin ecosystem.
 
 **For everyday users, creating starts with an easy first step.** From adjusting the exposure and color of everyday photos to exploring a look with the AI assistant, OPS makes it easier to turn creative intent into concrete edits—and a single edited photo can become the first step toward understanding light and developing a personal visual style.
 
@@ -187,14 +187,14 @@ See [System Requirements and Performance](open-docs/performance.en.md) for VRAM/
 
 ## Roadmap
 
-OPS bridges professional photography workflows with AI collaboration, automated flows, and multi-mode creation in an open platform shaped by creators and developers.
+Coding AI agents have advanced quickly because software development has open tool interfaces and shared operation history. Image creation needs the same foundation. Starting from professional photo processing, OPS is building an open platform shared by humans and AI agents: you can edit directly or direct AI, and AI can suggest changes or apply them itself.
 
 | Stage | Primary Focus |
 | --- | --- |
-| 1 · Deepen AI collaboration | Expand assistant tools, reference-image analysis, and style memory for fuller creative control |
-| 2 · Automated workflows | Save adjustments and expertise as reusable flows connected to batch queues and external AI agents |
-| 3 · All-round image creation | Introduce layers, advanced selections, pixel editing, and generative tools atop non-destructive editing |
-| 4 · Open plugin ecosystem | Provide public APIs and a plugin SDK for third-party tools, models, styles, and workflow sharing |
+| 1 · Agent as creative partner | AI agents understand the image, your intent, and your style, suggest adjustments, choose tools, and make finer edits; external agents can also call OPS tools directly |
+| 2 · An AI studio for everyone | Set your look and guidelines and let AI agents edit an entire shoot automatically; save edits you like as reusable workflows that run in the background |
+| 3 · Layers, compositing, and generative AI | Add layers, compositing, and generative AI on top of today's photo editing, while clearly distinguishing original captures from AI-generated content |
+| 4 · Open extension ecosystem | Everything is Plugin: public APIs and a plugin SDK so both humans and AI agents can build tools and share them with others |
 
 Performance, stability, and backward compatibility remain continuous priorities across all stages. Read the [full Roadmap](open-docs/roadmap.en.md).
 

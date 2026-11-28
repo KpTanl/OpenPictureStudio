@@ -15,7 +15,7 @@
 
 **Partir de la lumière et des ombres, pour que chaque inspiration puisse devenir une œuvre.**
 
-OpenPictureStudio (OPS) est une plateforme libre de création d’images avec l’IA, fondée sur un traitement d’image professionnel. Elle relie ce que l’appareil enregistre à l’image voulue par le créateur, en réunissant développement RAW, masques locaux, retouche non destructive, assistant IA et traitement par lots dans un même parcours qui évolue vers les flux automatisés, la retouche générative et un écosystème ouvert de plug-ins.
+OpenPictureStudio (OPS) est une plateforme libre de création d’images avec l’IA, fondée sur un traitement d’image professionnel. Elle relie ce que l’appareil enregistre à l’image voulue par le créateur, en réunissant développement RAW, masques locaux, retouche non destructive, assistant IA et traitement par lots dans un même parcours qui évolue vers la collaboration avec des agents IA, le traitement automatisé de séries, les calques et la composition, la création générative et un écosystème ouvert de plug-ins.
 
 **Pour le grand public, créer commence par une prise en main simple.** De l’exposition quotidienne à l’exploration d’un rendu avec l’assistant IA, OPS aide à transformer une intention en retouches concrètes tout en apprenant à lire la lumière.
 
@@ -187,14 +187,14 @@ Consultez [Configuration requise et performances](open-docs/performance.fr.md) p
 
 ## Feuille de route
 
-À partir du traitement photo professionnel, OPS réunit collaboration IA, automatisation des flux et édition multimode dans une plateforme ouverte portée par ses créateurs et développeurs.
+Les agents IA de programmation progressent vite parce que le code dispose d’interfaces d’outils ouvertes et d’un historique partagé. La création d’images a besoin du même socle. À partir du traitement photo professionnel, OPS construit une plateforme ouverte partagée par les humains et les agents IA : vous pouvez retoucher directement ou guider l’IA ; l’IA peut proposer des pistes ou appliquer les réglages elle-même.
 
 | Étape | Axes principaux |
 | --- | --- |
-| 1 · Approfondir la collaboration IA | Étendre outils de l’assistant, analyse de références et mémoire de styles |
-| 2 · Automatiser les flux de travail | Transformer les réglages en flux réutilisables pour lots et agents IA externes |
-| 3 · Élargir la création d’images | Ajouter calques, sélections avancées, édition pixel et génération au-dessus du flux non destructif |
-| 4 · Écosystème d’extensions ouvert | Stabiliser API publique et SDK de plug-ins pour outils tiers, modèles, styles et flux partagés |
+| 1 · L’agent comme partenaire créatif | Les agents IA comprennent l’image, vos besoins et votre style, proposent des pistes, choisissent les outils et réalisent des retouches plus fines ; les agents externes peuvent aussi appeler directement les outils d’OPS |
+| 2 · Un studio IA pour chacun | Définissez votre style et vos consignes, et laissez l’agent IA traiter automatiquement toute une série ; enregistrez une retouche réussie en flux réutilisable exécuté en arrière-plan |
+| 3 · Calques, composition et IA générative | Ajouter calques, composition et IA générative au-dessus de la retouche photo, tout en distinguant clairement la prise de vue d’origine du contenu généré par IA |
+| 4 · Écosystème d’extensions ouvert | Everything is Plugin : API publique et SDK de plug-ins permettant aux humains comme aux agents IA de créer des outils et d’utiliser ceux partagés par la communauté |
 
 Performance, stabilité et compatibilité accompagnent chaque étape. Voir la [feuille de route complète](open-docs/roadmap.fr.md).
 

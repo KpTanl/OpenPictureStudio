@@ -3,8 +3,10 @@ name: CI
 on:
   push:
     branches: [dev, main]
+    paths-ignore: ["**.md"]
   pull_request:
     branches: [dev, main]
+    paths-ignore: ["**.md"]
   workflow_dispatch:
 
 permissions:
@@ -20,9 +22,38 @@ env:
   PYO3_PYTHON: ${{ github.workspace }}/.venv/Scripts/python.exe
 
 jobs:
+  # dev 和 main 都是快进合并：同一提交在 claude/* 手动运行或之前的推送中已全部通过，就不再重跑。
+  # Release 取这个提交那次完整运行打出的安装包。
+  gate:
+    name: Reuse earlier result
+    if: github.repository == 'KpTanl/OpenPictureStudio'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - name: Skip a push whose commit already passed CI
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run=true
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=success&per_page=100" \
+              --jq '[.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch") | .html_url][0] // empty') || passed=""
+            if [ -n "$passed" ]; then
+              run=false
+              echo "::notice::$GITHUB_SHA already passed CI in $passed"
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
   check:
     name: Checks and Python compilation
-    if: github.repository == 'KpTanl/OpenPictureStudio'
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -37,7 +68,8 @@ jobs:
 
   native:
     name: Native build
-    if: github.repository == 'KpTanl/OpenPictureStudio'
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     outputs:
@@ -70,7 +102,8 @@ jobs:
 
   native-check:
     name: Native checks
-    if: github.repository == 'KpTanl/OpenPictureStudio'
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:

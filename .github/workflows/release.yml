@@ -47,9 +47,79 @@ jobs:
       - name: Compile Python modules
         run: .venv\Scripts\python.exe -X pycache_prefix=.pytest-tmp/pycache -m compileall -q src resources tests tools main.py conftest.py
 
+  # 优先用这个提交那次完整 CI 运行打好的安装包（同一提交、测试已通过）；找不到、已过期或核对不过，就在下面完整构建。
+  reuse:
+    name: Take installer from CI
+    if: github.repository == 'KpTanl/OpenPictureStudio'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Find the CI run that built this commit
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=success&per_page=100" \
+            --jq '.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch") | .id') || runs=""
+          run_id=""
+          artifact_id=""
+          for id in $runs; do
+            found=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select((.expired | not) and (.name | startswith("installer-"))) | .id] | max // empty') || found=""
+            if [ -n "$found" ]; then
+              run_id=$id
+              artifact_id=$found
+              break
+            fi
+          done
+          if [ -n "$artifact_id" ]; then
+            echo "Installer artifact $artifact_id from CI run $run_id"
+          else
+            echo "::notice::No installer from CI on $GITHUB_SHA; building one in this run"
+          fi
+          echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "artifact-id=$artifact_id" >> "$GITHUB_OUTPUT"
+      - name: Download CI installer
+        id: download
+        if: steps.find.outputs.artifact-id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          artifact-ids: ${{ steps.find.outputs.artifact-id }}
+          run-id: ${{ steps.find.outputs.run-id }}
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: dist/installer
+      - name: Verify CI installer
+        id: verify
+        if: steps.download.outcome == 'success'
+        continue-on-error: true
+        working-directory: dist/installer
+        run: |
+          setup="OpenPictureStudio-${GITHUB_REF_NAME#v}-setup.exe"
+          ls -l
+          [ "$(ls | wc -l)" -eq 2 ] && [ -f "$setup" ] && [ -f "$setup.sha256" ]
+          sha256sum --check --strict "$setup.sha256"
+      - name: Keep installer for this release
+        id: upload
+        if: steps.verify.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/installer/*.exe
+            dist/installer/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
   native:
     name: Native build
-    needs: check
+    needs: [check, reuse]
+    if: ${{ !cancelled() && needs.check.result == 'success' && needs.reuse.outputs.artifact-id == '' }}
     runs-on: windows-latest
     timeout-minutes: 30
     outputs:
@@ -166,7 +236,8 @@ jobs:
 
   draft:
     name: Draft release
-    needs: [check, package]
+    needs: [check, reuse, package]
+    if: ${{ !cancelled() && needs.check.result == 'success' && (needs.reuse.outputs.artifact-id != '' || needs.package.result == 'success') }}
     runs-on: windows-latest
     timeout-minutes: 10
     permissions:
@@ -175,14 +246,17 @@ jobs:
       - name: Download installer
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          artifact-ids: ${{ needs.package.outputs.artifact-id }}
+          artifact-ids: ${{ needs.reuse.outputs.artifact-id || needs.package.outputs.artifact-id }}
           merge-multiple: true
           path: dist/installer
       - name: Verify installer checksum
+        env:
+          APP_VERSION: ${{ needs.check.outputs.app-version }}
         run: |
           $installers = @(Get-ChildItem dist/installer -Filter '*-setup.exe' -File)
           if ($installers.Count -ne 1) { throw "Expected one installer" }
           $installer = $installers[0]
+          if ($installer.Name -ne "OpenPictureStudio-$env:APP_VERSION-setup.exe") { throw "Unexpected installer $($installer.Name)" }
           $expected = ((Get-Content -LiteralPath "$($installer.FullName).sha256" -Raw) -split '\s+')[0]
           $actual = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $expected) { throw "Installer checksum mismatch" }

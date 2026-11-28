@@ -5,7 +5,7 @@
 ;
 ; Manual run example:
 ;   "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" ^
-;       /DAppVersion=0.17.0 /DRepoRoot="C:\src\OpenPictureStudio" ^
+;       /DAppVersion=0.17.1 /DRepoRoot="C:\src\OpenPictureStudio" ^
 ;       packaging\OpenPictureStudio.iss
 
 #if Ver != EncodeVer(6,7,1)
